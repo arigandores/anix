@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Anix Desktop</title>
+  <link rel="icon" href="/icon.png">
+  <link rel="stylesheet" href="/css/app.css">
+  <script>
+    // Тема до отрисовки, чтобы не мигало (Prefs: системная/светлая/тёмная)
+    (function () {
+      var t = 'system';
+      try { t = localStorage.getItem('anixart.theme') || 'system'; } catch (e) {}
+      var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    })();
+  </script>
+</head>
+<body>
+  <div id="app">
+    <nav id="rail" aria-label="Навигация"></nav>
+    <div id="main">
+      <div id="viewport"></div>
+      <nav id="bottomnav" aria-label="Навигация"></nav>
+    </div>
+  </div>
+  <script src="/vendor/hls.min.js"></script>
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

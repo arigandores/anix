@@ -1,0 +1,11 @@
+{
+  "kodik": { "token": "" },
+  "studiomir": { "apiKey": "" },
+  "vkVideo": { "clientId": "", "clientSecret": "" },
+  "social": {
+    "google": { "apiKey": "", "authHandler": "" },
+    "telegram": { "clientId": "", "redirectUri": "" },
+    "vk": { "clientId": "" },
+    "yandex": { "clientId": "" }
+  }
+}

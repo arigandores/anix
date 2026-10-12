@@ -1,0 +1,68 @@
+{
+  "name": "anix-desktop",
+  "productName": "Anix Desktop",
+  "version": "1.1.0",
+  "description": "Anix Desktop — неофициальный клиент Anixart для Windows и браузера",
+  "author": "arigandores",
+  "main": "electron/main.js",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "node server/index.js --open",
+    "serve": "node server/index.js",
+    "app": "electron .",
+    "build:win": "electron-builder --win dir --x64",
+    "build:installer": "electron-builder --win nsis portable --x64",
+    "build:release": "node build/release.js",
+    "test": "node test/smoke.js",
+    "test:e2e": "electron test/e2e.js",
+    "test:ui": "electron test/ui-audit.js && electron test/contrast.js && electron test/skeleton-match.js",
+    "test:ai": "electron test/ai-chat.js && electron test/ai-stream.js && electron test/ai-actions.js && electron test/ai-memory.js && electron test/ai-config.js && electron test/ai-scroll.js && electron test/ai-away.js && electron test/ai-stop.js"
+  },
+  "build": {
+    "appId": "com.arigandores.anixdesktop",
+    "productName": "Anix Desktop",
+    "electronDist": "node_modules/electron/dist",
+    "electronVersion": "33.4.11",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**",
+      "server/**",
+      "public/**",
+      "!**/.impeccable/**",
+      "package.json",
+      "config.local.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "artifactName": "AnixDesktop-${version}-${arch}-${target}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Anix Desktop",
+      "artifactName": "AnixDesktop-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "AnixDesktop-Portable-${version}.${ext}"
+    },
+    "asarUnpack": [
+      "node_modules/**"
+    ]
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8",
+    "resedit": "2.0.3"
+  },
+  "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "0.89.1",
+    "@agentclientprotocol/sdk": "1.8.0"
+  }
+}

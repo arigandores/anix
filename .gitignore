@@ -1,0 +1,9 @@
+node_modules/
+dist/
+release/
+test/shots/
+.impeccable/
+*.log
+config.local.json
+config.local.json.parked
+native/

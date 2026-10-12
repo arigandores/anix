@@ -3,7 +3,7 @@
 //   AnixDesktop-Setup-<v>.exe, AnixDesktop-Portable-<v>.exe   — electron-builder (NSIS и portable)
 //   AnixDesktop-<v>-win-x64.zip                               — портативная папка (release\win-unpacked)
 //   AnixDesktop-Browser-<v>.zip                               — версия для браузера (server + public, нужен Node.js)
-// Запуск: npm run build:release. Загрузка в GitHub Release — вручную (см. README, «Сборка и релиз»).
+// Запуск: npm run build:release. Загрузка в GitHub Release — вручную (gh release create).
 // config.local.json (ключи источников и соцвхода) попадает в сборку, если есть; --no-keys — собрать без него.
 const fs = require('fs');
 const path = require('path');

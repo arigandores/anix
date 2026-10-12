@@ -151,22 +151,6 @@ build/             иконка (icon.svg → make-icons.js) и сборка р�
 test/              тесты (см. ниже)
 ```
 
-Поведение повторяет мобильное приложение:
-
-- Адрес бекенда берётся из `anixhelper.github.io/pages/urls.json` и `config/urls`; токен — query-параметром `token`.
-- Отметки просмотра и позиция воспроизведения хранятся локально; перед воспроизведением отправляются
-  `history/add` и `episode/watch`.
-- Kodik: `episode/target`, затем `kodikres.com/api/video-links`; перед высоким качеством — реклама Kodik.
-- Перемотка опенинга +85 с, скорости 0.25–3×, автовоспроизведение.
-
-**Надёжность.**
-- Windows-приложение поднимает сервер на постоянном порту **38371** (запасные 38372–38374): от порта зависит
-  `localStorage`, где хранятся вход, настройки и история серий. Второй запуск лишь показывает уже открытое окно.
-- Прокси повторяет GET-запросы при сетевой ошибке, таймауте и 502/503/504 (до 2 раз, 0,3 и 0,9 с); POST —
-  только если соединение не установилось. Таймаут попытки 15 с (GET) / 30 с (POST).
-- Диагностика: `GET /__errors` — последние ошибки и медленные (>3 с) запросы прокси; `GET /ai/log` — журнал
-  AI-моста; `GET /__info` — версия и текущий адрес бекенда; `GET /__features` — доступные источники и соцвход.
-
 ## Вход через соцсети
 
 В Windows-приложении работает вход через **Яндекс, ВКонтакте, Telegram и Google** — открывается официальная
@@ -225,19 +209,7 @@ npm run build:release    все 4 файла релиза в release\ (exe ×2 +
 Иконка: `build/icon.svg` → `npx electron build/make-icons.js` (icon.png, icon.ico, public/icon.png).
 
 `node_modules` распаковываются из asar (`asarUnpack`): адаптер и `claude.exe` запускаются отдельным процессом
-и не могут работать из архива. Загрузка в GitHub Release:
-
-```
-gh release create v1.1 --repo arigandores/anix-desktop --title "Anix Desktop 1.1" --notes-file notes.md ^
-  release\AnixDesktop-Setup-1.1.0.exe release\AnixDesktop-Portable-1.1.0.exe ^
-  release\AnixDesktop-1.1.0-win-x64.zip release\AnixDesktop-Browser-1.1.0.zip
-```
-
-## Отличия от мобильного приложения
-
-- **`X-Media-Session` отправляется пустым** — бекенд такие запросы принимает (проверено вплоть до `auth/checkLogin`).
-- **Сторонний плеер** — вместо Android-плееров запускается mpv или VLC с теми же Referer и Cookie.
-- **AI-помощник** — только в Anix Desktop.
+и не могут работать из архива.
 
 ## Лицензия
 

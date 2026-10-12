@@ -268,7 +268,7 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .fav-btn { width: 40px; height: 40px; border-radius: 20px; display: grid; place-items: center; background: var(--btn2); color: var(--btn2-text); }
 .fav-btn.on { color: #ff4d6d; }
 .rel-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; padding: 16px 24px 40px; align-items: start; }
-@media (max-width: 980px) { .rel-body { grid-template-columns: 1fr; } }
+@media (max-width: 980px) { .rel-body { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 640px) { .rel-hero .inner { flex-direction: column; align-items: center; text-align: center; } .rel-hero .poster { width: 170px; } .rel-actions { justify-content: center; } }
 .card { background: var(--bg2); border-radius: 16px; padding: 16px; box-shadow: var(--shadow); }
 :root[data-theme="dark"] .card { box-shadow: none; }
@@ -352,7 +352,10 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .empty-title { font-size: 17px; color: var(--text); font-family: 'Google Sans','Roboto',sans-serif; }
 .empty-err { font-size: 11px; color: var(--text3); margin-top: 6px; }
 .spinner-wrap { display: grid; place-items: center; padding: 28px; }
-.spinner { width: 36px; height: 36px; border-radius: 50%; border: 3.5px solid var(--progress-back); border-top-color: var(--carmine); animation: spin .8s linear infinite; }
+.spinner { width: 36px; height: 36px; border-radius: 50%; border: 3.5px solid var(--progress-back); border-top-color: var(--carmine); animation: spin 1.1s linear infinite; }
+.spinner.sm { width: 22px; height: 22px; border-width: 2.5px; flex: none; }
+/* Ожидание во время входа через соцсеть: строка «спиннер + пояснение» вместо пустой карточки */
+.wait-row { display: flex; align-items: center; gap: 14px; color: var(--text2); line-height: 1.45; }
 :root[data-theme="dark"] .spinner { border-top-color: var(--accent); }
 @keyframes spin { to { transform: rotate(360deg); } }
 .sentinel { min-height: 1px; }
@@ -366,8 +369,10 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .dialog.wide { width: min(720px, 100%); }
 .dialog-title { font-family: 'Google Sans','Roboto',sans-serif; font-size: 22px; margin-bottom: 14px; }
 .dialog-content { color: var(--text); }
-.dialog-content p { margin: 0 0 8px; color: var(--text2); }
-.dialog-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 20px; }
+.dialog-content p { margin: 0 0 8px; color: var(--text2); white-space: pre-line; }
+.dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 20px; }
+/* Длинная подпись кнопки переносится внутри карточки, а не выталкивает ряд за её край */
+.dialog-actions .btn { max-width: 100%; min-width: 0; height: auto; min-height: 40px; padding-top: 9px; padding-bottom: 9px; white-space: normal; text-align: center; line-height: 1.3; }
 .dialog.sheet { padding: 18px 0 10px; }
 .dialog.sheet .dialog-title { padding: 0 24px; font-size: 18px; }
 .sheet-list { display: flex; flex-direction: column; }
@@ -516,11 +521,13 @@ img.fade.loaded { opacity: 1; }
 .player-top, .player-controls { transition: opacity .3s var(--ease-std); }
 .desc-text { transition: max-height .35s var(--ease-std); }
 
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
-}
-/* Режим экономии ресурсов (ECONOMY_MODE): без анимаций */
+/* Режим экономии ресурсов (ECONOMY_MODE): без анимаций. Системную настройку «уменьшить анимацию»
+   намеренно не учитываем — анимациями управляет только этот переключатель в настройках приложения.
+   Бесконечные анимации с длительностью .01ms превращаются в мельтешение: индикаторы загрузки
+   крутятся с обычной скоростью, декоративные (мерцание скелетонов, точки «печатает») выключены. */
 html.economy *, html.economy *::before, html.economy *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+html.economy .spinner, html.economy .ai-spin { animation-duration: 1.1s !important; }
+html.economy .sk, html.economy .ai-typing span { animation: none !important; }
 
 /* ---------- Скелетоны (вместо лоадеров: та же раскладка, что у контента, без прыжков) ---------- */
 :root { --sk: rgba(0,0,0,.07); --sk-hi: rgba(0,0,0,.025); }

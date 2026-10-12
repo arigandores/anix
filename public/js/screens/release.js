@@ -295,7 +295,7 @@ function afterVote(rel) {
   const sp = h('input', { type: 'checkbox' });
   dialog({
     title: 'Оценка принята',
-    content: h('div', null, h('p', null, 'Поделись впечатлениями — что понравилось, а что разочаровало'), ta, h('label', { class: 'row', style: { marginTop: '10px' } }, sp, 'Содержит спойлер')),
+    content: h('div', null, h('p', null, 'Поделитесь впечатлениями — что понравилось, а что разочаровало'), ta, h('label', { class: 'row', style: { marginTop: '10px' } }, sp, 'Содержит спойлер')),
     actions: [{ label: 'Нет, спасибо' }, {
       label: 'Отправить', primary: true,
       onClick: async () => {
@@ -368,7 +368,7 @@ function videoBanners(rel) {
   if (!banners.length && !rel.can_video_appeal) return null;
   const card = h('div', { class: 'card' }, h('div', { class: 'card-title' }, h('span', { class: 'grow' }, 'Видео'),
     h('button', { class: 'section-more', onclick: () => navigate('release-videos', { release: rel }) }, 'Показать все', icon('ic_chevron_end', 'sm'))));
-  if (!banners.length) card.append(h('div', { class: 'muted' }, 'Ой, а тут пока ничего нет! Вы можете отправить нам заявку на добавление первого видео'));
+  if (!banners.length) card.append(h('div', { class: 'muted' }, 'Ой, а тут пока ничего нет!'));
   else card.append(h('div', { class: 'screens' }, banners.map((b) => h('div', { style: { position: 'relative', cursor: 'pointer', flex: 'none' }, onclick: () => navigate('release-videos', { release: rel, categoryId: Number(b.value), categoryName: b.name }) },
     h('img', { src: b.image, referrerpolicy: 'no-referrer' }), h('div', { style: { position: 'absolute', left: '10px', bottom: '8px', color: '#fff', fontWeight: 500, textShadow: '0 1px 4px #000' } }, b.name),
     b.is_new ? h('span', { class: 'badge', style: { position: 'absolute', top: '6px', left: '6px', background: 'var(--carmine)', color: '#fff' } }, 'NEW') : null))));

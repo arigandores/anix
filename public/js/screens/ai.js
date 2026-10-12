@@ -464,7 +464,7 @@ registerScreen('tab:ai', (_p, ctx) => {
     chat?.dispose?.(); chat = null;
     if (!auth.loggedIn) {
       root.replaceChildren(toolbar(), gate('ic_ai', 'Сначала войдите в Anixart',
-        'Помощник подбирает аниме по вашим спискам, истории просмотров и оценкам и может менять закладки — для этого нужен аккаунт приложения.',
+        'Помощник подбирает аниме по вашим спискам, истории просмотров и оценкам и может менять закладки — для этого нужен аккаунт Anixart.',
         [h('button', { class: 'btn btn-primary lg', onclick: () => navigate('auth') }, 'Войти в Anixart')]));
       return;
     }

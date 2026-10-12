@@ -293,7 +293,7 @@ export function commentItem(c, { kind = 'release', release, onReply, onChanged, 
     try {
       const r = await voteFn(c.id, v);
       if (r.code === 2) return toast('Вы превысили дневной лимит на отрицательные оценки');
-      if (r.code === 3) return toast('Кажется, Вы зарегистрированы совсем недавно. Побудьте с нами немного дольше, чтобы получить возможность ставить оценки.');
+      if (r.code === 3) return toast('Похоже, вы зарегистрировались совсем недавно — Anixart разрешает ставить оценки чуть позже.');
       if (r.code === 402) return toast('Вы не можете голосовать, поскольку ваш аккаунт заблокирован');
       const delta = { '0>2': 1, '0>1': -1, '2>2': -1, '1>1': 1, '1>2': 2, '2>1': -2 }[`${old}>${v}`] || 0;
       c.vote_count = (c.vote_count || 0) + delta;

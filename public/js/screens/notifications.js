@@ -73,7 +73,7 @@ function describe(n) {
     case 'relatedRelease': {
       const rel = n.release || {};
       out.image = rel.image; out.poster = true;
-      out.html = `В приложение была добавлена страница релиза ${bold(`«${rel.title_ru || ''}»`)}`;
+      out.html = `В Anixart добавлена страница релиза ${bold(`«${rel.title_ru || ''}»`)}`;
       out.onClick = () => rel.id && navigate('release', { id: rel.id });
       break;
     }

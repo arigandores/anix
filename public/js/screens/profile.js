@@ -61,7 +61,7 @@ async function profileView(id, { fromMain = false } = {}) {
         h('div', { class: 'row muted', style: { fontSize: '13px', marginTop: '4px', flexWrap: 'wrap' } },
           h('span', { title: 'Уровень репутации пользователя' }, icon('ic_stars', 'xs'), ` ${p.rating_score ?? 0}`),
           p.is_online ? h('span', { class: 'online' }, 'в сети') : p.last_activity_time ? h('span', null, `был(а) в сети ${relTime(p.last_activity_time)}`) : null,
-          h('span', null, `на проекте ${registered(p.register_date)}`)),
+          h('span', null, `в Anixart ${registered(p.register_date)}`)),
         (p.roles || []).length ? h('div', { class: 'chips', style: { marginTop: '8px' } }, p.roles.map((ro) => h('span', { class: 'badge', style: { background: ro.color ? `#${String(ro.color).replace('#', '')}33` : '' } }, ro.name))) : null,
         !p.is_social_hidden ? h('div', { class: 'row', style: { marginTop: '8px' } },
           p.vk_page ? iconButton('ic_vk', 'ВКонтакте', () => window.open(`https://vk.com/${p.vk_page}`, '_blank'), 'sm') : null,

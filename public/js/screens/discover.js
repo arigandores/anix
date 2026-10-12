@@ -157,7 +157,7 @@ registerScreen('schedule', async () => {
   try { hint = localStorage.getItem('anixart.pref.SCHEDULE_EPISODE') !== 'false'; } catch { /* ignore */ }
   if (hint) {
     const card = h('div', { class: 'card', style: { margin: '6px 20px 10px', display: 'flex', gap: '10px', alignItems: 'flex-start' } },
-      icon('ic_info_outline'), h('div', { class: 'grow muted' }, 'В расписании указны дни недели, в которые выходят новые серии представленных релизов в Японии и Китае. Уже переведенные серии в озвучке и субтитрах появляются позже.'),
+      icon('ic_info_outline'), h('div', { class: 'grow muted' }, 'В расписании указаны дни недели, в которые выходят новые серии представленных релизов в Японии и Китае. Уже переведенные серии в озвучке и субтитрах появляются позже.'),
       h('button', { class: 'icon-btn sm', onclick: () => { card.remove(); try { localStorage.setItem('anixart.pref.SCHEDULE_EPISODE', 'false'); } catch { /* ignore */ } } }, icon('ic_close')));
     root.append(card);
   }

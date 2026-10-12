@@ -1,6 +1,6 @@
 'use strict';
 // Вход через соцсети:
-//   Google   — Firebase: id_token Google → Firebase signInWithIdp → Firebase idToken (googleIdToken)
+//   Google   — в системном браузере через Firebase JS SDK (startBrowserLogin ниже), Firebase idToken (googleIdToken)
 //   Telegram — PKCE, oauth.telegram.org/auth → code → /token → id_token (telegramIdToken)
 //   VK       — VK ID: PKCE, id.vk.ru/authorize → code → /oauth2/auth → access_token
 //   Yandex   — oauth.yandex.ru/authorize response_type=token → access_token из фрагмента
@@ -42,14 +42,10 @@ function pkce() {
   return { verifier, challenge };
 }
 
-// Параметры окна авторизации для каждого провайдера
+// Параметры окна авторизации (Telegram, VK, Яндекс; Google — в системном браузере)
 function authRequest(provider) {
   if (!(config.features().social || {})[provider]) throw new Error('Вход через этот сервис недоступен в этой сборке');
   const state = b64url(crypto.randomBytes(16));
-  if (provider === 'google') {
-    // url и sessionId заполняются в googleAuthUri(); redirect — Firebase auth handler
-    return { kind: 'google-pre', continueUri: GOOGLE.authHandler, redirectHost: hostOf(GOOGLE.authHandler) };
-  }
   if (provider === 'telegram') {
     const { verifier, challenge } = pkce();
     const url = `https://oauth.telegram.org/auth?client_id=${TELEGRAM.clientId}&response_type=code`
@@ -107,35 +103,46 @@ async function exchange(provider, params) {
     if (!params.access_token) throw new Error('Yandex: нет access_token');
     return { field: 'yandexAccessToken', token: params.access_token };
   }
-  if (provider === 'google') {
-    // id_token Google → Firebase signInWithIdp → Firebase idToken (googleIdToken для auth/google).
-    // sessionId из createAuthUri обязателен: по нему Firebase сверяет nonce в id_token.
-    const body = { requestUri: params.requestUri || GOOGLE.authHandler, returnIdpCredential: true, returnSecureToken: true };
-    if (params.sessionId) body.sessionId = params.sessionId;
-    else body.postBody = `id_token=${params.id_token}&providerId=google.com`;
-    const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${GOOGLE.apiKey}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body), signal: AbortSignal.timeout(20000),
-    });
-    const text = await r.text(); let json; try { json = JSON.parse(text); } catch { json = {}; }
-    if (!json.idToken) {
-      const msg = (json.error && json.error.message) || text.slice(0, 150);
-      throw new Error(`Google: Firebase не вернул idToken (HTTP ${r.status}): ${msg}`);
-    }
-    return { field: 'googleIdToken', token: json.idToken, email: json.email || '' };
-  }
   throw new Error('unknown provider');
 }
 
-// Google: createAuthUri → authUri (для окна) и sessionId (для проверки nonce при обмене)
-async function googleAuthUri() {
-  const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:createAuthUri?key=${GOOGLE.apiKey}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ providerId: 'google.com', continueUri: GOOGLE.authHandler }),
-    signal: AbortSignal.timeout(20000),
-  });
-  const j = await r.json();
-  return { url: j.authUri, sessionId: j.sessionId };
+// Google через системный браузер: во встроенных окнах Google отказывает («This browser or app may not be secure»).
+// Приложение открывает в браузере /google-auth.html?n=<ключ>; страница входит через Firebase JS SDK
+// (signInWithPopup) и отдаёт Firebase idToken сюда, приложение ждёт его в waitBrowserLogin.
+const browserLogins = new Map(); // ключ → { created, result, waiters }
+const BROWSER_LOGIN_TTL = 10 * 60 * 1000;
+
+function startBrowserLogin() {
+  if (!config.features().social.google) throw new Error('Вход через Google недоступен в этой сборке');
+  const now = Date.now();
+  for (const [k, v] of browserLogins) if (now - v.created > BROWSER_LOGIN_TTL) browserLogins.delete(k);
+  const n = b64url(crypto.randomBytes(18));
+  browserLogins.set(n, { created: now, result: null, waiters: [] });
+  return n;
 }
 
-module.exports = { authRequest, exchange, googleAuthUri, GOOGLE };
+function finishBrowserLogin(n, { idToken, email }) {
+  const s = browserLogins.get(n);
+  if (!s || !idToken) return false;
+  s.result = { field: 'googleIdToken', token: idToken, email: email || '' };
+  s.waiters.splice(0).forEach((fn) => fn(s.result));
+  return true;
+}
+
+// Ждёт результат до ms; null — ещё не вошли (фронтенд повторяет запрос)
+function waitBrowserLogin(n, ms = 25000) {
+  const s = browserLogins.get(n);
+  if (!s) return Promise.reject(new Error('Сеанс входа устарел, начните заново'));
+  if (s.result) { browserLogins.delete(n); return Promise.resolve(s.result); }
+  return new Promise((resolve) => {
+    const done = (r) => { clearTimeout(timer); browserLogins.delete(n); resolve(r); };
+    const timer = setTimeout(() => { s.waiters = s.waiters.filter((w) => w !== done); resolve(null); }, ms);
+    s.waiters.push(done);
+  });
+}
+
+function googleWebConfig() {
+  return { apiKey: GOOGLE.apiKey, authDomain: hostOf(GOOGLE.authHandler) };
+}
+
+module.exports = { authRequest, exchange, startBrowserLogin, finishBrowserLogin, waitBrowserLogin, googleWebConfig, GOOGLE };

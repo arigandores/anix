@@ -127,27 +127,32 @@ ipcMain.handle('kodik-ad', (_e, url) => new Promise((resolve) => {
 
 // Вход через соцсети: открываем официальную страницу провайдера в модальном окне и ловим redirect_uri
 // (обычный способ для встроенных браузеров). Возвращаем перехваченные параметры фронтенду.
-// Google блокирует вход во встроенных браузерах («This browser or app may not be secure»): UA с «Electron»
-// или Chrome-UA без бренда «Google Chrome» в client hints. Поэтому окну входа — UA Firefox, а client hints
-// (заголовки Sec-CH-UA и navigator.userAgentData — auth-preload.js), которых у Firefox нет, убраны.
-const AUTH_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0';
+// Google во встроенных окнах вход запрещает — он идёт через системный браузер (open-external, social.js).
+// UA без «Electron»: с ним провайдеры показывают упрощённые или ошибочные страницы.
+const AUTH_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+
+ipcMain.handle('open-external', (_e, url) => {
+  if (!/^https?:\/\//.test(String(url))) return false;
+  shell.openExternal(url);
+  return true;
+});
+
+let cancelAuth = null; // закрыть открытое окно входа («Отмена» в приложении)
+ipcMain.handle('social-auth-cancel', () => { if (cancelAuth) cancelAuth(); return true; });
 
 ipcMain.handle('social-auth', (_e, req) => new Promise((resolve) => {
   const authSession = session.fromPartition(`auth-${Date.now()}`); // чистые куки на каждый вход
   authSession.setUserAgent(AUTH_UA);
-  authSession.webRequest.onBeforeSendHeaders((d, cb) => {
-    for (const k of Object.keys(d.requestHeaders)) if (/^sec-ch-ua/i.test(k)) delete d.requestHeaders[k];
-    cb({ requestHeaders: d.requestHeaders });
-  });
   const w = new BrowserWindow({
     parent: win, modal: true, width: 520, height: 680, title: 'Вход', backgroundColor: '#fff', autoHideMenuBar: true,
-    // contextIsolation: false — auth-preload.js должен править navigator в мире страницы
-    webPreferences: { contextIsolation: false, sandbox: true, partition: authSession.partition, nodeIntegration: false,
-      preload: path.join(__dirname, 'auth-preload.js') },
+    webPreferences: { contextIsolation: true, sandbox: true, partition: authSession.partition, nodeIntegration: false },
   });
   w.webContents.setUserAgent(AUTH_UA);
+  // Страницы входа (VK ID) вешают beforeunload — Electron тогда молча отменяет закрытие окна. Закрываем всегда.
+  w.webContents.on('will-prevent-unload', (e) => e.preventDefault());
   let done = false;
-  const finish = (value) => { if (done) return; done = true; if (!w.isDestroyed()) w.close(); resolve(value); };
+  const finish = (value) => { if (done) return; done = true; cancelAuth = null; if (!w.isDestroyed()) w.destroy(); resolve(value); };
+  cancelAuth = () => finish({ ok: false, error: 'canceled' });
 
   const check = (raw) => {
     if (!raw) return false;
@@ -164,18 +169,22 @@ ipcMain.handle('social-auth', (_e, req) => new Promise((resolve) => {
       const at = get('access_token');
       if (at) { finish({ ok: true, params: { access_token: at } }); return true; }
     }
-    if (req.provider === 'google') {
-      const idt = get('id_token');
-      if (idt) { finish({ ok: true, params: { id_token: idt, requestUri: raw } }); return true; }
-    }
     const code = get('code');
     if (code) { finish({ ok: true, params: { code, device_id: get('device_id') || '', state: get('state') || '' } }); return true; }
     if (get('error')) { finish({ ok: false, error: get('error_description') || get('error') }); return true; }
     return false;
   };
 
+  // Ссылки на приложения (tg://resolve… — «Open in Telegram») окно Electron само не открывает — отдаём системе;
+  // страница провайдера тем временем ждёт подтверждения и потом сама уходит на redirect_uri
+  const openApp = (u) => {
+    if (!/^tg:/i.test(String(u))) return false;
+    shell.openExternal(u).catch(() => {});
+    return true;
+  };
+  w.webContents.setWindowOpenHandler(({ url }) => { if (!openApp(url) && /^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
   for (const ev of ['will-redirect', 'will-navigate']) {
-    w.webContents.on(ev, (e, u) => { if (check(u)) e.preventDefault(); });
+    w.webContents.on(ev, (e, u) => { if (openApp(u) || check(u)) e.preventDefault(); });
   }
   // Редирект на кастомную схему (vk<clientId>://) ловят will-redirect/will-navigate выше; фильтр webRequest
   // такую схему не принимает («Wrong scheme type»), поэтому здесь — только запасной перехват blank.html

@@ -251,14 +251,24 @@ async function handleExternal(req, res) {
 async function handleSocial(req, res, url) {
   const provider = url.searchParams.get('provider');
   try {
+    // Google — в системном браузере (см. social.startBrowserLogin)
+    if (url.pathname === '/social/google/start') {
+      const n = social.startBrowserLogin();
+      // localhost, а не 127.0.0.1: в разрешённых доменах Firebase-проекта есть только localhost
+      const port = String(req.headers.host || '').split(':').pop();
+      return sendJson(res, 200, { n, url: `http://localhost:${port}/google-auth.html?n=${n}` });
+    }
+    if (url.pathname === '/social/google/config') return sendJson(res, 200, social.googleWebConfig());
+    if (url.pathname === '/social/google/result' && req.method === 'POST') {
+      const { n, idToken, email } = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+      return sendJson(res, 200, { ok: social.finishBrowserLogin(n, { idToken, email }) });
+    }
+    if (url.pathname === '/social/google/wait') {
+      const r = await social.waitBrowserLogin(url.searchParams.get('n'));
+      return sendJson(res, 200, r || { pending: true });
+    }
     if (url.pathname === '/social/request') {
-      const info = social.authRequest(provider);
-      if (info.kind === 'google-pre') {
-        const g = await social.googleAuthUri();
-        info.url = g.url;
-        info.sessionId = g.sessionId;
-      }
-      return sendJson(res, 200, info);
+      return sendJson(res, 200, social.authRequest(provider));
     }
     if (url.pathname === '/social/exchange' && req.method === 'POST') {
       const params = JSON.parse((await readBody(req)).toString('utf8') || '{}');

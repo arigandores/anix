@@ -1,5 +1,5 @@
 'use strict';
-// Открывается ли окно соцвхода: electron test/social-open.js <google|vk|yandex|telegram>
+// Открывается ли окно соцвхода: electron test/social-open.js <vk|yandex|telegram> (Google — в системном браузере)
 const { app, BrowserWindow } = require('electron');
 const os = require('os');
 const path = require('path');

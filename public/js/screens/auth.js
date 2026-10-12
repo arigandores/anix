@@ -1,5 +1,15 @@
-// Вход, регистрация, подтверждение, восстановление (form-urlencoded) + соцвход
-import { h, icon, toast, dialog, spinner } from '../ui.js';
+// Вход, регистрация, подтверждение почты, восстановление пароля (form-urlencoded) + соцсети.
+// Эндпоинты, поля и коды ответов — как в мобильном клиенте:
+//   auth/signIn        login, password                         → 2 профиль не найден, 3 неверный пароль
+//   auth/signUp        login, email, password                  → hash; 7 код уже отправлен (тоже на ввод кода)
+//   auth/<соцсеть>     <токен>                                 → вход; 2 запрос отклонён, 3 не зарегистрирован
+//   auth/<соцсеть>     login, email, <токен>                   → hash (Google: 8/9), VK/Telegram/Яндекс: 8 код уже отправлен
+//   auth/verify        login, email, password | <токен>, hash, code
+//   auth/resend        login, email, password | <токен>, hash  → timestampExpires; 6 рано запрашивать новый
+//   auth/restore       data                                    → hash; 3 код уже отправлен
+//   auth/restore/verify  data, password (новый), hash, code
+//   auth/restore/resend  data, password, hash                  → timestampExpires; 4 рано запрашивать новый
+import { h, icon, toast, dialog } from '../ui.js';
 import { A, api, auth } from '../api.js';
 import { t } from '../store.js';
 import { registerScreen, navigate, replace, switchTab } from '../router.js';
@@ -12,62 +22,33 @@ const SOCIAL = [
   ['google', 'Google', 'ic_google'],
 ];
 
-// Полный flow соцвхода: окно Electron → обмен токена на сервере → auth/<provider>.
-// NOT_REGISTERED (код 3) → экран «Почти готово»: никнейм + email, затем тот же endpoint с регистрацией.
-async function socialLogin(provider, label) {
-  if (!(window.anixartNative && window.anixartNative.socialAuth)) {
-    toast('Вход через соцсети доступен только в Anix Desktop для Windows');
-    return;
-  }
-  const loading = dialog({ title: `Вход через ${label}`, content: spinner() });
-  try {
-    const req = await (await fetch(`/social/request?provider=${provider}`)).json();
-    if (req.error) throw new Error(req.error);
-    req.provider = provider;
-    const res = await window.anixartNative.socialAuth(req);
-    if (!res || !res.ok) { loading.close(); if (res && res.error && res.error !== 'canceled') toast(res.error); return; }
-    const exchangeParams = { ...res.params };
-    if (req.sessionId) exchangeParams.sessionId = req.sessionId; // Google: nonce проверяется по sessionId
-    const ex = await (await fetch(`/social/exchange?provider=${provider}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(exchangeParams),
-    })).json();
-    loading.close();
-    if (ex.error) { toast(ex.error); return; }
-    const r = await api.form(`auth/${provider}`, { [ex.field]: ex.token }, {}, { withToken: false });
-    if (r.code === 0 && r.profileToken) return finishLogin(r);
-    if (r.code === 3) { socialRegister(provider, label, ex); return; }
-    toast(socialError(r.code));
-  } catch (e) { loading.close(); toast(String(e.message || e)); }
-}
+const TEXT = {
+  loginEmpty: 'Никнейм не указан',
+  loginShort: 'Никнейм слишком короткий',
+  loginLong: 'Никнейм слишком длинный',
+  loginInvalid: 'Недопустимый никнейм',
+  loginTaken: 'Никнейм уже занят',
+  emailEmpty: 'Email не указан',
+  emailInvalid: 'Неверный Email',
+  emailTaken: 'Email уже занят',
+  emailDisallowed: 'Регистрация с этим почтовым сервисом невозможна',
+  passwordShort: 'Пароль слишком короткий',
+  passwordLong: 'Пароль слишком длинный',
+  passwordInvalid: 'Недопустимый пароль',
+  passwordMismatch: 'Пароли не совпадают',
+  codeAlreadySent: 'Код уже был отправлен — проверьте почту.',
+  codeCannotSend: 'Не удалось отправить код. Повторите попытку позднее.',
+  codeInvalid: 'Неверный код',
+  codeExpired: 'Срок действия кода истёк — запросите новый',
+  hashInvalid: 'Сеанс подтверждения устарел — начните заново',
+  codeStillActual: 'Новый код можно будет запросить чуть позже',
+  codeResent: 'Новый код отправлен',
+  profileNotFound: 'Профиль с таким никнеймом или Email не найден',
+};
 
-function socialError(code) {
-  return ({ 2: 'Что-то пошло не так, попробуйте позже', 6: 'Никнейм уже занят', 7: 'Email уже занят', 4: 'Неверный никнейм', 5: 'Неверный Email' })[code] || t('error_load');
+function tooManyRegistrations() {
+  dialog({ title: 'Ошибка', content: h('p', { style: { whiteSpace: 'pre-line' } }, t('error_too_many_registrations')), actions: [{ label: 'OK', primary: true }] });
 }
-
-function socialRegister(provider, label, ex) {
-  const login = field('Никнейм');
-  const email = field('Email', 'email');
-  if (ex.email) email.input.value = ex.email;
-  const btn = h('button', { class: 'btn btn-primary lg block' }, 'Создать профиль');
-  btn.onclick = async () => {
-    login.setError(''); email.setError('');
-    const l = login.input.value.trim(); const e = email.input.value.trim();
-    if (l.length < 3) return login.setError('Никнейм слишком короткий');
-    if (!e) return email.setError('Email не указан');
-    btn.disabled = true;
-    try {
-      const r = await api.form(`auth/${provider}`, { login: l, email: e, [ex.field]: ex.token }, {}, { withToken: false });
-      if (r.code === 0 && r.profileToken) return finishLogin(r);
-      if ((r.code === 8 || r.code === 9) && r.hash) return replace('verify', { login: l, email: e, password: '', hash: r.hash, expires: r.codeTimestampExpires, socialProvider: provider, socialField: ex.field, socialToken: ex.token });
-      if (r.code === 6) { login.setError('Никнейм уже занят'); return; }
-      if (r.code === 7) { email.setError('Email уже занят'); return; }
-      toast(socialError(r.code));
-    } finally { btn.disabled = false; }
-  };
-  replace('social-register', { label, login, email, btn });
-}
-
-registerScreen('social-register', ({ label, login, email, btn }) => wrap('Почти готово', `Осталось придумать никнейм — вход через ${label}`, login, email, btn));
 
 function field(label, type = 'text', attrs = {}) {
   const input = h('input', { class: 'input', type, ...attrs });
@@ -75,6 +56,51 @@ function field(label, type = 'text', attrs = {}) {
   const wrap = h('div', { class: 'field' }, h('label', null, label), input, err);
   wrap.input = input; wrap.setError = (m) => { err.textContent = m || ''; };
   return wrap;
+}
+
+// Никнейм с проверкой auth/checkLogin по мере ввода (3–20 символов) и подсказками свободных вариантов
+function loginField() {
+  const login = field('Никнейм');
+  const sugg = h('div', { class: 'chips', style: { marginTop: '-6px', marginBottom: '10px' } });
+  login.showSuggestions = (list) => sugg.replaceChildren(...(list || []).map((s) => h('button', { class: 'chip', onclick: () => { login.input.value = s; login.setError(''); sugg.replaceChildren(); } }, s)));
+  let timer;
+  login.input.addEventListener('input', () => {
+    clearTimeout(timer);
+    sugg.replaceChildren();
+    timer = setTimeout(async () => {
+      const v = login.input.value.trim();
+      if (v.length < 3 || v.length > 20) return;
+      try {
+        const r = await api.form('auth/checkLogin', { login: v }, {}, { withToken: false });
+        if (r.code !== 0) return;
+        if (r.available) { login.setError(''); sugg.replaceChildren(h('span', { style: { color: 'var(--green)', fontSize: '13px' } }, 'Никнейм свободен')); }
+        else { login.setError(TEXT.loginTaken); login.showSuggestions(r.suggested_logins); }
+      } catch { /* проверка необязательна */ }
+    }, 500);
+  });
+  login.suggestions = sugg;
+  return login;
+}
+
+// Проверки формы до запроса — как в мобильном клиенте
+function checkLogin(login) {
+  const v = login.input.value.trim();
+  if (!v) { login.setError(TEXT.loginEmpty); return null; }
+  if (v.length < 3) { login.setError(TEXT.loginShort); return null; }
+  if (v.length > 20) { login.setError(TEXT.loginLong); return null; }
+  return v;
+}
+function checkEmail(email) {
+  const v = email.input.value.trim().toLowerCase();
+  if (!v) { email.setError(TEXT.emailEmpty); return null; }
+  return v;
+}
+function checkPassword(pass, pass2) {
+  const p = pass.input.value; const p2 = pass2.input.value;
+  let ok = true;
+  if (p.length < 6) { pass.setError(TEXT.passwordShort); ok = false; } else if (p.length > 32) { pass.setError(TEXT.passwordLong); ok = false; }
+  if (p2.length < 6) { pass2.setError(TEXT.passwordShort); ok = false; } else if (p2.length > 32) { pass2.setError(TEXT.passwordLong); ok = false; } else if (ok && p !== p2) { pass2.setError(TEXT.passwordMismatch); ok = false; }
+  return ok ? p : null;
 }
 
 function finishLogin(r) {
@@ -88,6 +114,111 @@ function wrap(title, sub, ...children) {
     h('div', { class: 'logo-big' }, icon('logo', 'big')), h('h1', null, title), sub ? h('div', { class: 'sub' }, sub) : null, ...children));
 }
 
+// ---------- Соцсети ----------
+
+// Строка ожидания для диалога входа: маленький спиннер и пояснение, что делать
+const waitRow = (text) => h('div', { class: 'wait-row' }, h('div', { class: 'spinner sm' }), h('span', null, text));
+
+// Google: во встроенных окнах Google отказывает во входе, поэтому — системный браузер. Сервер выдаёт
+// одноразовый ключ и страницу /google-auth.html; ждём, пока она вернёт Firebase idToken. null — отмена.
+async function googleBrowserLogin(label) {
+  const s = await (await fetch('/social/google/start')).json();
+  if (s.error) throw new Error(s.error);
+  let canceled = false;
+  const open = () => (window.anixartNative?.openExternal ? window.anixartNative.openExternal(s.url) : window.open(s.url, '_blank'));
+  const wait = dialog({
+    title: `Вход через ${label}`,
+    content: waitRow('Продолжите вход в открывшемся браузере — приложение подхватит его само.'),
+    actions: [{ label: 'Открыть снова', onClick: () => { open(); return true; } }, { label: 'Отмена' }],
+    onClose: () => { canceled = true; },
+  });
+  open();
+  while (!canceled) {
+    const r = await (await fetch(`/social/google/wait?n=${s.n}`)).json();
+    if (r.error) { wait.close(); throw new Error(r.error); }
+    if (!r.pending) { wait.close(); window.focus(); return r; }
+  }
+  return null;
+}
+
+// Токен соцсети: окно Electron (Google — системный браузер) → обмен на сервере → { field, token, email? }
+async function socialToken(provider, label) {
+  if (provider === 'google') return googleBrowserLogin(label);
+  const loading = dialog({
+    title: `Вход через ${label}`,
+    content: waitRow(`Завершите вход в окне ${label}.`),
+    actions: [{ label: 'Отмена', onClick: () => { window.anixartNative.cancelSocialAuth?.(); } }],
+  });
+  try {
+    const req = await (await fetch(`/social/request?provider=${provider}`)).json();
+    if (req.error) throw new Error(req.error);
+    req.provider = provider;
+    const res = await window.anixartNative.socialAuth(req);
+    if (!res || !res.ok) { if (res && res.error && res.error !== 'canceled') toast(res.error); return null; }
+    const ex = await (await fetch(`/social/exchange?provider=${provider}`, {
+      // verifier (PKCE) остаётся у фронтенда с момента /social/request — серверу он нужен для обмена кода
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...res.params, verifier: req.verifier }),
+    })).json();
+    if (ex.error) { toast(ex.error); return null; }
+    return ex;
+  } finally { loading.close(); }
+}
+
+async function socialLogin(provider, label) {
+  if (provider !== 'google' && !(window.anixartNative && window.anixartNative.socialAuth)) {
+    toast('Вход через соцсети доступен только в Anix Desktop для Windows');
+    return;
+  }
+  try {
+    const ex = await socialToken(provider, label);
+    if (!ex) return;
+    const r = await api.form(`auth/${provider}`, { [ex.field]: ex.token }, {}, { withToken: false });
+    if (r.code === 0 && r.profile && r.profileToken) return finishLogin(r);
+    // 3 — аккаунта ещё нет: регистрация. Почту подставляем: Яндекс отдаёт её в ответе, Google — Firebase
+    if (r.code === 3) return navigate('social-register', { provider, label, field: ex.field, token: ex.token, email: provider === 'yandex' ? (r.email || '') : (ex.email || '') });
+    if (r.code === 2) return toast(`${label} не подтвердил вход. Попробуйте ещё раз.`);
+    toast(`Не удалось войти через ${label} (код ${r.code ?? '—'})`);
+  } catch (e) { toast(String(e.message || e)); }
+}
+
+// Регистрация через соцсеть: никнейм + email → auth/<соцсеть> → код на почту → auth/verify с токеном.
+// Коды у Google свои: 8/9 — код отправлен (9 — уже был), 10 почтовый сервис запрещён, 11 слишком много регистраций;
+// у VK, Telegram и Яндекса: 8 — код уже был отправлен, 9 почтовый сервис запрещён, 10 слишком много регистраций.
+registerScreen('social-register', ({ provider, label, field: tokenField, token, email: emailValue }) => {
+  const google = provider === 'google';
+  const login = loginField();
+  const email = field('Email', 'email');
+  if (emailValue) email.input.value = emailValue;
+  const btn = h('button', { class: 'btn btn-primary lg block' }, 'Создать профиль');
+  btn.onclick = async () => {
+    login.setError(''); email.setError('');
+    const l = checkLogin(login); const e = checkEmail(email);
+    if (!l || !e) return;
+    btn.disabled = true;
+    try {
+      const r = await api.form(`auth/${provider}`, { login: l, email: e, [tokenField]: token }, {}, { withToken: false });
+      if (r.code === 0 && r.profile && r.profileToken) return finishLogin(r);
+      const sent = google ? [8, 9] : [0, 8];
+      const already = google ? 9 : 8;
+      if (sent.includes(r.code)) {
+        if (r.code === already) toast(TEXT.codeAlreadySent);
+        return replace('verify', { login: l, email: e, social: { field: tokenField, token }, hash: r.hash, expires: r.codeTimestampExpires });
+      }
+      if (r.code === 2) return toast(`${label} не подтвердил вход. Начните заново.`);
+      if (r.code === 4) return login.setError(TEXT.loginInvalid);
+      if (r.code === 5) return email.setError(TEXT.emailInvalid);
+      if (r.code === 6) { login.setError(TEXT.loginTaken); return login.showSuggestions(r.suggested_logins); }
+      if (r.code === 7) return email.setError(TEXT.emailTaken);
+      if (r.code === (google ? 10 : 9)) return email.setError(TEXT.emailDisallowed);
+      if (r.code === (google ? 11 : 10)) return tooManyRegistrations();
+      toast(`Не удалось создать профиль (код ${r.code ?? '—'})`);
+    } catch (err) { toast(String(err.message || err)); } finally { btn.disabled = false; }
+  };
+  return wrap('Почти готово', `Осталось придумать никнейм — вход через ${label}`, login, login.suggestions, email, btn);
+});
+
+// ---------- Вход ----------
+
 registerScreen('auth', () => {
   const login = field('Почта или никнейм', 'text', { autocomplete: 'username' });
   const pass = field('Пароль', 'password', { autocomplete: 'current-password' });
@@ -97,15 +228,13 @@ registerScreen('auth', () => {
     const l = login.input.value.trim(); const p = pass.input.value;
     if (!l) return login.setError('Никнейм или Email не указан');
     if (!p) return pass.setError('Пароль не указан');
-    if (p.length > 32) return pass.setError('Пароль слишком длинный');
-    if (p.length < 6) return pass.setError('Пароль слишком короткий');
     btn.disabled = true;
     try {
       const r = await A.signIn(l, p);
       if (r.code === 0 && r.profile && r.profileToken) return finishLogin(r);
-      if (r.code === 2) login.setError('Пользователь не найден');
+      if (r.code === 2) login.setError(TEXT.profileNotFound);
       else if (r.code === 3) pass.setError('Неверный пароль');
-      else toast(t('error_load'));
+      else toast(`Не удалось войти (код ${r.code ?? '—'})`);
     } catch (e) { toast(String(e.message || e)); } finally { btn.disabled = false; }
   }
   btn.onclick = submit;
@@ -117,65 +246,55 @@ registerScreen('auth', () => {
   }, h('img', { src: `/icons/${ic}.svg`, style: { width: '24px', height: '24px' }, alt: label2 })));
   const socialTitle = h('div', { class: 'muted', style: { textAlign: 'center', marginTop: '14px', fontSize: '13px' } }, 'Войти с помощью');
   const socialRow = h('div', { class: 'row', style: { justifyContent: 'center', gap: '12px', margin: '18px 0 4px' } }, socialButtons);
-  const socialNote = inApp ? null : h('div', { class: 'muted3', style: { fontSize: '12px', textAlign: 'center', marginTop: '6px' } }, 'Вход через соцсети доступен в Anix Desktop для Windows');
-  // Без ключей провайдера (config.local.json) его кнопка скрыта; без всех — весь блок
+  const socialNote = inApp ? null : h('div', { class: 'muted3', style: { fontSize: '12px', textAlign: 'center', marginTop: '6px' } }, 'Яндекс, ВКонтакте и Telegram — в Anix Desktop для Windows');
+  // Без ключей провайдера (config.local.json) его кнопка скрыта; без всех — весь блок.
+  // В браузере работает только Google (через системный браузер), остальным нужно окно Electron.
   fetch('/__features').then((r) => r.json()).then((f) => {
-    SOCIAL.forEach(([provider], i) => { if (!f.social[provider]) socialButtons[i].remove(); });
+    SOCIAL.forEach(([provider], i) => { if (!f.social[provider] || (!inApp && provider !== 'google')) socialButtons[i].remove(); });
     if (!socialRow.children.length) [socialTitle, socialRow, socialNote].forEach((el) => el && el.remove());
   }).catch(() => {});
-  return wrap('С возвращением', 'Войдите, чтобы продолжить', login, pass, btn,
+  return wrap('С возвращением', 'Войдите в аккаунт Anixart', login, pass, btn,
     h('div', { class: 'row', style: { justifyContent: 'space-between', marginTop: '16px' } },
       h('button', { class: 'btn btn-text', onclick: () => navigate('restore') }, 'Забыли пароль? Восстановить'),
       h('button', { class: 'btn btn-text', onclick: () => navigate('signup') }, 'Регистрация')),
     socialTitle, socialRow, socialNote);
 });
 
+// ---------- Регистрация ----------
+
 registerScreen('signup', () => {
-  const login = field('Никнейм'); const email = field('Email', 'email'); const pass = field('Пароль', 'password'); const pass2 = field('Повторите пароль', 'password');
+  const login = loginField(); const email = field('Email', 'email'); const pass = field('Пароль', 'password'); const pass2 = field('Повторите пароль', 'password');
   const terms = h('input', { type: 'checkbox' });
-  const sugg = h('div', { class: 'chips', style: { marginTop: '-6px', marginBottom: '10px' } });
-  let timer;
-  login.input.addEventListener('input', () => {
-    clearTimeout(timer);
-    timer = setTimeout(async () => {
-      const v = login.input.value.trim(); if (v.length < 3) return;
-      try {
-        const { api } = await import('../api.js');
-        const r = await api.form('auth/checkLogin', { login: v }, {}, { withToken: false });
-        if (r.code === 0 && r.available !== false) { login.setError(''); sugg.replaceChildren(h('span', { style: { color: 'var(--green)', fontSize: '13px' } }, 'Никнейм свободен')); }
-        else { login.setError('Никнейм уже занят'); showSugg(r.suggested_logins); }
-      } catch { /* ignore */ }
-    }, 500);
-  });
-  function showSugg(list) { sugg.replaceChildren(...(list || []).map((s) => h('button', { class: 'chip', onclick: () => { login.input.value = s; login.setError(''); } }, s))); }
   const btn = h('button', { class: 'btn btn-primary lg block' }, 'Создать профиль');
   btn.onclick = async () => {
     [login, email, pass, pass2].forEach((f) => f.setError(''));
-    const l = login.input.value.trim(); const e = email.input.value.trim(); const p = pass.input.value;
-    if (!l) return login.setError('Никнейм не указан');
-    if (l.length < 3) return login.setError('Никнейм слишком короткий');
-    if (l.length > 20) return login.setError('Никнейм слишком длинный');
-    if (!e) return email.setError('Email не указан');
-    if (p.length < 6 || p.length > 32) return pass.setError('Пароль слишком короткий');
-    if (p !== pass2.input.value) return pass2.setError('Пароль не совпадает');
+    const l = checkLogin(login); const e = checkEmail(email); const p = checkPassword(pass, pass2);
+    if (!l || !e || !p) return;
     if (!terms.checked) return toast('Чтобы создать профиль, примите пользовательское соглашение.');
     btn.disabled = true;
     try {
       const r = await A.signUp(l, e, p);
-      const go = () => navigate('verify', { login: l, email: e, password: p, hash: r.hash, expires: r.codeTimestampExpires });
-      if (r.code === 0) return go();
-      if (r.code === 7) { dialog({ title: 'Предупреждение', content: h('p', null, 'Код уже отправлен.'), actions: [{ label: 'OK', primary: true, onClick: go }] }); return; }
-      const map = { 2: [login, 'Никнейм слишком короткий'], 3: [email, 'Неверный Email'], 4: [pass, 'Пароль слишком короткий'], 5: [login, 'Никнейм уже занят'], 6: [email, 'Email уже занят'], 9: [email, 'Регистрация через данный Email невозможна'] };
-      if (map[r.code]) { map[r.code][0].setError(map[r.code][1]); if (r.code === 5) showSugg(r.suggested_logins); return; }
-      if (r.code === 8) dialog({ title: 'Ошибка', content: h('p', null, 'Код не может быть отправлен. Повторите попытку позднее.'), actions: [{ label: 'OK', primary: true }] });
-      else if (r.code === 10) dialog({ title: 'Ошибка', content: h('p', { style: { whiteSpace: 'pre-line' } }, t('error_too_many_registrations')), actions: [{ label: 'OK', primary: true }] });
-      else toast(t('error_load'));
+      if (r.code === 0 || r.code === 7) {
+        if (r.code === 7) toast(TEXT.codeAlreadySent);
+        return navigate('verify', { login: l, email: e, password: p, hash: r.hash, expires: r.codeTimestampExpires });
+      }
+      if (r.code === 2) return login.setError(TEXT.loginInvalid);
+      if (r.code === 3) return email.setError(TEXT.emailInvalid);
+      if (r.code === 4) return pass.setError(TEXT.passwordInvalid);
+      if (r.code === 5) { login.setError(TEXT.loginTaken); return login.showSuggestions(r.suggested_logins); }
+      if (r.code === 6) return email.setError(TEXT.emailTaken);
+      if (r.code === 8) return dialog({ title: 'Ошибка', content: h('p', null, TEXT.codeCannotSend), actions: [{ label: 'OK', primary: true }] });
+      if (r.code === 9) return email.setError(TEXT.emailDisallowed);
+      if (r.code === 10) return tooManyRegistrations();
+      toast(`Не удалось создать профиль (код ${r.code ?? '—'})`);
     } catch (er) { toast(String(er.message || er)); } finally { btn.disabled = false; }
   };
-  return wrap('Создать профиль', 'Это займёт меньше минуты', login, sugg, email, pass, pass2,
-    h('label', { class: 'row', style: { margin: '4px 0 16px', alignItems: 'flex-start' } }, terms, h('span', { class: 'muted', style: { fontSize: '13px' } }, 'Я принимаю пользовательское соглашение и политику конфиденциальности')),
+  return wrap('Создать профиль', 'Аккаунт Anixart — займёт меньше минуты', login, login.suggestions, email, pass, pass2,
+    h('label', { class: 'row', style: { margin: '4px 0 16px', alignItems: 'flex-start' } }, terms, h('span', { class: 'muted', style: { fontSize: '13px' } }, 'Я принимаю пользовательское соглашение и политику конфиденциальности Anixart')),
     btn, h('button', { class: 'btn btn-text', style: { marginTop: '12px' }, onclick: () => history.back() }, 'Уже есть профиль? Войти'));
 });
+
+// ---------- Ввод кода из письма ----------
 
 function codeScreen(title, text, onVerify, onResend, expires) {
   const code = field('Код из письма', 'text', { inputmode: 'numeric', maxlength: 4, style: { letterSpacing: '10px', fontSize: '22px', textAlign: 'center' } });
@@ -189,56 +308,81 @@ function codeScreen(title, text, onVerify, onResend, expires) {
     if (left > 0) setTimeout(tick, 1000);
   };
   tick();
-  btn.onclick = async () => { code.setError(''); const v = code.input.value.trim(); if (v.length !== 4) return code.setError('Неверный код.'); btn.disabled = true; try { await onVerify(v, code); } finally { btn.disabled = false; } };
-  resend.onclick = async () => { const exp = await onResend(); if (exp) { until = exp; tick(); } };
+  const submit = async () => {
+    code.setError('');
+    const v = code.input.value.trim();
+    if (!v) return code.setError(TEXT.codeInvalid);
+    btn.disabled = true;
+    try { await onVerify(v, code); } catch (e) { toast(String(e.message || e)); } finally { btn.disabled = false; }
+  };
+  btn.onclick = submit;
+  code.input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+  resend.onclick = async () => {
+    resend.disabled = true;
+    try { const exp = await onResend(); if (exp) until = exp; } catch (e) { toast(String(e.message || e)); }
+    tick();
+  };
   return wrap(title, text, code, btn, resend, h('div', { class: 'muted', style: { fontSize: '12px', textAlign: 'center', marginTop: '10px' } }, 'Код всё ещё не приходит? Проверьте папку «Спам»'));
 }
 
-registerScreen('verify', ({ login, email, password, hash, expires, socialProvider, socialField, socialToken }) => codeScreen('Подтвердите почту', `Мы отправили код на ${email}`,
-  async (code, f) => {
-    const r = socialProvider
-      ? await api.form(`auth/${socialProvider}`, { login, email, [socialField]: socialToken, hash, code }, {}, { withToken: false })
-      : await A.verify({ login, email, password, hash, code });
-    if (r.code === 0 && r.profileToken) return finishLogin(r);
-    f.setError({ 7: 'Неверный код.', 8: 'Код более не действителен.', 9: 'Неверный hash.', 5: 'Никнейм уже занят', 6: 'Email уже занят' }[r.code] || t('error_load'));
-  },
-  async () => {
-    const r = await A.resend({ login, email, password, hash });
-    if (r.code === 0) { toast('Новый код был успешно отправлен.'); return r.timestampExpires; }
-    toast(t('error_load')); return null;
-  }, expires));
+// Подтверждение почты при регистрации: обычной (password) или через соцсеть (social: { field, token })
+registerScreen('verify', ({ login, email, password, social, hash, expires }) => {
+  const base = { login, email, password: social ? null : password, ...(social ? { [social.field]: social.token } : {}), hash };
+  return codeScreen('Подтвердите почту', `Anixart отправил код на ${email}`,
+    async (code, f) => {
+      const r = await A.verify({ ...base, code });
+      if (r.code === 0 && r.profile && r.profileToken) return finishLogin(r);
+      const msg = {
+        2: TEXT.loginInvalid, 3: TEXT.emailInvalid, 4: TEXT.passwordInvalid, 5: TEXT.loginTaken, 6: TEXT.emailTaken,
+        7: TEXT.codeInvalid, 8: TEXT.codeExpired, 9: TEXT.hashInvalid, 10: TEXT.emailDisallowed,
+      }[r.code];
+      if (r.code === 11) return tooManyRegistrations();
+      f.setError(msg || `Не удалось подтвердить (код ${r.code ?? '—'})`);
+    },
+    async () => {
+      const r = await A.resend(base);
+      if (r.code === 0) { toast(TEXT.codeResent); return r.timestampExpires; }
+      toast(r.code === 6 ? TEXT.codeStillActual : `Не удалось отправить код (код ${r.code ?? '—'})`);
+      return null;
+    }, expires);
+});
+
+// ---------- Восстановление пароля ----------
 
 registerScreen('restore', () => {
   const data = field('Почта или никнейм'); const p1 = field('Новый пароль', 'password'); const p2 = field('Повторите пароль', 'password');
   const btn = h('button', { class: 'btn btn-primary lg block' }, 'Продолжить');
   btn.onclick = async () => {
     [data, p1, p2].forEach((f) => f.setError(''));
-    const d = data.input.value.trim(); const p = p1.input.value;
-    if (!d) return data.setError('Никнейм или Email не указан');
-    if (p.length < 6) return p1.setError('Пароль слишком короткий');
-    if (p.length > 32) return p1.setError('Пароль слишком длинный');
-    if (p !== p2.input.value) return p2.setError('Пароль не совпадает');
+    const d = data.input.value.trim();
+    if (!d) { data.setError('Никнейм или Email не указан'); }
+    const p = checkPassword(p1, p2);
+    if (!d || !p) return;
     btn.disabled = true;
     try {
       const r = await A.restore(d);
-      const go = () => replace('restore-verify', { data: d, password: p, hash: r.hash, expires: r.codeTimestampExpires });
-      if (r.code === 0) return go();
-      if (r.code === 3) { dialog({ title: 'Предупреждение', content: h('p', null, 'Код уже отправлен.'), actions: [{ label: 'OK', primary: true, onClick: go }] }); return; }
-      if (r.code === 2) data.setError('Профиль с указанным именем или Email не найден');
-      else toast('Код не может быть отправлен. Повторите попытку позднее.');
-    } finally { btn.disabled = false; }
+      if (r.code === 0 || r.code === 3) {
+        if (r.code === 3) toast(TEXT.codeAlreadySent);
+        return replace('restore-verify', { data: d, password: p, hash: r.hash, expires: r.codeTimestampExpires });
+      }
+      if (r.code === 2) return data.setError(TEXT.profileNotFound);
+      if (r.code === 4) return dialog({ title: 'Ошибка', content: h('p', null, TEXT.codeCannotSend), actions: [{ label: 'OK', primary: true }] });
+      toast(`Не удалось восстановить пароль (код ${r.code ?? '—'})`);
+    } catch (e) { toast(String(e.message || e)); } finally { btn.disabled = false; }
   };
-  return wrap('Забыли пароль?', 'Укажите никнейм или почту, к которой привязан ваш профиль', data, p1, p2, btn);
+  return wrap('Забыли пароль?', 'Укажите никнейм или почту профиля Anixart и придумайте новый пароль', data, p1, p2, btn);
 });
 
-registerScreen('restore-verify', ({ data, password, hash, expires }) => codeScreen('Подтвердите почту', `Мы отправили код на почту, привязанную к профилю ${data}`,
+registerScreen('restore-verify', ({ data, password, hash, expires }) => codeScreen('Подтвердите почту', `Anixart отправил код на почту профиля ${data}`,
   async (code, f) => {
     const r = await A.restoreVerify({ data, password, hash, code });
-    if (r.code === 0 && r.profileToken) return finishLogin(r);
-    f.setError({ 2: 'Профиль с указанным именем или Email не найден', 3: 'Пароль слишком короткий', 4: 'Неверный код.', 5: 'Код более не действителен.', 6: 'Неверный hash.' }[r.code] || t('error_load'));
+    if (r.code === 0 && r.profile && r.profileToken) return finishLogin(r);
+    const msg = { 2: TEXT.profileNotFound, 3: TEXT.passwordInvalid, 4: TEXT.codeInvalid, 5: TEXT.codeExpired, 6: TEXT.hashInvalid }[r.code];
+    f.setError(msg || `Не удалось подтвердить (код ${r.code ?? '—'})`);
   },
   async () => {
     const r = await A.restoreResend({ data, password, hash });
-    if (r.code === 0) { toast('Новый код был успешно отправлен.'); return r.codeTimestampExpires || r.timestampExpires; }
-    toast(t('error_load')); return null;
+    if (r.code === 0) { toast(TEXT.codeResent); return r.timestampExpires; }
+    toast(r.code === 4 ? TEXT.codeStillActual : `Не удалось отправить код (код ${r.code ?? '—'})`);
+    return null;
   }, expires));

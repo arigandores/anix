@@ -1,7 +1,7 @@
 {
   "name": "anix-desktop",
   "productName": "Anix Desktop",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Anix Desktop — неофициальный клиент Anixart для Windows и браузера",
   "author": "arigandores",
   "main": "electron/main.js",
@@ -16,7 +16,7 @@
     "build:release": "node build/release.js",
     "test": "node test/smoke.js",
     "test:e2e": "electron test/e2e.js",
-    "test:ui": "electron test/ui-audit.js && electron test/contrast.js && electron test/skeleton-match.js",
+    "test:ui": "electron test/ui-audit.js && electron test/contrast.js && electron test/skeleton-match.js && electron test/layout-audit.js",
     "test:ai": "electron test/ai-chat.js && electron test/ai-stream.js && electron test/ai-actions.js && electron test/ai-memory.js && electron test/ai-config.js && electron test/ai-scroll.js && electron test/ai-away.js && electron test/ai-stop.js"
   },
   "build": {

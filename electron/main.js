@@ -127,15 +127,23 @@ ipcMain.handle('kodik-ad', (_e, url) => new Promise((resolve) => {
 
 // Вход через соцсети: открываем официальную страницу провайдера в модальном окне и ловим redirect_uri
 // (обычный способ для встроенных браузеров). Возвращаем перехваченные параметры фронтенду.
-// Google блокирует OAuth во встроенных webview по UA с «Electron» — подставляем чистый Chrome
-const AUTH_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+// Google блокирует вход во встроенных браузерах («This browser or app may not be secure»): UA с «Electron»
+// или Chrome-UA без бренда «Google Chrome» в client hints. Поэтому окну входа — UA Firefox, а client hints
+// (заголовки Sec-CH-UA и navigator.userAgentData — auth-preload.js), которых у Firefox нет, убраны.
+const AUTH_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0';
 
 ipcMain.handle('social-auth', (_e, req) => new Promise((resolve) => {
   const authSession = session.fromPartition(`auth-${Date.now()}`); // чистые куки на каждый вход
   authSession.setUserAgent(AUTH_UA);
+  authSession.webRequest.onBeforeSendHeaders((d, cb) => {
+    for (const k of Object.keys(d.requestHeaders)) if (/^sec-ch-ua/i.test(k)) delete d.requestHeaders[k];
+    cb({ requestHeaders: d.requestHeaders });
+  });
   const w = new BrowserWindow({
     parent: win, modal: true, width: 520, height: 680, title: 'Вход', backgroundColor: '#fff', autoHideMenuBar: true,
-    webPreferences: { contextIsolation: true, sandbox: true, partition: authSession.partition, nodeIntegration: false },
+    // contextIsolation: false — auth-preload.js должен править navigator в мире страницы
+    webPreferences: { contextIsolation: false, sandbox: true, partition: authSession.partition, nodeIntegration: false,
+      preload: path.join(__dirname, 'auth-preload.js') },
   });
   w.webContents.setUserAgent(AUTH_UA);
   let done = false;
@@ -169,9 +177,10 @@ ipcMain.handle('social-auth', (_e, req) => new Promise((resolve) => {
   for (const ev of ['will-redirect', 'will-navigate']) {
     w.webContents.on(ev, (e, u) => { if (check(u)) e.preventDefault(); });
   }
-  // Кастомная схема (vk<clientId>://) не навигируется — ловим через перехват запросов
+  // Редирект на кастомную схему (vk<clientId>://) ловят will-redirect/will-navigate выше; фильтр webRequest
+  // такую схему не принимает («Wrong scheme type»), поэтому здесь — только запасной перехват blank.html
   if (req.redirectScheme) {
-    authSession.webRequest.onBeforeRequest({ urls: [`${req.redirectScheme}://*/*`, '*://*/blank.html*'] }, (d, cb) => {
+    authSession.webRequest.onBeforeRequest({ urls: ['*://*/blank.html*'] }, (d, cb) => {
       if (check(d.url)) { cb({ cancel: true }); return; }
       cb({});
     });

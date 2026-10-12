@@ -243,10 +243,11 @@ function inline(text, parent) {
   let last = 0; let m;
   while ((m = re.exec(text))) {
     if (m.index > last) parent.append(text.slice(last, m.index));
-    if (m[2]) parent.append(h('b', null, m[2]));
+    // содержимое жирного, курсива и подписи ссылки разбирается тоже: «**Советую [Триган](anixart://…)**»
+    if (m[2]) parent.append(inline(m[2], h('b')));
     else if (m[3]) parent.append(link(m[3], m[4]));
     else if (m[5]) parent.append(h('code', null, m[5]));
-    else if (m[6]) parent.append(h('i', null, m[6]));
+    else if (m[6]) parent.append(inline(m[6], h('i')));
     last = re.lastIndex;
   }
   if (last < text.length) parent.append(text.slice(last));
@@ -254,9 +255,9 @@ function inline(text, parent) {
 }
 function link(label, href) {
   const rel = /^anixart:\/\/release\/(\d+)/.exec(href);
-  if (rel) return h('a', { class: 'ai-rel-link', onclick: () => openRelease(releaseCache.get(Number(rel[1])) || { id: Number(rel[1]) }) }, label);
-  if (/^https?:\/\//i.test(href)) return h('a', { href, target: '_blank', rel: 'noopener noreferrer' }, label);
-  return document.createTextNode(label);
+  if (rel) return inline(label, h('a', { class: 'ai-rel-link', onclick: () => openRelease(releaseCache.get(Number(rel[1])) || { id: Number(rel[1]) }) }));
+  if (/^https?:\/\//i.test(href)) return inline(label, h('a', { href, target: '_blank', rel: 'noopener noreferrer' }));
+  return inline(label, h('span'));
 }
 function markdown(src) {
   const root = h('div', { class: 'ai-md' });

@@ -1,8 +1,31 @@
+<div align="center">
+
+<img src="build/icon.png" width="112" alt="">
+
 # Anix Desktop
 
-Неофициальный клиент [Anixart](https://anixart.tv) для Windows и браузера, плюс **AI-помощник** на Claude.
+**Неофициальный клиент [Anixart](https://anixart.tv) для Windows и браузера — с AI-помощником на Claude**
+
+[![Release](https://img.shields.io/github/v/release/arigandores/anix-desktop?style=flat-square&color=f04e5c)](https://github.com/arigandores/anix-desktop/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/arigandores/anix-desktop/total?style=flat-square&color=8b5cf6)](https://github.com/arigandores/anix-desktop/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Browser-0ea5e9?style=flat-square)](#скачать)
+[![License](https://img.shields.io/github/license/arigandores/anix-desktop?style=flat-square&color=22c55e)](LICENSE)
+
+[**Скачать**](https://github.com/arigandores/anix-desktop/releases/latest) · [Возможности](#возможности) · [AI-помощник](#ai-помощник) · [Запуск из исходников](#запуск-из-исходников)
+
+<img src="docs/screenshots/release.jpg" alt="Страница релиза">
+
+</div>
+
 Каталог, аккаунт, списки, комментарии и уведомления — с серверов Anixart; видео — из тех же источников,
 что и в мобильном приложении (Kodik, Sibnet, VK, RuTube, AniLibria и др.).
+
+<table>
+  <tr>
+    <td><img src="docs/screenshots/home.jpg" alt="Главная"></td>
+    <td><img src="docs/screenshots/episodes.jpg" alt="Выбор озвучки"></td>
+  </tr>
+</table>
 
 > Anix Desktop — независимый проект: он не связан с разработчиками Anixart и не одобрен ими.
 > Названия и товарные знаки принадлежат их правообладателям (см. `NOTICE.md`).
@@ -215,6 +238,15 @@ npm run build:release    файлы релиза в release\: установщи
 
 `node_modules` распаковываются из asar (`asarUnpack`): адаптер и `claude.exe` запускаются отдельным процессом
 и не могут работать из архива.
+
+## Star History
+
+<a href="https://star-history.com/#arigandores/anix-desktop&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=arigandores/anix-desktop&type=Date&theme=dark">
+    <img alt="Star History" src="https://api.star-history.com/svg?repos=arigandores/anix-desktop&type=Date">
+  </picture>
+</a>
 
 ## Лицензия
 

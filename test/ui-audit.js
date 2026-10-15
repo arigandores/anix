@@ -6,6 +6,7 @@ const { app, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { start } = require('../server');
+const settle = require('./_settle'); // ждать загрузки экрана, а не фиксированную паузу
 
 const out = process.argv[2] || path.join(__dirname, 'shots');
 fs.mkdirSync(out, { recursive: true });
@@ -33,12 +34,12 @@ app.whenReady().then(async () => {
   const js = (c) => win.webContents.executeJavaScript(c, true);
   await js(`localStorage.setItem('anixart.theme','dark')`);
   await new Promise((ok) => { win.webContents.once('did-finish-load', ok); win.webContents.reload(); });
-  await sleep(3500);
+  await js(settle.INSTALL); await sleep(300); await settle(js, 3500);
   const shot = async (name) => { await sleep(300); fs.writeFileSync(path.join(out, `${name}.png`), (await win.webContents.capturePage()).toPNG()); };
   const report = {};
   const visit = async (label, code, wait = 2200) => {
     await js(`(async () => { document.querySelectorAll('.backdrop').forEach(b => b.remove()); const r = await import('/js/router.js'); ${code} })()`);
-    await sleep(wait);
+    await sleep(150); await settle(js, wait);
     const hits = await js(SCAN);
     if (hits.length) report[label] = hits;
   };

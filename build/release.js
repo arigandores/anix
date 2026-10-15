@@ -1,5 +1,6 @@
 'use strict';
-// Сборка файлов релиза в release\: AnixDesktop-Setup-<v>.exe и AnixDesktop-Portable-<v>.exe (electron-builder).
+// Сборка файла релиза в release\: AnixDesktop-Setup-<v>.exe (electron-builder, NSIS). Portable не выпускается:
+// он при каждом запуске распаковывал бы ~200 МБ во временную папку, а установщику права администратора не нужны.
 // Версия для браузера отдельно не собирается — это архив «Source code» релиза на GitHub.
 // Запуск: npm run build:release. Загрузка в GitHub Release — вручную (gh release create).
 // config.local.json (ключи источников и соцвхода) попадает в сборку, если есть; --no-keys — собрать без него.
@@ -19,13 +20,13 @@ const parked = `${keysFile}.parked`;
 if (noKeys && fs.existsSync(keysFile)) fs.renameSync(keysFile, parked);
 try {
   // CLI electron-builder напрямую через Node — без npx и shell
-  execFileSync(process.execPath, [path.join(root, 'node_modules', 'electron-builder', 'cli.js'), '--win', 'nsis', 'portable', '--x64'], { cwd: root, stdio: 'inherit' });
+  execFileSync(process.execPath, [path.join(root, 'node_modules', 'electron-builder', 'cli.js'), '--win', 'nsis', '--x64'], { cwd: root, stdio: 'inherit' });
 } finally {
   if (fs.existsSync(parked)) fs.renameSync(parked, keysFile);
 }
 
-console.log(`\nФайлы релиза (${withKeys ? 'с ключами из config.local.json' : 'без ключей'}):`);
-for (const f of [`AnixDesktop-Setup-${version}.exe`, `AnixDesktop-Portable-${version}.exe`]) {
+console.log(`\nФайл релиза (${withKeys ? 'с ключами из config.local.json' : 'без ключей'}):`);
+for (const f of [`AnixDesktop-Setup-${version}.exe`]) {
   const p = path.join(out, f);
   console.log(`  ${f}  ${fs.existsSync(p) ? `${(fs.statSync(p).size / 1048576).toFixed(1)} МБ` : 'НЕТ'}`);
 }

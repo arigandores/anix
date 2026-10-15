@@ -1,5 +1,5 @@
 // Лента, запись, канал
-import { h, icon, iconButton, img, toast, tabs, pagedList, emptyView, errorView, skeleton, skParts } from '../ui.js';
+import { h, icon, iconButton, img, toast, tabs, pagedList, emptyView, errorView, skeleton, skParts, skeletonSettled, markAppeared, guardClick } from '../ui.js';
 import { A, auth } from '../api.js';
 import { t, tp } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
@@ -123,11 +123,13 @@ function myFeed() {
   (async () => {
     const cnt = await (await import('../api.js')).api.get('channel/subscription/count').catch(() => ({}));
     if (!(cnt.subscription_count > 0)) {
+      await skeletonSettled(holder);
       holder.replaceChildren(h('div', { class: 'empty', style: { paddingBottom: '10px' } }, h('div', { class: 'empty-title' }, 'Ой, а подписок-то нет!'), h('div', { class: 'empty-sub' }, 'Но ничего страшного, Вы можете подписаться на популярные каналы из списка ниже')),
         pagedList({ skeleton: 'channels', load: (page) => A.channelRecommendations(page), render: channelRow, empty: () => emptyView('Похоже, нет ни одного канала') }));
       return;
     }
     const subs = await A.subscriptions(0, 1).catch(() => ({ content: [] }));
+    await skeletonSettled(holder);
     const listHolder = h('div');
     const rebuild = () => listHolder.replaceChildren(feedList((page) => A.feed(page, channelId, date)));
     const chips = h('div', { class: 'hscroll', style: { padding: '10px 20px' } },
@@ -142,14 +144,14 @@ function myFeed() {
 
 function channelRow(ch) {
   const btn = h('button', { class: `btn ${ch.is_subscribed ? 'btn-tonal' : 'btn-primary'}` }, ch.is_subscribed ? 'Отписаться' : 'Подписаться');
-  btn.onclick = async (e) => {
+  btn.onclick = guardClick(btn, async (e) => {
     e.stopPropagation();
     if (!requireAuth()) return;
     const r = ch.is_subscribed ? await A.channelUnsubscribe(ch.id) : await A.channelSubscribe(ch.id);
     if (r.code === 3) return toast('Вы подписались на максимально возможное число каналов.');
     ch.is_subscribed = !ch.is_subscribed;
     btn.textContent = ch.is_subscribed ? 'Отписаться' : 'Подписаться'; btn.className = `btn ${ch.is_subscribed ? 'btn-tonal' : 'btn-primary'}`;
-  };
+  });
   return h('div', { class: 'type-row', onclick: () => navigate('channel', { id: ch.id, preload: ch }) }, img(ch.avatar),
     h('div', { class: 'grow' }, h('div', { class: 'row', style: { gap: '4px', fontWeight: 500 } }, ch.title, ch.is_verified ? icon('ic_verified', 'xs verified') : null),
       h('div', { class: 'muted', style: { fontSize: '13px' } }, ch.subscriber_count ? tp('subscribers', ch.subscriber_count) : 'Нет подписчиков')), btn);
@@ -222,10 +224,12 @@ registerScreen('channel', ({ id, preload }) => {
   }
   const root = h('div', null, bar, h('div', { class: 'container', style: { maxWidth: '820px', padding: 0 } },
     head, h('div', { class: 'sep' }), feedList((page) => A.channelArticles(id, page))));
-  A.channel(id).then((r) => {
+  A.channel(id).then(async (r) => {
+    const instant = await skeletonSettled(head);
     if (!r.channel) { root.replaceChildren(backToolbar('Канал'), emptyView('Канал не найден')); return; }
     paint(r.channel);
-  }).catch((e) => { if (!preload) head.replaceChildren(errorView(e)); });
+    if (instant) markAppeared(head);
+  }).catch(async (e) => { await skeletonSettled(head); if (!preload) head.replaceChildren(errorView(e)); });
   return root;
 });
 

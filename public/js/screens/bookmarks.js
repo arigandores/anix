@@ -89,6 +89,11 @@ registerScreen('tab:bookmarks', (_p, ctx) => {
       if (ph) ph.textContent = hintFor(i);
     },
   });
-  ctx.setOnShow(({ returning }) => { if (returning) tb.refresh(); });
+  ctx.setOnShow(({ returning }) => {
+    if (!returning) return;
+    // тихо: прежний список виден, пока не придут свежие данные
+    const list = tb.querySelector('.tabbody .paged');
+    if (list?.refresh) list.refresh(); else tb.refresh();
+  });
   return h('div', null, toolbar, tb);
 });

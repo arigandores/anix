@@ -7,3 +7,6 @@ test/shots/
 config.local.json
 config.local.json.parked
 native/
+test/logs/
+trt/sdk/
+trt/bin/

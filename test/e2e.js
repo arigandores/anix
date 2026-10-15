@@ -5,6 +5,7 @@ const { app, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { start } = require('../server');
+const settle = require('./_settle'); // ждать загрузки экрана, а не фиксированную паузу
 
 const outDir = process.argv[2] || path.join(__dirname, 'shots');
 fs.mkdirSync(outDir, { recursive: true });
@@ -22,7 +23,7 @@ app.whenReady().then(async () => {
   await win.loadURL(srv.url);
   const js = (code) => win.webContents.executeJavaScript(code, true);
   const shot = async (name, wait = 3500) => {
-    await sleep(wait);
+    await sleep(Math.min(wait, 150)); await settle(js, wait);
     const img = await win.webContents.capturePage();
     fs.writeFileSync(path.join(outDir, `${name}.png`), img.toPNG());
     const txt = await js(`(document.querySelector('#viewport')?.innerText || '').slice(0, 300).replace(/\\s+/g,' ')`);
@@ -31,7 +32,7 @@ app.whenReady().then(async () => {
   const steps = (process.env.STEPS || 'home,discover,release,episodes,search,filter,schedule,top,collections,bookmarks,profile,auth,settings').split(',');
   const nav = (screen, params = '{}') => js(`import('/js/router.js').then(m => m.navigate('${screen}', ${params}))`);
   const tab = (t) => js(`import('/js/router.js').then(m => m.switchTab('${t}'))`);
-  await sleep(3000);
+  await js(settle.INSTALL); await settle(js, 3000);
   for (const s of steps) {
     try {
       if (s === 'home') { await shot('01-home', 5000); }

@@ -38,14 +38,21 @@ const PREFIX = 'anixart.pref.';
 const DEFAULTS = {
   SELECTED_PLAYER: 0, // 0 спрашивать, 1 веб, 2 встроенный, 3 сторонний
   LAST_SELECTED_PLAYER: 2,
-  PLAYER_REWIND_TIME: 85,
+  SKIP_OPENING: null, // пропуск опенинга и эндинга во встроенном плеере: 'auto' | 'watch' | null (спрашивать)
+  SKIP_ENDING: null,
+  UPSCALE_MODE: 'off', // улучшение картинки (апскейл нейросетью): 'off' | 'auto' | 'fast' | 'quality' | 'max'
+  UPSCALE_TARGET: 'auto', // разрешение: 'auto' (под окно) | '1080' | '1440' | '2160'
+  UPSCALE_LAST: 'auto', // режим, который включает клавиша U
+  UPSCALE_GPU: null, // замер видеокарты: { key, tput } — умножений в секунду
+  UPSCALE_TRT: true, // ускорение NVIDIA (TensorRT), когда его библиотеки установлены
+  UPSCALE_SHARP: 'normal', // «Резкость»: 'soft' | 'normal' | 'sharp' — вариант той же модели (DN / Sharp1 / DS)
+  UPSCALE_PICK: null, // пресет ручного уровня по классам исходника: { tier: { sd|hd|fhd: id } }
+  UPSCALE_BENCH: null, // замеры бенчмарка (upscale/bench.js)
   SELECTED_PLAYER_SPEED: 3,
   AUTO_PLAY: false,
-  SELECTED_VIDEO_QUALITY_V2: 1,
+  SELECTED_VIDEO_QUALITY_V2: 0, // приоритет качества во встроенном плеере: 0 — максимально доступное
   SELECTED_THIRD_PARTY_VIDEO_QUALITY_V2: 0,
-  SELECTED_KODIK_VIDEO_QUALITY: 0,
   ON_EPISODE_DISCLAIMER: false,
-  KODIK_AD_DISCLAIMER: false,
   IS_REMEMBERING_TYPE_SOURCE: true,
   // «Непроверенные источники»: запомнить переход к вариантам из непроверенных источников
   IS_REMEMBERING_SKIP_THIRD_PARTY_PLATFORM: false,
@@ -62,9 +69,7 @@ const DEFAULTS = {
   WEB_PLAYER_AD_BLOCK_ENABLED: true,
   EXTENDED_MODE: true,
   // из config/toggles
-  KODIK_IFRAME_AD: true,
   IFRAME_EMBED_URL: 'https://anixmirai.com/iframe?url=',
-  KODIK_AD_IFRAME_URL: 'https://anixmirai.com/iframe/ad?url=',
   SIBNET_RAND_USER_AGENT: false,
   SIBNET_USER_AGENT: '',
   THIRD_PARTY_PLAYER_PATH: '',
@@ -84,7 +89,7 @@ export const prefs = {
   applyToggles(tg) {
     if (!tg) return;
     const map = {
-      kodikIframeAd: 'KODIK_IFRAME_AD', iframeEmbedUrl: 'IFRAME_EMBED_URL', kodikAdIframeUrl: 'KODIK_AD_IFRAME_URL',
+      iframeEmbedUrl: 'IFRAME_EMBED_URL',
       sibnetRandUserAgent: 'SIBNET_RAND_USER_AGENT', sibnetUserAgent: 'SIBNET_USER_AGENT',
     };
     for (const [k, p] of Object.entries(map)) if (tg[k] !== undefined && tg[k] !== null && tg[k] !== '') this.set(p, tg[k]);
@@ -139,10 +144,11 @@ export const db = {
     }
     save('anixart.db.episodes', all);
   },
-  // Последняя просмотренная серия: releaseId, typeId, sourceId, position, timestamp
-  addLastWatched(releaseId, typeId, sourceId, position) {
+  // Последняя просмотренная серия: releaseId, typeId, sourceId, position, timestamp;
+  // typeName/sourceName — для заголовка скелетона, пока экран серий открывает запомненный выбор
+  addLastWatched(releaseId, typeId, sourceId, position, { typeName, sourceName } = {}) {
     const all = load('anixart.db.lastWatched', {});
-    all[releaseId] = { releaseId, typeId, sourceId, position, timestamp: Math.floor(Date.now() / 1000) };
+    all[releaseId] = { releaseId, typeId, sourceId, position, typeName, sourceName, timestamp: Math.floor(Date.now() / 1000) };
     save('anixart.db.lastWatched', all);
   },
   lastWatched(releaseId) { return load('anixart.db.lastWatched', {})[releaseId] || null; },

@@ -1,6 +1,6 @@
 // Вкладка «AI»: помощник на Claude (ACP → claude-agent-acp, см. server/ai.js).
 // Порядок: вход в Anixart → вход в Claude → чат. Без аккаунта приложения помощнику не с чем работать.
-import { h, icon, iconButton, img, dialog, confirmDialog, timeAgo } from '../ui.js';
+import { h, icon, iconButton, img, dialog, confirmDialog, timeAgo, skeletonSettled } from '../ui.js';
 import { auth, A } from '../api.js';
 import { registerScreen, navigate } from '../router.js';
 import { openRelease, gradeText } from './common.js';
@@ -106,7 +106,7 @@ function historyDialog() {
 }
 
 async function memoryDialog() {
-  const box = h('div', { class: 'ai-memory' }, h('div', { class: 'muted' }, 'Загрузка…'));
+  const box = h('div', { class: 'ai-memory' }, h('div', { class: 'muted load-reveal' }, 'Загрузка…'));
   const d = dialog({
     title: 'Память помощника', content: box, cls: 'wide',
     actions: [{ label: 'Очистить всё', onClick: async () => { if (!(await confirmDialog('Очистить память', 'Помощник забудет всё, что запомнил о вас. Продолжить?', 'Очистить'))) return true; paint(await post('/ai/memory', { profileId: state.profileId, op: 'clear' })); return true; } },
@@ -461,7 +461,10 @@ function chatView() {
 registerScreen('tab:ai', (_p, ctx) => {
   const root = h('div', { class: 'ai-root' });
   let chat = null;
-  const show = async () => {
+  let seq = 0;
+  // quiet — при возврате на вкладку: прежний экран остаётся, пока не придёт ответ /ai/status
+  const show = async ({ quiet = false } = {}) => {
+    const my = ++seq;
     chat?.dispose?.(); chat = null;
     if (!auth.loggedIn) {
       root.replaceChildren(toolbar(), gate('ic_ai', 'Сначала войдите в Anixart',
@@ -469,8 +472,10 @@ registerScreen('tab:ai', (_p, ctx) => {
         [h('button', { class: 'btn btn-primary lg', onclick: () => navigate('auth') }, 'Войти в Anixart')]));
       return;
     }
-    root.replaceChildren(toolbar(), h('div', { class: 'empty' }, h('div', { class: 'ai-typing' }, h('span'), h('span'), h('span')), h('div', { class: 'muted' }, 'Проверяем подключение к Claude…')));
+    if (!quiet) root.replaceChildren(toolbar(), h('div', { class: 'empty load-reveal' }, h('div', { class: 'ai-typing' }, h('span'), h('span'), h('span')), h('div', { class: 'muted' }, 'Проверяем подключение к Claude…')));
     const st = await post('/ai/status').catch((e) => ({ error: e.message }));
+    await skeletonSettled(root);
+    if (my !== seq) return;
     if (st.error || !st.available) {
       root.replaceChildren(toolbar(), gate('ic_error', 'Помощник недоступен', st.error ? `Не удалось связаться с сервером приложения: ${st.error}` : 'В этой сборке нет компонентов Claude.', [h('button', { class: 'btn btn-tonal', onclick: show }, 'Повторить')]));
       return;
@@ -484,7 +489,7 @@ registerScreen('tab:ai', (_p, ctx) => {
   show();
   ctx.setOnShow(({ returning }) => {
     if (!returning) return;
-    if (!chat) show(); else if (state.needLogin) { state.needLogin = false; show(); } else chat.restoreScroll?.();
+    if (!chat) show({ quiet: true }); else if (state.needLogin) { state.needLogin = false; show(); } else chat.restoreScroll?.();
   });
   ctx.setDispose(() => chat?.dispose?.());
   return root;

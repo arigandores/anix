@@ -9,6 +9,11 @@
 | Simple Icons | `public/icons/ic_vk, ic_telegram, ic_google, ic_discord, ic_tiktok` | CC0 1.0; логотипы — товарные знаки их владельцев |
 | Логотип, иконка приложения, флаги, значок Яндекса | `public/icons/`, `build/icon.svg` | нарисованы для Anix Desktop, MIT |
 | hls.js 1.5.20 | `public/vendor/hls.min.js` | Apache License 2.0 |
+| ArtCNN (Joao Chrisostomo, Kacper Michajłow) | `public/models/upscale/artcnn-*` | MIT |
+| 2x AnimeJaNai HD V3.1, HD V3 (Compact / UltraCompact / SuperUltraCompact), SD Compact (the-database, github.com/the-database/mpv-upscale-2x_animejanai) | `public/models/upscale/janai-*`, `public/models/upscale-onnx/janai-*` (веса переложены в формат движка — под той же лицензией) | CC BY-NC-SA 4.0 — только некоммерческое использование |
+| 2x AniSD G6i1 SPAN и AniSD AC (Sirosky, github.com/Sirosky/Upscale-Hub) | `public/models/upscale/anisd-*`, `public/models/upscale-onnx/anisd-*` | CC BY-NC 4.0 — только некоммерческое использование |
+| NVIDIA TensorRT for RTX 1.7 | не входит в сборку: по кнопке «Установить» скачивается с PyPI (`tensorrt_rtx_cu13_libs`) в папку данных приложения | лицензия NVIDIA (проприетарная) |
+| NVIDIA CUDA Runtime | статически в `anix-trt.exe` | лицензия NVIDIA CUDA Toolkit (распространение рантайма разрешено) |
 | Agent Client Protocol SDK, claude-agent-acp | `node_modules` (в сборке) | Apache License 2.0 |
 | Claude Agent SDK (Anthropic) | `node_modules` (в сборке) | Anthropic Commercial Terms of Service |
 | Electron | сборка Windows | MIT |

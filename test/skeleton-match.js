@@ -5,17 +5,18 @@ const { app, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { start } = require('../server');
+const settle = require('./_settle');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const out = process.argv[2] || path.join(__dirname, 'shots');
 const only = process.argv.slice(3);
 fs.mkdirSync(out, { recursive: true });
 
 const DELAY = 2500;
+const WORKERS = 3;
 
 app.whenReady().then(async () => {
   const srv = await start(0);
   const win = new BrowserWindow({ width: 1100, height: 760, show: false, webPreferences: { backgroundThrottling: false } });
-  const join = new BrowserWindow({ width: 2220, height: 780, show: false, webPreferences: { backgroundThrottling: false } });
   await win.loadURL(srv.url);
   const js = (c) => win.webContents.executeJavaScript(c, true);
   await js(`localStorage.setItem('anixart.theme','dark'); localStorage.setItem('anixart.pref.IS_ADULT','true')`);
@@ -54,22 +55,40 @@ app.whenReady().then(async () => {
     ['friends', `r.navigate('friends', { profile: { id: 1 } })`],
   ].filter(Boolean).filter(([n]) => !only.length || only.includes(n));
 
-  // задержка всех запросов к API (кроме тех, что уже в полёте)
+  // (первое окно не закрываем: без окон Electron завершает приложение раньше воркеров)
+  // Экраны снимаются в WORKERS окнах одновременно: у каждого своя задержка запросов и своё окно склейки
+  const queue = screens.slice();
+  await Promise.all(Array.from({ length: WORKERS }, (_, i) => worker(srv, i, queue)));
+  srv.server.close();
+  app.exit(0);
+});
+
+async function worker(srv, wi, queue) {
+  const win = new BrowserWindow({ width: 1100, height: 760, show: false, webPreferences: { backgroundThrottling: false } });
+  const join = new BrowserWindow({ width: 2220, height: 780, show: false, webPreferences: { backgroundThrottling: false } });
+  await win.loadURL(srv.url);
+  const js = (c) => win.webContents.executeJavaScript(c, true);
+  await settle(js, 3500);
+  // задержка всех запросов к API (кроме тех, что уже в полёте); счётчик запросов — поверх неё
   await js(`(() => { const of = window.fetch; window.__delay = 0; window.fetch = async (u, o) => { if (window.__delay && String(u).includes('/api/')) await new Promise((ok) => setTimeout(ok, window.__delay)); return of(u, o); }; })()`);
+  await js('delete window.__inflight; 1');
+  await js(settle.INSTALL);
   const cap = async (file) => {
     await win.webContents.capturePage(); await sleep(150);
     const p = path.join(out, file);
     fs.writeFileSync(p, (await win.webContents.capturePage()).toPNG());
     return `file:///${p.replace(/\\/g, '/')}`;
   };
-  for (const [name, code] of screens) {
+  while (queue.length) {
+    const [name, code] = queue.shift();
     await js(`(async () => { document.querySelectorAll('.backdrop').forEach(b => b.remove()); window.__delay = ${DELAY}; const r = await import('/js/router.js'); ${code} })()`);
     await sleep(800);
-    const a = await cap('_a.png');
+    const a = await cap(`_a${wi}.png`);
     await js('window.__delay = 0');
-    await sleep(DELAY + 2500);
-    const b = await cap('_b.png');
-    const page = path.join(out, '_join.html');
+    await sleep(DELAY - 800); // уже задержанные запросы ответят не раньше
+    await settle(js, 4000, 500);
+    const b = await cap(`_b${wi}.png`);
+    const page = path.join(out, `_join${wi}.html`);
     fs.writeFileSync(page, `<body style="margin:0;background:#000;display:flex;gap:20px"><img src="${a}?${Date.now()}" style="width:1100px"><img src="${b}?${Date.now()}" style="width:1100px"></body>`);
     await join.loadFile(page);
     await sleep(300);
@@ -77,8 +96,7 @@ app.whenReady().then(async () => {
     console.log('saved', name);
     // назад к корню вкладки
     await js(`(async () => { const r = await import('/js/router.js'); r.switchTab('home', { reset: true }); })()`);
-    await sleep(500);
+    await settle(js, 1500);
   }
-  srv.server.close();
-  app.exit(0);
-});
+  win.destroy(); join.destroy();
+}

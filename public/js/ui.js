@@ -11,6 +11,7 @@ export function h(tag, attrs, ...children) {
           if (sk.startsWith('--')) el.style.setProperty(sk, sv); else el.style[sk] = sv;
         }
       }
+      else if (k === 'onclick' && typeof v === 'function') el.addEventListener('click', guardClick(el, v));
       else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2).toLowerCase(), v);
       else if (k === 'html') el.innerHTML = v;
       else if (k === 'dataset') Object.assign(el.dataset, v);
@@ -20,6 +21,20 @@ export function h(tag, attrs, ...children) {
   }
   append(el, children);
   return el;
+}
+
+// Асинхронный обработчик клика (запрос, диалог) — один за раз: пока он не завершился, повторные клики
+// по этому элементу игнорируются (двойной клик не отправляет запрос дважды). Синхронные — как есть.
+export function guardClick(el, fn) {
+  return (e) => {
+    if (el.dataset.busy) { e?.stopPropagation(); return undefined; } // и не до родителя (кнопка в строке-ссылке)
+    const r = fn(e);
+    if (r && typeof r.then === 'function') {
+      el.dataset.busy = '1';
+      Promise.resolve(r).finally(() => { delete el.dataset.busy; });
+    }
+    return r;
+  };
 }
 
 function append(el, children) {
@@ -47,7 +62,8 @@ export function esc(s) {
 let toastTimer;
 export function toast(msg, ms = 2600) {
   let el = document.getElementById('toast');
-  if (!el) { el = h('div', { id: 'toast', role: 'status' }); document.body.append(el); }
+  if (!el) el = h('div', { id: 'toast', role: 'status' });
+  if (el.parentNode !== overlayHost()) overlayHost().append(el);
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toastTimer);
@@ -79,9 +95,13 @@ export function dialog({ title, content, actions = [], onClose, cls = '' } = {})
   backdrop.append(box);
   backdrop.addEventListener('mousedown', (e) => { if (e.target === backdrop) close(); });
   document.addEventListener('keydown', onKey);
-  document.body.append(backdrop);
+  overlayHost().append(backdrop);
   return { close, box };
 }
+
+// Куда вставлять диалоги и уведомления: в полноэкранном режиме браузер показывает только полноэкранный
+// элемент (плеер) — то, что вставлено в body, не видно
+function overlayHost() { return document.fullscreenElement || document.body; }
 
 export function sheet(title, items) {
   // items: [{label, icon, dot (CSS-цвет точки), color (цвет текста), onClick, checked, danger}]
@@ -152,7 +172,9 @@ const skCard = (style) => h('div', { class: 'release-card', style }, h('div', { 
 const skComment = () => h('div', { class: 'comment' }, h('div', { class: 'avatar sk' }),
   h('div', { class: 'body', style: { display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '4px' } }, line('34%', 'title'), line('92%'), line('70%'), line('24%', '', { marginTop: '4px' })));
 const skMenu = () => h('div', { class: 'menu-item' }, circle('24px'), col('7px', line('40%', 'title'), line('64%')));
-const skEp = () => h('div', { class: 'ep-row' }, h('div', { class: 'num sk' }), col('7px', line('30%', 'title'), line('18%')));
+// серия: номер, название и источник, справа кнопка-глаз (icon-btn sm)
+const skEp = () => h('div', { class: 'ep-row' }, h('div', { class: 'num sk' }), col('7px', line('30%', 'title'), line('18%')),
+  h('div', { class: 'icon-btn sm' }, circle('20px')));
 const skArticle = () => h('div', { class: 'article' },
   h('div', { class: 'head' }, h('div', { class: 'avatar sk' }), col('7px', line('22%', 'title'), line('14%'))),
   h('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } }, line('96%'), line('82%'), block({ height: '260px', borderRadius: '12px', marginTop: '4px' })),
@@ -172,8 +194,40 @@ export const skLine = line;
 export const skParts = { line, block, circle, pill, col };
 const times = (n, f) => Array.from({ length: n }, (_, i) => f(i));
 
+// --- Когда показывать загрузку ---
+// Скелетон (.sk-root и одиночные .sk) и спиннер проявляются только если загрузка дольше SK_DELAY
+// (анимация sk-reveal в app.css), а показавшись, держатся не меньше SK_MIN — иначе мелькают на кадр.
+// Если за видимым скелетоном сразу идёт следующий (экран загрузил шапку и грузит список, автопереход
+// между экранами), новый продолжает отсчёт предыдущего: уже показанный не прячется заново.
+const SK_DELAY = 250; const SK_MIN = 400; const SK_CHAIN = 300;
+const SK_SEL = '.sk-root, .sk, .spinner-wrap, .load-reveal';
+let skHandoff = { at: -Infinity, revealAt: 0 }; // когда сменили скелетон и когда тот начал (или начнёт) проявляться
+const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+
+// Задержка появления для нового скелетона: обычная или остаток от только что сменённого (может быть < 0)
+export function skRevealDelay() {
+  const now = performance.now();
+  return now - skHandoff.at < SK_CHAIN ? skHandoff.revealAt - now : SK_DELAY;
+}
+function skStyle() { return { '--sk-delay': `${Math.round(skRevealDelay())}ms` }; }
+
+// Вызывать перед заменой скелетона контентом: ждёт, только если скелетон уже виден и показан меньше SK_MIN.
+// Время берётся из самой CSS-анимации — у скелетона, не вставленного на страницу, её нет.
+// Возвращает true, если скелетон был виден: тогда контент ставится на его место сразу, без анимации
+// появления (markAppeared) — иначе между скелетоном и проявляющимся контентом мелькает пустота.
+export async function skeletonSettled(scope) {
+  const sk = scope?.matches?.(SK_SEL) ? scope : scope?.querySelector?.(SK_SEL);
+  const anim = sk?.isConnected && sk.getAnimations().find((a) => a.animationName === 'sk-reveal');
+  if (!anim) return false;
+  const shown = Number(anim.currentTime) - Number(anim.effect.getTiming().delay); // < 0 — ещё не проявился
+  const revealAt = performance.now() - shown;
+  if (shown >= 0 && shown < SK_MIN) await sleep(SK_MIN - shown);
+  skHandoff = { at: performance.now(), revealAt };
+  return shown >= 0;
+}
+
 export function skeleton(kind = 'rows', n, { recs = false } = {}) {
-  const wrap = (...c) => h('div', { class: 'skeleton sk-root', 'aria-busy': 'true', 'aria-label': 'Загрузка' }, ...c);
+  const wrap = (...c) => h('div', { class: 'skeleton sk-root', 'aria-busy': 'true', 'aria-label': 'Загрузка', style: skStyle() }, ...c);
   switch (kind) {
     case 'cards': return wrap(h('div', { class: 'grid' }, times(n || 12, () => skCard())));
     case 'hcards': return wrap(h('div', { class: 'hscroll' }, times(n || 8, () => skCard())));
@@ -233,15 +287,26 @@ export function emptyView(title, sub, ic = 'ic_info_outline') {
   return h('div', { class: 'empty' }, icon(ic, 'big'), h('div', { class: 'empty-title' }, title), sub ? h('div', { class: 'empty-sub' }, sub) : null);
 }
 
+// Подменённый тихим обновлением контент показываем сразу, без анимации появления (.appeared в app.css)
+const APPEAR_SEL = '.release-row, .release-card, .comment, .article, .ep-row, .type-row';
+export function markAppeared(node) {
+  if (node.matches?.(APPEAR_SEL)) node.classList.add('appeared');
+  node.querySelectorAll?.(APPEAR_SEL).forEach((el) => el.classList.add('appeared'));
+  return node;
+}
+
 // --- Бесконечный список (ответ: {code, content, total_count, total_page_count, current_page}) ---
 export function pagedList({ load, render, container, empty, startPage = 0, grid = false, onFirst, pageSize = 25, skeleton: skKind }) {
   const list = container || h('div', { class: grid ? 'grid' : 'list' });
   const sentinel = h('div', { class: 'sentinel' });
   let page = startPage; let loading = false; let ended = false; let count = 0;
+  let gen = 0; // поколение загрузки: ответы, пришедшие после reload/refresh, отбрасываются
   const host = h('div', { class: 'paged' }, list, sentinel);
+  const isEnd = (r, items) => (typeof r.hasMore === 'boolean' ? !r.hasMore : items.length < (pageSize || 25));
   async function next() {
     if (loading || ended) return;
     loading = true;
+    const my = gen;
     // первая страница — скелетон в раскладке списка, следующие — спиннер внизу
     if (count === 0 && skKind !== false) {
       list.style.display = 'none';
@@ -249,16 +314,20 @@ export function pagedList({ load, render, container, empty, startPage = 0, grid 
     } else sentinel.replaceChildren(spinner());
     try {
       const r = await load(page);
+      if (my !== gen) return;
+      const instant = await skeletonSettled(sentinel);
+      if (my !== gen) return;
       const items = Array.isArray(r) ? r : (r.content || []);
       if (page === startPage && onFirst) onFirst(r);
       list.style.display = '';
-      for (const it of items) { const node = render(it, count++); if (node) list.append(node); }
+      for (const it of items) { const node = render(it, count++); if (node) list.append(instant ? markAppeared(node) : node); }
       page += 1;
       // Следующая страница есть, только если пришло >= 25 элементов
-      if (typeof r.hasMore === 'boolean' ? !r.hasMore : items.length < (pageSize || 25)) ended = true;
+      if (isEnd(r, items)) ended = true;
       sentinel.replaceChildren();
       if (ended && count === 0 && empty) sentinel.replaceChildren(empty());
     } catch (e) {
+      if (my !== gen) return;
       list.style.display = '';
       sentinel.replaceChildren(errorView(e, () => { loading = false; next(); }));
       loading = false;
@@ -269,7 +338,38 @@ export function pagedList({ load, render, container, empty, startPage = 0, grid 
   }
   const io = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) next(); }, { rootMargin: '600px' });
   io.observe(sentinel);
-  host.reload = () => { list.replaceChildren(); page = startPage; ended = false; count = 0; loading = false; next(); };
+  // первую страницу грузим сразу, не дожидаясь появления списка на странице: экран может дождаться
+  // данных до показа (router.js) и появиться уже с контентом. Микрозадача — после кода, создавшего список.
+  queueMicrotask(() => next());
+  host.reload = () => { gen += 1; list.replaceChildren(); page = startPage; ended = false; count = 0; loading = false; next(); };
+  // Тихое обновление (возврат на экран): заново запрашивает уже загруженные страницы и подменяет
+  // содержимое разом — без скелетона и без скачка прокрутки. При ошибке остаётся прежний вид.
+  host.refresh = async () => {
+    const my = ++gen;
+    loading = true;
+    const pages = Math.max(1, page - startPage);
+    try {
+      const rs = await Promise.all(Array.from({ length: pages }, (_, i) => load(startPage + i)));
+      if (my !== gen) return;
+      const nodes = []; let n = 0; let loaded = 0; let end = false;
+      for (const r of rs) {
+        const items = Array.isArray(r) ? r : (r.content || []);
+        if (loaded === 0 && onFirst) onFirst(r);
+        for (const it of items) { const node = render(it, n++); if (node) nodes.push(markAppeared(node)); }
+        loaded += 1;
+        if (isEnd(r, items)) { end = true; break; }
+      }
+      list.replaceChildren(...nodes);
+      list.style.display = '';
+      count = n; page = startPage + loaded; ended = end;
+      sentinel.replaceChildren();
+      if (ended && count === 0 && empty) sentinel.replaceChildren(empty());
+    } catch {
+      if (my !== gen) return;
+    }
+    loading = false;
+    if (!ended && isVisible(sentinel)) next();
+  };
   host.dispose = () => io.disconnect();
   return host;
 }
@@ -341,11 +441,13 @@ export function num(n) {
   return String(n);
 }
 
+const seenImages = new Set(); // уже показанные адреса: при перерисовке экрана не проявляем их заново
 export function img(src, cls = '', alt = '') {
   const el = h('img', { class: `${cls} fade`.trim(), alt, loading: 'lazy', decoding: 'async', referrerpolicy: 'no-referrer' });
   // плавное появление после загрузки (из кэша — сразу)
-  el.addEventListener('load', () => el.classList.add('loaded'), { once: true });
+  el.addEventListener('load', () => { el.classList.add('loaded'); if (src) seenImages.add(src); }, { once: true });
   if (src) el.src = src; else el.classList.add('noimg', 'loaded');
+  if (src && seenImages.has(src)) el.classList.add('loaded');
   if (el.complete && el.naturalWidth) el.classList.add('loaded');
   el.addEventListener('error', () => { el.classList.add('noimg'); el.classList.add('loaded'); el.removeAttribute('src'); }, { once: true });
   return el;

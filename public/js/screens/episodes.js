@@ -1,31 +1,108 @@
 // Озвучки, источники и серии; выбор плеера
-import { h, icon, iconButton, img, toast, dialog, sheet, spinner, errorView, emptyView, skeleton, skParts } from '../ui.js';
+import { h, icon, iconButton, img, toast, dialog, sheet, errorView, emptyView, skeleton, skParts, skeletonSettled, markAppeared } from '../ui.js';
 import { A, auth } from '../api.js';
 import { t, prefs, db } from '../store.js';
 import { registerScreen, replace } from '../router.js';
 import { backToolbar, digits } from './common.js';
-import { resolveEpisode, openBuiltinPlayer, openWebPlayer, openThirdParty, isKodik, showKodikAd } from '../player.js';
+import { resolveEpisode, openBuiltinPlayer, openWebPlayer, openThirdParty } from '../player.js';
 
-// Скелетон: список озвучек/источников (type-row) или серий (ep-row)
-function episodesSkeleton({ release, type, source }) {
-  const bar = backToolbar(type && !source ? type.name : release?.title_ru || t('unnamed'));
-  if (type && source) return [bar, skeleton('episodes')];
+const epSort = () => Number(localStorage.getItem('anixart.pref.EPISODES_SORT') || 1);
+const sortIcon = (sort) => (sort === 1 ? 'ic_sort_ascending' : 'ic_sort_descending');
+const epContainer = (...c) => h('div', { class: 'container', style: { padding: 0, maxWidth: '900px' } }, ...c);
+
+// --- Озвучки, источники, серии: запрос заранее ---
+// Страница релиза запрашивает их в фоне (prefetchWatch): «Воспроизвести» открывает экран быстрее, а пока он
+// грузится, скелетон уже знает, чем экран станет — списком озвучек, источников или серий.
+// Озвучки и источники живут минуту; серии — до первого показа (отметки просмотра должны быть свежими).
+const CACHE_TTL = 60000;
+const cache = new Map(); // ключ → { promise, value, at }
+function cached(key, load) {
+  let c = cache.get(key);
+  if (!c || c.failed || performance.now() - c.at > CACHE_TTL) {
+    c = { at: performance.now(), value: undefined, failed: false };
+    c.promise = load().then((v) => { c.value = v; return v; }, (e) => { c.failed = true; throw e; });
+    cache.set(key, c);
+  }
+  return c;
+}
+const peek = (key) => { const c = cache.get(key); return c && !c.failed && performance.now() - c.at <= CACHE_TTL ? c.value : undefined; };
+const typesOf = (rid) => cached(`t${rid}`, () => A.types(rid).then((r) => r.types || [])).promise;
+const sourcesOf = (rid, tid) => cached(`s${rid}:${tid}`, () => A.sources(rid, tid).then((r) => r.sources || [])).promise;
+const episodesKey = (rid, tid, sid, sort) => `e${rid}:${tid}:${sid}:${sort}`;
+function takeEpisodes(rid, tid, sid, sort) {
+  const key = episodesKey(rid, tid, sid, sort);
+  const p = cached(key, () => A.episodes(rid, tid, sid, sort)).promise;
+  cache.delete(key);
+  return p;
+}
+
+// Автопереход: запомненные озвучка/источник (IS_REMEMBERING_TYPE_SOURCE) или единственный вариант
+function autoType(release, types, pick) {
+  if (pick) return null;
+  const last = prefs.get('IS_REMEMBERING_TYPE_SOURCE') ? db.lastWatched(release.id) : null;
+  const ty = last && types.find((x) => x.id === last.typeId);
+  if (ty) return { type: ty, sourceId: last.sourceId };
+  return types.length === 1 ? { type: types[0], sourceId: null } : null;
+}
+function autoSource(sources, sourceId, pick) {
+  if (pick) return null;
+  return (sourceId && sources.find((s) => s.id === sourceId)) || (sources.length === 1 ? sources[0] : null);
+}
+
+// Со страницы релиза: озвучки, источники выбранной озвучки и её серии — к нажатию «Воспроизвести»
+export function prefetchWatch(release) {
+  typesOf(release.id).then((types) => {
+    const at = autoType(release, types, false);
+    if (!at) return;
+    return sourcesOf(release.id, at.type.id).then((sources) => {
+      const s = autoSource(sources, at.sourceId, false);
+      if (s) cached(episodesKey(release.id, at.type.id, s.id, epSort()), () => A.episodes(release.id, at.type.id, s.id, epSort()));
+    });
+  }).catch(() => {});
+}
+
+// Каким станет экран: { kind: 'types' | 'sources' | 'episodes', type, source }. Из уже известных
+// (запрошенных заранее) озвучек и источников; чего ещё нет — угадываем по запомненному выбору.
+function predict({ release, type, source, sourceId, pick }) {
+  if (type && source) return { kind: 'episodes', type, source };
+  let ty = type; let sid = sourceId;
+  if (!ty) {
+    const types = release && peek(`t${release.id}`);
+    if (!types) {
+      const last = !pick && release && prefs.get('IS_REMEMBERING_TYPE_SOURCE') ? db.lastWatched(release.id) : null;
+      return last ? { kind: 'episodes', type: last.typeName && { name: last.typeName }, source: last.sourceName && { name: last.sourceName } } : { kind: 'types' };
+    }
+    const at = autoType(release, types, pick);
+    if (!at) return { kind: 'types' };
+    ty = at.type; sid = at.sourceId;
+  }
+  const sources = peek(`s${release.id}:${ty.id}`);
+  if (!sources) return { kind: 'episodes', type: ty }; // у большинства озвучек один источник
+  const s = autoSource(sources, sid, pick);
+  return s ? { kind: 'episodes', type: ty, source: s } : { kind: 'sources', type: ty };
+}
+
+// Скелетон в раскладке того экрана, которым он станет: серии — та же панель (озвучка • источник,
+// сортировка, «Ещё») и та же колонка списка; озвучки и источники — заголовок раздела и строки type-row.
+function episodesSkeleton(params) {
+  const p = predict(params);
+  if (p.kind === 'episodes') {
+    const title = p.type?.name && p.source?.name ? `${p.type.name} • ${p.source.name}` : skParts.line('180px', 'title');
+    const noop = () => {};
+    return [backToolbar(title, [iconButton(sortIcon(epSort()), 'Сортировка', noop), iconButton('ic_more', 'Ещё', noop)]), epContainer(skeleton('episodes'))];
+  }
+  const bar = backToolbar(p.kind === 'sources' ? p.type.name : params.release?.title_ru || t('unnamed'));
   return [bar, h('div', { class: 'section-head' }, skParts.line('170px', 'title', { height: '20px' })), skeleton('types', 4)];
 }
 
-// Экран 1: варианты озвучки (types)
+// Экран 1: варианты озвучки (types). Автопереход к запомненным или единственным озвучке/источнику
+// идёт внутри этого же экрана: один скелетон на весь путь до серий, без промежуточных экранов
 registerScreen('episodes', async ({ release, type, source, sourceId, pick }, ctx) => {
   if (type && source) return episodesList(release, type, source, ctx);
-  if (type) return sourcesList(release, type, sourceId, pick);
-  const r = await A.types(release.id);
-  const types = r.types || [];
-  // Автооткрытие: запомненные озвучка/источник (IS_REMEMBERING_TYPE_SOURCE) или единственный вариант
-  const last = db.lastWatched(release.id);
-  if (!pick && prefs.get('IS_REMEMBERING_TYPE_SOURCE') && last) {
-    const ty = types.find((x) => x.id === last.typeId);
-    if (ty) { setTimeout(() => replace('episodes', { release, type: ty, sourceId: last.sourceId }), 0); return h('div', null, ...episodesSkeleton({ release, type: ty, source: true })); }
-  }
-  if (types.length === 1 && !pick) { setTimeout(() => replace('episodes', { release, type: types[0] }), 0); return h('div', null, ...episodesSkeleton({ release, type })); }
+  if (type) return sourcesList(release, type, sourceId, pick, ctx);
+  const types = await typesOf(release.id);
+  const at = autoType(release, types, pick);
+  if (at) return sourcesList(release, at.type, at.sourceId, false, ctx);
   const root = h('div', null, backToolbar(release.title_ru || t('unnamed')));
   if (!types.length) { root.append(emptyView('Серии пока не добавлены')); return root; }
   root.append(h('div', { class: 'section-head' }, h('div', { class: 'section-title' }, 'Выберите озвучку')));
@@ -42,12 +119,10 @@ function ctxNavigate(release, type) {
   import('../router.js').then(({ navigate }) => navigate('episodes', { release, type }));
 }
 
-async function sourcesList(release, type, sourceId, pick) {
-  const r = await A.sources(release.id, type.id);
-  const sources = r.sources || [];
-  const remembered = sourceId && sources.find((s) => s.id === sourceId);
-  if (remembered && !pick) { setTimeout(() => replace('episodes', { release, type, source: remembered }), 0); return h('div', null, ...episodesSkeleton({ release, type, source: true })); }
-  if (sources.length === 1 && !pick) { setTimeout(() => replace('episodes', { release, type, source: sources[0] }), 0); return h('div', null, ...episodesSkeleton({ release, type, source: true })); }
+async function sourcesList(release, type, sourceId, pick, ctx) {
+  const sources = await sourcesOf(release.id, type.id);
+  const auto = autoSource(sources, sourceId, pick);
+  if (auto) return episodesList(release, type, auto, ctx);
   const root = h('div', null, backToolbar(type.name));
   if (!sources.length) { root.append(emptyView('Источники не найдены')); return root; }
   root.append(h('div', { class: 'section-head' }, h('div', { class: 'section-title' }, 'Выберите источник')));
@@ -59,17 +134,21 @@ async function sourcesList(release, type, sourceId, pick) {
 }
 
 async function episodesList(release, type, source, ctx) {
-  let sort = Number(localStorage.getItem('anixart.pref.EPISODES_SORT') || 1);
+  let sort = epSort();
   const root = h('div');
   const listEl = h('div', { class: 'ep-list' });
   let episodes = [];
 
+  let instant = false; // серии сменили видимый скелетон — ставим сразу, без проявления
+  let firstLoad = true; // первая загрузка берёт серии, запрошенные заранее со страницы релиза
   async function load() {
     listEl.replaceChildren(skeleton('episodes'));
     try {
-      const r = await A.episodes(release.id, type.id, source.id, sort);
+      const r = await (firstLoad ? takeEpisodes(release.id, type.id, source.id, sort) : A.episodes(release.id, type.id, source.id, sort));
+      firstLoad = false;
       episodes = r.episodes || [];
-    } catch (e) { listEl.replaceChildren(errorView(e, load)); return; }
+      instant = await skeletonSettled(listEl);
+    } catch (e) { await skeletonSettled(listEl); listEl.replaceChildren(errorView(e, load)); return; }
     // Слияние с локальной БД
     const local = db.watchedOf(release.id, source.id);
     for (const ep of episodes) {
@@ -79,25 +158,34 @@ async function episodesList(release, type, source, ctx) {
         if (!ep.is_watched && ep.position in local) db.putEpisode(release.id, source.id, ep.position, { isWatched: false, playbackPosition: 0 });
       } else ep.is_watched = ep.position in local;
     }
-    paint();
+    paint({ first: true });
   }
 
-  function paint() {
-    listEl.replaceChildren();
-    if (!episodes.length) { listEl.append(emptyView('Серии не найдены')); return; }
+  // first — первая отрисовка после загрузки: строки проявляются (если не сменили видимый скелетон),
+  // список прокручивается к последней просмотренной. Повторные (отметка, запуск серии) меняют строки
+  // разом и без анимации, прокрутка остаётся на месте — иначе список мигает и прыгает.
+  function paint({ first = false } = {}) {
+    if (!episodes.length) { listEl.replaceChildren(emptyView('Серии не найдены')); return; }
     let lastIdx = -1;
     episodes.forEach((ep, i) => { if (ep.is_watched) lastIdx = i; });
-    episodes.forEach((ep, i) => {
+    const rows = episodes.map((ep, i) => {
       const row = h('div', { class: `ep-row ${ep.is_watched ? 'watched' : ''} ${i === lastIdx ? 'last' : ''}`, onclick: () => onEpisode(i) },
         h('div', { class: 'num' }, ep.is_watched ? icon('ic_check', 'sm') : String(ep.position)),
         h('div', { class: 'grow' },
           h('div', { style: { fontWeight: 500 } }, ep.name || `${ep.position} серия`, ep.is_filler ? h('span', { class: 'badge', style: { marginLeft: '8px' } }, 'филлер') : null),
           h('div', { class: 'muted', style: { fontSize: '12px' } }, [source.name, ep.addedDate ? new Date(ep.addedDate * 1000).toLocaleDateString('ru-RU') : ''].filter(Boolean).join(' • '))),
         iconButton(ep.is_watched ? 'ic_eye_off_outline' : 'ic_eye_outline', ep.is_watched ? 'Снять отметку' : 'Отметить просмотренной', (e) => { e.stopPropagation(); toggleWatched(ep); }, 'sm'));
-      listEl.append(row);
+      return first && !instant ? row : markAppeared(row);
     });
+    listEl.replaceChildren(...rows);
+    instant = false;
+    if (!first) return;
+    // к последней просмотренной; после первой загрузки список попадает на страницу чуть позже
     const last = listEl.querySelector('.ep-row.last');
-    if (last) requestAnimationFrame(() => last.scrollIntoView({ block: 'center' }));
+    if (!last) return;
+    let tries = 60;
+    const scroll = () => { if (last.isConnected) last.scrollIntoView({ block: 'center' }); else if (tries-- > 0) requestAnimationFrame(scroll); };
+    requestAnimationFrame(scroll);
   }
 
   async function toggleWatched(ep) {
@@ -138,7 +226,7 @@ async function episodesList(release, type, source, ctx) {
   async function play(i, player) {
     const ep = episodes[i];
     // До начала воспроизведения
-    db.addLastWatched(release.id, type.id, source.id, ep.position);
+    db.addLastWatched(release.id, type.id, source.id, ep.position, { typeName: type.name, sourceName: source.name });
     if (auth.loggedIn) {
       A.historyAdd(release.id, source.id, ep.position).then(() => { release.is_viewed = true; release.last_view_episode = ep; release.last_view_timestamp = Math.floor(Date.now() / 1000); }).catch(() => {});
       A.episodeWatch(release.id, source.id, ep.position).catch(() => {});
@@ -147,47 +235,34 @@ async function episodesList(release, type, source, ctx) {
     ep.is_watched = true;
     paint();
     if (player === 1) { openWebPlayer(ep, release); return; }
-    // Встроенный / сторонний: episode/target → парсер
-    const loading = dialog({ title: 'Загрузка…', content: spinner() });
+    // Встроенный / сторонний: episode/target → парсер. Пока готовится ссылка — спиннер на месте номера
+    // нажатой серии (появляется через SK_DELAY, как все индикаторы); повторный клик не запускает вторую загрузку
+    if (starting) return;
+    starting = true;
+    listEl.children[i]?.querySelector('.num')?.replaceChildren(h('div', { class: 'load-reveal' }, h('div', { class: 'spinner' })));
     try {
-      if (isKodik(ep.url) && prefs.get('KODIK_IFRAME_AD') && prefs.get('SELECTED_KODIK_VIDEO_QUALITY') === 0) {
-        loading.close();
-        if (!(await kodikAdFlow(ep))) return;
-      }
       const res = await resolveEpisode(ep);
-      loading.close();
       if (player === 2) openBuiltinPlayer({ release, episodes, index: i, sort, resolved: res });
       else openThirdParty(ep, release, res);
     } catch (e) {
-      loading.close();
       dialog({
         title: t('error_cannot_launch_player'),
         content: h('p', null, `${t('error_cannot_play_in_selected_player')}`),
         actions: [{ label: t('close') }, { label: t('player_web'), primary: true, onClick: () => openWebPlayer(ep, release) }],
       });
-    }
+    } finally { starting = false; paint(); }
   }
+  let starting = false;
 
-  async function kodikAdFlow(ep) {
-    if (!prefs.get('KODIK_AD_DISCLAIMER')) {
-      const choice = await new Promise((resolve) => dialog({
-        title: t('kodik_ad_disclaimer_title'), content: h('p', null, t('kodik_ad_disclaimer_desc')),
-        actions: [
-          { label: 'Среднее качество (480p, без рекламы)', onClick: () => { prefs.set('SELECTED_KODIK_VIDEO_QUALITY', 1); resolve('medium'); } },
-          { label: t('action_continue'), primary: true, onClick: () => { prefs.set('KODIK_AD_DISCLAIMER', true); resolve('ad'); } },
-        ],
-        onClose: () => resolve(null),
-      }));
-      if (!choice) return false;
-      if (choice === 'medium') return true;
-    }
-    const tr = await A.episodeTarget(release.id, source.id, ep.position).catch(() => null);
-    await showKodikAd(tr?.episode?.url || ep.url);
-    return true;
-  }
-
+  // Сортировка — перезагрузка списка на месте, без пересоздания экрана
+  const sortButton = () => iconButton(sortIcon(sort), 'Сортировка', (e) => {
+    sort = sort === 1 ? 2 : 1;
+    localStorage.setItem('anixart.pref.EPISODES_SORT', String(sort));
+    e.currentTarget.replaceWith(sortButton());
+    load();
+  });
   const toolbar = backToolbar(`${type.name} • ${source.name}`, [
-    iconButton(sort === 1 ? 'ic_sort_ascending' : 'ic_sort_descending', 'Сортировка', () => { sort = sort === 1 ? 2 : 1; localStorage.setItem('anixart.pref.EPISODES_SORT', String(sort)); replace('episodes', { release, type, source }); }),
+    sortButton(),
     iconButton('ic_more', 'Ещё', () => sheet(null, [
       { label: t('watch_marks_add') !== 'watch_marks_add' ? t('watch_marks_add') : 'Отметить все', icon: 'ic_done_all', onClick: () => markAll(true) },
       { label: t('watch_marks_remove') !== 'watch_marks_remove' ? t('watch_marks_remove') : 'Снять все отметки', icon: 'ic_remove_done', onClick: () => markAll(false) },
@@ -195,8 +270,9 @@ async function episodesList(release, type, source, ctx) {
       { label: t('player'), icon: 'ic_play_circle', onClick: () => choosePlayer(true) },
     ])),
   ]);
-  root.append(toolbar, h('div', { class: 'container', style: { padding: 0, maxWidth: '900px' } }, listEl));
-  load();
+  root.append(toolbar, epContainer(listEl));
+  // первая загрузка — до возврата экрана: пока идёт, на экране остаётся его скелетон из роутера
+  await load();
   window.addEventListener('player-closed', function onClose(e) {
     if (!root.isConnected) { window.removeEventListener('player-closed', onClose); return; }
     if (e.detail.releaseId === release.id) { const local = db.watchedOf(release.id, source.id); episodes.forEach((x) => { if (x.position in local) x.is_watched = true; }); paint(); }

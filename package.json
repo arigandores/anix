@@ -1,7 +1,7 @@
 {
   "name": "anix-desktop",
   "productName": "Anix Desktop",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "Anix Desktop — неофициальный клиент Anixart для Windows и браузера",
   "author": "arigandores",
   "main": "electron/main.js",
@@ -12,9 +12,10 @@
     "serve": "node server/index.js",
     "app": "electron .",
     "build:win": "electron-builder --win dir --x64",
-    "build:installer": "electron-builder --win nsis portable --x64",
+    "build:installer": "electron-builder --win nsis --x64",
     "build:release": "node build/release.js",
     "test": "node test/smoke.js",
+    "test:all": "node test/run-all.js",
     "test:e2e": "electron test/e2e.js",
     "test:ui": "electron test/ui-audit.js && electron test/contrast.js && electron test/skeleton-match.js && electron test/layout-audit.js",
     "test:ai": "electron test/ai-chat.js && electron test/ai-stream.js && electron test/ai-actions.js && electron test/ai-memory.js && electron test/ai-config.js && electron test/ai-scroll.js && electron test/ai-away.js && electron test/ai-stop.js"
@@ -23,7 +24,7 @@
     "appId": "com.arigandores.anixdesktop",
     "productName": "Anix Desktop",
     "electronDist": "node_modules/electron/dist",
-    "electronVersion": "33.4.11",
+    "electronVersion": "44.7.1",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -49,15 +50,18 @@
       "shortcutName": "Anix Desktop",
       "artifactName": "AnixDesktop-Setup-${version}.${ext}"
     },
-    "portable": {
-      "artifactName": "AnixDesktop-Portable-${version}.${ext}"
-    },
     "asarUnpack": [
       "node_modules/**"
+    ],
+    "extraResources": [
+      {
+        "from": "trt/bin/anix-trt.exe",
+        "to": "anix-trt.exe"
+      }
     ]
   },
   "devDependencies": {
-    "electron": "33.4.11",
+    "electron": "44.7.1",
     "electron-builder": "25.1.8",
     "resedit": "2.0.3"
   },

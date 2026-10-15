@@ -144,7 +144,7 @@ export const A = {
     if (tg.staticDomain) prefs.set('STATIC_DOMAIN', tg.staticDomain);
     if (typeof tg.shouldUseMirrorUrls === 'boolean') prefs.set('SHOULD_USE_MIRROR_URLS', tg.shouldUseMirrorUrls);
     // BASE_URL / EDITOR_URL / IFRAME-адреса тоже на зеркало
-    if (mirrorEnabled()) for (const k of ['baseUrl', 'editorUrl', 'iframeEmbedUrl', 'kodikAdIframeUrl']) if (tg[k]) tg[k] = toMirror(tg[k], true);
+    if (mirrorEnabled()) for (const k of ['baseUrl', 'editorUrl', 'iframeEmbedUrl']) if (tg[k]) tg[k] = toMirror(tg[k], true);
     return tg;
   }),
   // auth

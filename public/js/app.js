@@ -28,9 +28,7 @@ function buildNav(container, withLogo) {
 function onTabChange(tab) {
   document.querySelectorAll('.nav-item').forEach((b) => {
     const on = b.dataset.tab === tab;
-    b.classList.toggle('active', on);
-    b.querySelector('.ic.off').style.display = on ? 'none' : '';
-    b.querySelector('.ic.on').style.display = on ? '' : 'none';
+    b.classList.toggle('active', on); // иконки переключает CSS (.nav-item.active .ic.on)
   });
 }
 
@@ -51,6 +49,17 @@ async function main() {
   applyTheme();
   if (prefs.get('ECONOMY_MODE')) document.documentElement.classList.add('economy'); // режим экономии: без анимаций
   initDragScroll(); // ЛКМ + движение = прокрутка, как пальцем в мобильном приложении
+  // Двойной клик = одно нажатие: второй клик серии (detail > 1) до кнопок не доходит — иначе он повторяет
+  // действие или попадает в только что открытый экран. Плеер ловит двойное нажатие сам (pointerdown),
+  // поля ввода выделяют слово двойным кликом — их не трогаем.
+  document.addEventListener('click', (e) => {
+    if (e.detail > 1 && !e.target.closest('.player-overlay, input, textarea, select, [contenteditable]')) { e.stopPropagation(); e.preventDefault(); }
+  }, true);
+  // Анимация появления — один раз на элемент (см. .appeared в app.css). Сам .screen не трогаем:
+  // его затухание при смене вкладки задаёт роутер.
+  document.addEventListener('animationend', (e) => {
+    if ((e.animationName === 'content-in' || e.animationName === 'screen-fade') && !e.target.classList.contains('screen')) e.target.classList.add('appeared');
+  }, true);
   await loadStrings();
   buildNav(document.getElementById('rail'), true);
   buildNav(document.getElementById('bottomnav'), false);

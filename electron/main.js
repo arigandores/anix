@@ -4,6 +4,7 @@
 const { app, BrowserWindow, shell, Menu, nativeImage, session, ipcMain } = require('electron');
 const path = require('path');
 const { start } = require('../server');
+const trt = require('./trt'); // ускорение апскейла на тензорных ядрах NVIDIA
 
 let win;
 let serverInfo;
@@ -57,7 +58,7 @@ async function createWindow() {
   await win.loadURL(serverInfo.url);
 }
 
-// clear_webview_cache: HTTP-кэш + cookies/хранилища сторонних сайтов (плееры, реклама); настройки
+// clear_webview_cache: HTTP-кэш + cookies/хранилища сторонних сайтов (веб-плееры); настройки
 // и вход приложения (localStorage своего origin) не трогаем. Возвращает размер очищенного кэша в байтах.
 ipcMain.handle('clear-web-cache', async () => {
   const ses = session.defaultSession;
@@ -68,68 +69,13 @@ ipcMain.handle('clear-web-cache', async () => {
   return size;
 });
 
-// Окно рекламы Kodik: страница рекламы с JS-интерфейсом KodikInterface.advertEnded();
-// HTTP 500 на пути с "/ftor" тоже считается окончанием рекламы; после загрузки — синтетический тап по центру.
-ipcMain.handle('kodik-ad', (_e, url) => new Promise((resolve) => {
-  const ad = new BrowserWindow({
-    parent: win, modal: true, width: 960, height: 600, title: 'Реклама', backgroundColor: '#000', autoHideMenuBar: true,
-    webPreferences: { contextIsolation: true, sandbox: true, preload: path.join(__dirname, 'kodik-preload.js'), autoplayPolicy: 'no-user-gesture-required' },
-  });
-  let done = false;
-  const finish = () => { if (done) return; done = true; ipcMain.removeListener('kodik-ad-ended', onEnded); session.defaultSession.webRequest.onCompleted(null); if (!ad.isDestroyed()) ad.close(); resolve(true); };
-  const onEnded = (ev) => { if (ev.sender === ad.webContents) finish(); };
-  ipcMain.on('kodik-ad-ended', onEnded);
-  ad.webContents.session.webRequest.onCompleted({ urls: ['*://*/*'] }, (d) => { if (d.statusCode === 500 && d.url.includes('/ftor')) finish(); });
-  // Автозапуск: как в мобильном приложении (тап по центру + воспроизведение без жеста). Плеер рекламы
-  // грузится во фрейме позже окончания загрузки страницы, поэтому пробуем несколько раз:
-  // запускаем все <video> во всех фреймах и нажимаем кнопку play, если она есть.
-  const AUTOPLAY_JS = `(() => {
-    let started = false;
-    for (const v of document.querySelectorAll('video')) {
-      if (v.paused) { v.play().then(() => {}, () => {}); }
-      if (!v.paused || v.currentTime > 0) started = true;
-    }
-    // плеер Kodik: оверлей .play_button / .play_background; жмём один раз на фрейм
-    const btn = document.querySelector('.play_button, .play_background, .vjs-big-play-button, [class*="play-button"], [class*="playButton"]');
-    if (btn && !started && !window.__anixPlayClicked) {
-      window.__anixPlayClicked = true;
-      for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
-        btn.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
-      }
-      started = true;
-    }
-    return started;
-  })()`;
-  const tapCenter = () => {
-    if (ad.isDestroyed()) return;
-    const [w, h] = ad.getContentSize();
-    ad.webContents.sendInputEvent({ type: 'mouseDown', x: Math.floor(w / 2), y: Math.floor(h / 2), button: 'left', clickCount: 1 });
-    ad.webContents.sendInputEvent({ type: 'mouseUp', x: Math.floor(w / 2), y: Math.floor(h / 2), button: 'left', clickCount: 1 });
-  };
-  let autoplayTimer = null;
-  const tryAutoplay = async (attempt = 0) => {
-    if (done || ad.isDestroyed()) return;
-    let started = false;
-    for (const frame of ad.webContents.mainFrame.framesInSubtree) {
-      try { if (await frame.executeJavaScript(AUTOPLAY_JS, true)) started = true; } catch { /* фрейм ещё не готов */ }
-    }
-    if (!started && (attempt === 1 || attempt === 4)) tapCenter();
-    if (!started && attempt < 20) autoplayTimer = setTimeout(() => tryAutoplay(attempt + 1), 700);
-  };
-  ad.webContents.on('did-finish-load', () => {
-    ad.webContents.insertCSS('html, body { overflow: hidden !important; }').catch(() => {});
-    tapCenter();
-    tryAutoplay(0);
-  });
-  ad.on('closed', () => { clearTimeout(autoplayTimer); finish(); });
-  ad.loadURL(url);
-}));
-
 // Вход через соцсети: открываем официальную страницу провайдера в модальном окне и ловим redirect_uri
 // (обычный способ для встроенных браузеров). Возвращаем перехваченные параметры фронтенду.
 // Google во встроенных окнах вход запрещает — он идёт через системный браузер (open-external, social.js).
 // UA без «Electron»: с ним провайдеры показывают упрощённые или ошибочные страницы.
 const AUTH_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+
+trt.register(ipcMain);
 
 ipcMain.handle('open-external', (_e, url) => {
   if (!/^https?:\/\//.test(String(url))) return false;

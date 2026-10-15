@@ -1,5 +1,5 @@
 // Обзор: популярное, смотрят сейчас, рекомендации, расписание
-import { h, icon, img, tabs, skeleton, skParts, errorView, dialog, emptyView } from '../ui.js';
+import { h, icon, img, tabs, skeleton, skParts, errorView, dialog, emptyView, skeletonSettled, markAppeared } from '../ui.js';
 import { A, auth } from '../api.js';
 import { t } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
@@ -41,7 +41,8 @@ registerScreen('tab:discover', async (_p, ctx) => {
       A.collections(-1, colPrev, 2, 4),
       A.commentsWeek(),
     ]);
-    const v = (r) => (r.status === 'fulfilled' && r.value && Array.isArray(r.value.content) ? r.value : { content: [] });
+    const instant = await skeletonSettled(body);
+    const v =(r) => (r.status === 'fulfilled' && r.value && Array.isArray(r.value.content) ? r.value : { content: [] });
     if ([rec, interesting, watching, discussing, cols, comments].every((r) => r.status === 'rejected')) {
       body.replaceChildren(errorView(rec.reason, load));
       return;
@@ -110,6 +111,7 @@ registerScreen('tab:discover', async (_p, ctx) => {
       body.append(h('div', { class: 'list' }, cm.map((x) => commentItem(x, { kind: 'release', showTarget: true }))));
     }
     body.append(h('div', { style: { height: '30px' } }));
+    if (instant) markAppeared(body);
   }
   ctx.setOnShow(() => {});
   load();

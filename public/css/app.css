@@ -83,7 +83,16 @@ img { display: block; }
 #rail .logo { width: 40px; height: 40px; margin: 6px 0 18px; color: var(--carmine); }
 .nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 80px; padding: 4px 0 8px;
   color: var(--nav-icon); font-size: 12px; font-family: 'Google Sans', 'Roboto', sans-serif; position: relative; }
-.nav-item .pill { width: 56px; height: 32px; border-radius: 16px; display: grid; place-items: center; transition: background .2s; }
+/* Выбор вкладки — мгновенно (фон и залитая иконка сразу): плавная смена в момент, когда строится новый
+   экран, выглядит вялой. Плавная только подсветка при наведении. */
+.nav-item { transition: none; } /* и подпись — без общего плавного перехода кнопок */
+.nav-item .pill { width: 56px; height: 32px; border-radius: 16px; display: grid; place-items: center; }
+.nav-item:not(.active):hover .pill { transition: background .12s; }
+/* обычная и залитая иконки — друг на друге и обе всегда отрисованы (маска загружена заранее):
+   залитая не догружается после подсветки фона */
+.nav-item .pill .ic { grid-area: 1 / 1; }
+.nav-item .pill .ic.on, .nav-item.active .pill .ic.off { opacity: 0; }
+.nav-item.active .pill .ic.on { opacity: 1; }
 .nav-item.active { color: var(--nav-icon-on); }
 .nav-item.active .pill { background: var(--nav-ind); }
 .nav-item:hover .pill { background: var(--block); }
@@ -280,7 +289,24 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .info-row a, .linkish, .content a { color: var(--link); cursor: pointer; }
 .desc-text { white-space: pre-line; font-size: 14.5px; line-height: 1.55; }
 .desc-text.collapsed { max-height: 9.3em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 60%, transparent); mask-image: linear-gradient(#000 60%, transparent); }
+.desc-text.collapsed.expandable { cursor: pointer; }
 .screens { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; }
+/* Связанные релизы: стрелка между карточками — порядок выхода; по высоте — середина постера */
+.chain-arrow { flex: none; align-self: flex-start; margin-top: 82px; color: var(--text3); display: grid; place-items: center; }
+/* «Показать все»: хронология — номер на вертикальной линии слева, текущий релиз выделен */
+.chain-row { display: flex; align-items: stretch; }
+.chain-row > .release-row { flex: 1; min-width: 0; padding-left: 4px; }
+.chain-rail { position: relative; flex: none; width: 60px; display: flex; align-items: center; justify-content: flex-end; }
+.chain-rail::before { content: ''; position: absolute; top: 0; bottom: 0; right: 17px; width: 2px; background: var(--sep); }
+.chain-row:first-child .chain-rail::before { top: 50%; }
+.chain-row:last-child .chain-rail::before { bottom: 50%; }
+/* номер и год под ним; фон под годом прерывает линию, чтобы подпись читалась */
+.chain-mark { position: relative; width: 36px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.chain-num { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 500; background: var(--btn2); color: var(--btn2-text); }
+.chain-year { font-size: 11px; line-height: 1; padding: 2px 0; color: var(--text3); background: var(--bg); }
+.chain-row.current .chain-num { background: var(--carmine); color: #fff; }
+:root[data-theme="dark"] .chain-row.current .chain-num { background: var(--accent); color: var(--on-accent); }
+.chain-row.current > .release-row { background: var(--block); }
 .screens > img, .screens > div > img:not(.poster img) { height: 130px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px; cursor: zoom-in; background: var(--ph1); flex: none; }
 .rating-box { display: flex; gap: 18px; align-items: center; }
 .rating-big { font-size: 44px; font-family: 'Google Sans','Roboto',sans-serif; line-height: 1; }
@@ -291,6 +317,9 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 :root[data-theme="dark"] .rating-bar .fill { background: var(--accent); }
 .stars { display: flex; gap: 4px; margin-top: 12px; }
 .stars button { color: var(--text4); } .stars button.on { color: var(--orange); }
+/* выбор оценки: наведённая звезда и все до неё заполняются (так же при фокусе с клавиатуры) */
+.stars.pick:has(button:hover) button, .stars.pick:has(button:focus-visible) button { color: var(--orange); }
+.stars.pick button:hover ~ button, .stars.pick button:focus-visible ~ button { color: var(--text4); }
 .stars .ic { width: 32px; height: 32px; }
 .list-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
 .list-stat { padding: 10px; border-radius: 10px; background: var(--block); }
@@ -302,6 +331,8 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .ep-row { display: flex; align-items: center; gap: 14px; padding: 12px 20px; cursor: pointer; }
 .ep-row:hover { background: var(--block); }
 .ep-row .num { width: 42px; height: 42px; border-radius: 12px; background: var(--btn2); display: grid; place-items: center; font-weight: 500; flex: none; }
+/* серия запускается: спиннер на месте номера */
+.ep-row .num .spinner { width: 20px; height: 20px; border-width: 2.5px; }
 .ep-row.watched .num { background: color-mix(in srgb, var(--green) 20%, transparent); color: var(--green); }
 .ep-row.last .num { outline: 2px solid var(--carmine); }
 .type-row { display: flex; align-items: center; gap: 14px; padding: 12px 20px; cursor: pointer; }
@@ -361,7 +392,7 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .sentinel { min-height: 1px; }
 
 /* ---------- Диалоги / bottom sheet / toast ---------- */
-.backdrop { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.45); display: grid; place-items: center; padding: 20px; animation: fade .15s; }
+.backdrop { position: fixed; inset: 0; z-index: 130; background: rgba(0,0,0,.45); display: grid; place-items: center; padding: 20px; animation: fade .15s; }
 @keyframes fade { from { opacity: 0; } }
 .dialog { width: min(440px, 100%); max-height: 86vh; overflow: auto; background: var(--bg2); border-radius: 26px; padding: 24px; box-shadow: 0 12px 40px rgba(0,0,0,.3); animation: pop .18s ease-out; }
 :root[data-theme="dark"] .dialog { background: #2b2b2b; }
@@ -401,20 +432,66 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .player-stage { flex: 1; position: relative; display: grid; place-items: center; }
 .player-stage video, .player-stage iframe { width: 100%; height: 100%; border: 0; background: #000; }
 .player-msg { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; text-align: center; padding: 20px; }
-.player-controls { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; padding: 30px 16px 12px; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.75)); transition: opacity .25s; }
-.player-controls .row { gap: 4px; }
+/* Панель плеера. Цвета: проигранное — карминовый, секции опенинга/эндинга — зелёный (--mark). */
+.player-overlay { --mark: #66c942; --mark-dim: rgba(102,201,66,.32); --mark-buf: rgba(102,201,66,.55); }
+.player-controls { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; padding: 34px 16px 10px; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.45) 35%, rgba(0,0,0,.82)); transition: opacity .25s; }
+.player-controls .row { gap: 2px; }
 .player-controls .icon-btn { color: #fff; }
 .player-controls .icon-btn:hover { background: rgba(255,255,255,.12); }
-.player-controls .time { font-size: 13px; font-variant-numeric: tabular-nums; margin: 0 8px; opacity: .9; }
-.seek { width: 100%; height: 18px; position: relative; cursor: pointer; display: flex; align-items: center; }
-.seek .track { position: absolute; left: 0; right: 0; height: 4px; border-radius: 2px; background: rgba(255,255,255,.25); }
-.seek .buf { position: absolute; left: 0; height: 4px; border-radius: 2px; background: rgba(255,255,255,.4); }
-.seek .fill { position: absolute; left: 0; height: 4px; border-radius: 2px; background: var(--carmine); }
-.seek .knob { position: absolute; width: 14px; height: 14px; border-radius: 50%; background: var(--carmine); transform: translateX(-50%); }
-.seek:hover .track, .seek:hover .buf, .seek:hover .fill { height: 6px; }
+.player-controls .time { font-size: 13px; font-variant-numeric: tabular-nums; margin: 0 10px; opacity: .92; white-space: nowrap; }
+.player-controls .gear .ic { transition: transform .3s var(--ease-std); }
+.player-controls .gear.on { background: rgba(255,255,255,.14); }
+.player-controls .gear.on .ic { transform: rotate(60deg); }
+
+/* Таймлайн: сегменты по границам опенинга и эндинга, между ними зазор; в сегменте — буфер и проигранное */
+.seek { width: 100%; height: 22px; position: relative; cursor: pointer; touch-action: none; }
+.seek .segs { position: absolute; left: 0; right: 0; top: 50%; height: 4px; transform: translateY(-50%); transition: height .12s; }
+.seek:hover .segs { height: 7px; }
+/* зазор 3 px между сегментами — обрезкой их краёв (позиции сегментов точно соответствуют времени) */
+.seek .seg { position: absolute; top: 0; bottom: 0; overflow: hidden; background: rgba(255,255,255,.22); clip-path: inset(0 1.5px 0 1.5px round 99px); }
+.seek .seg:first-child { clip-path: inset(0 1.5px 0 0 round 99px); }
+.seek .seg:last-child { clip-path: inset(0 0 0 1.5px round 99px); }
+.seek .seg:only-child { clip-path: inset(0 round 99px); }
+.seek .seg .b, .seek .seg .p { position: absolute; left: 0; top: 0; bottom: 0; width: 0; }
+.seek .seg .b { background: rgba(255,255,255,.4); }
+.seek .seg .p { background: var(--carmine); }
+.seek .seg.mark { background: var(--mark-dim); }
+.seek .seg.mark .b { background: var(--mark-buf); }
+.seek .seg.mark .p { background: var(--mark); }
+.seek .knob { position: absolute; top: 50%; width: 14px; height: 14px; margin-top: -7px; border-radius: 50%; background: var(--carmine); transform: translateX(-50%) scale(.85);
+  box-shadow: 0 1px 4px rgba(0,0,0,.4); transition: transform .12s, background .2s; pointer-events: none; }
+.seek:hover .knob { transform: translateX(-50%) scale(1.1); }
+.seek .knob.mark { background: var(--mark); }
+.seek-tip { position: absolute; bottom: 24px; left: 0; transform: translateX(-50%); padding: 5px 9px; border-radius: 8px; background: rgba(18,18,18,.92);
+  color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .12s; display: flex; gap: 6px; align-items: center; }
+.seek-tip.show { opacity: 1; }
+.seek-tip .mk { color: var(--mark); font-weight: 600; }
+
+/* Громкость: заполненная часть дорожки — по --v */
+.player-controls .vol { -webkit-appearance: none; appearance: none; width: 92px; height: 4px; margin: 0 8px; border-radius: 99px; cursor: pointer;
+  background: linear-gradient(to right, #fff var(--v, 100%), rgba(255,255,255,.28) var(--v, 100%)); }
+.player-controls .vol::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+
 .player-overlay.idle .player-top, .player-overlay.idle .player-controls { opacity: 0; }
 .player-overlay.idle { cursor: none; }
-.skip-btn { position: absolute; right: 24px; bottom: 96px; z-index: 4; background: rgba(255,255,255,.92); color: #111; border-radius: 8px; padding: 10px 18px; font-weight: 500; }
+
+/* Пропуск опенинга/эндинга: справа над панелью; когда панель скрыта — опускается ниже */
+.skip-row { position: absolute; right: 24px; bottom: 104px; z-index: 4; display: flex; gap: 10px; pointer-events: none;
+  opacity: 0; transform: translate3d(14px, 10px, 0) scale(.96); transform-origin: 100% 100%;
+  transition: opacity .3s cubic-bezier(.64,0,.78,0), transform .3s cubic-bezier(.64,0,.78,0), bottom .25s var(--ease-std); }
+.skip-row.show { opacity: 1; transform: none; pointer-events: auto; transition: opacity .4s cubic-bezier(.22,1,.36,1), transform .4s cubic-bezier(.22,1,.36,1), bottom .25s var(--ease-std); }
+.player-overlay.idle .skip-row { bottom: 40px; }
+.skip-row button { position: relative; isolation: isolate; overflow: hidden; height: 44px; padding: 0 20px; border-radius: 99px; font-size: 15px; font-weight: 600; letter-spacing: -.01em;
+  box-shadow: 0 2px 10px rgba(0,0,0,.35); transition: background .15s, transform .15s; }
+.skip-row button:active { transform: scale(.97); }
+.skip-row .fill { position: absolute; inset: 0 auto 0 0; width: 0; z-index: -1; pointer-events: none; }
+.skip-row .skip-watch { background: rgba(24,24,24,.66); color: #fff; backdrop-filter: blur(10px); }
+.skip-row .skip-watch:hover { background: rgba(40,40,40,.78); }
+.skip-row .skip-watch .fill { background: rgba(255,255,255,.18); }
+.skip-row .skip-go { background: #fff; color: #111; }
+.skip-row .skip-go:hover { background: #ececec; }
+.skip-row .skip-go .fill { background: color-mix(in srgb, var(--mark) 45%, #fff); }
+.player-overlay.idle .skip-row.show { cursor: default; }
 
 /* Индикаторы перемотки: 48px от края, по центру; круг 140px (#33ffffff, нажатие #80ffffff) */
 .seek-ind { position: absolute; top: 50%; z-index: 4; width: 140px; height: 140px; margin-top: -70px; display: grid; place-items: center;
@@ -437,11 +514,54 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .speed-ind.show { opacity: 1; transform: translate(-50%, 0); transition: opacity .2s cubic-bezier(0,0,.2,1), transform .2s cubic-bezier(0,0,.2,1); }
 .speed-text { font-size: 14px; font-weight: 500; }
 .speed-ic { width: 20px; height: 20px; color: #fff; }
-.menu-pop { position: absolute; right: 16px; bottom: 70px; z-index: 5; background: rgba(30,30,30,.96); color: #fff; border-radius: 12px; padding: 6px 0; min-width: 200px; max-height: 60vh; overflow: auto; }
-.menu-pop button { display: flex; width: 100%; padding: 10px 18px; gap: 10px; align-items: center; }
-.menu-pop button:hover { background: rgba(255,255,255,.08); }
-.menu-pop button.on { color: #ff8a95; }
-.menu-pop .hdr { padding: 8px 18px 4px; font-size: 12px; opacity: .6; }
+/* Меню-шестерёнка: строки «Качество / Скорость» со значением и переключатели автопропуска;
+   выбор качества и скорости — список внутри меню с «назад» */
+.player-menu { position: absolute; right: 16px; bottom: 76px; z-index: 6; width: 300px; max-height: calc(100% - 140px); overflow: auto; padding: 6px 0;
+  border-radius: 14px; background: rgba(26,26,26,.93); backdrop-filter: blur(14px); color: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  transform-origin: 100% 100%; animation: pm-in .16s var(--ease-out); }
+@keyframes pm-in { from { opacity: 0; transform: translateY(6px) scale(.97); } }
+.player-menu .pm-row, .player-menu .pm-head { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 0 16px; text-align: left; font-size: 14px; color: #fff; cursor: pointer; }
+.player-menu .pm-row:hover, .player-menu .pm-head:hover { background: rgba(255,255,255,.08); }
+.player-menu .pm-row .ic { color: rgba(255,255,255,.75); }
+.player-menu .pm-row .val { color: rgba(255,255,255,.6); font-size: 13px; }
+.player-menu .pm-head { font-weight: 600; border-bottom: 1px solid rgba(255,255,255,.08); margin-bottom: 4px; }
+.player-menu .pm-opt .ic { visibility: hidden; color: var(--mark); }
+.player-menu .pm-opt.on .ic { visibility: visible; }
+.player-menu .pm-opt.on { font-weight: 600; }
+.player-menu .pm-sep { height: 1px; margin: 6px 0; background: rgba(255,255,255,.08); }
+.player-menu .switch span { background: rgba(255,255,255,.24); }
+.player-menu .switch input:checked + span { background: var(--mark); }
+.player-menu .pm-note { padding: 4px 16px 10px; font-size: 12px; line-height: 1.4; color: rgba(255,255,255,.5); }
+/* Улучшение картинки: у вариантов — подпись; «не потянет видеокарта» — жёлтым; строка состояния — белым */
+.player-menu .pm-row .grow:has(small) { padding: 7px 0; }
+.player-menu .pm-row small { display: block; margin-top: 1px; font-size: 12px; font-weight: 400; color: rgba(255,255,255,.5); }
+.player-menu .pm-row:disabled { cursor: default; }
+.player-menu .pm-opt.weak small { color: #f0b54a; }
+.player-menu .pm-note b { display: block; margin-bottom: 2px; font-weight: 500; color: rgba(255,255,255,.88); }
+.player-menu .pm-note.err b { color: #ff8a80; }
+/* Холст апскейла — ровно над картинкой видео (object-fit: contain), клики проходят к плееру */
+.up-canvas { position: absolute; pointer-events: none; }
+/* Шторка сравнения: линия с ручкой, слева «Оригинал», справа «Улучшено» */
+.up-split { position: absolute; width: 0; z-index: 2; touch-action: none; }
+.up-split::before { content: ''; position: absolute; top: 0; bottom: 0; left: -14px; width: 28px; cursor: ew-resize; }
+.up-split .line { position: absolute; top: 0; bottom: 0; left: -1px; width: 2px; background: rgba(255,255,255,.9); box-shadow: 0 0 6px rgba(0,0,0,.5); pointer-events: none; }
+.up-split .knob { position: absolute; top: 50%; left: 0; width: 38px; height: 38px; transform: translate(-50%, -50%); display: grid; place-items: center;
+  border-radius: 50%; border: 2px solid #fff; background: rgba(20,20,20,.72); color: #fff; cursor: ew-resize; box-shadow: 0 2px 10px rgba(0,0,0,.45); }
+.up-split.drag .knob { background: rgba(40,40,40,.9); }
+.up-split .lbl { position: absolute; top: 14px; padding: 3px 8px; border-radius: 6px; background: rgba(0,0,0,.55); color: #fff; font-size: 12px; white-space: nowrap; pointer-events: none; transition: opacity .25s; }
+.up-split .lbl.l { right: 12px; }
+.up-split .lbl.r { left: 12px; }
+.player-overlay.idle .up-split .lbl { opacity: 0; }
+/* Бенчмарк улучшения: полоса прогресса и таблица результатов */
+.bench { min-width: min(420px, 80vw); }
+.bench-bar { height: 8px; border-radius: 4px; overflow: hidden; background: var(--progress-back); margin: 4px 0 10px; }
+.bench-fill { width: 0; height: 100%; border-radius: 4px; background: var(--carmine); transition: width .3s; }
+.bench-label { font-size: 13px; color: var(--muted, inherit); opacity: .8; }
+.bench-results { max-width: min(640px, 94vw); }
+.bench-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 10px; }
+.bench-table th, .bench-table td { padding: 6px 8px; text-align: right; vertical-align: top; border-bottom: 1px solid var(--divider, rgba(127,127,127,.2)); }
+.bench-table th:first-child, .bench-table td:first-child { text-align: left; }
+.bench-table .trt { color: #3fae2a; font-size: 12px; }
 
 /* ---------- Статьи ленты ---------- */
 .article { padding: 14px 20px; border-bottom: 1px solid var(--sep); }
@@ -485,7 +605,7 @@ img { -webkit-user-drag: none; user-drag: none; }
 
 /* ---------- Плавность ---------- */
 :root { --ease-out: cubic-bezier(.2, .8, .2, 1); --ease-std: cubic-bezier(.4, 0, .2, 1); }
-button, .chip, .tab, .tile, .menu-item, .sheet-item, .release-row, .type-row, .ep-row, .nav-item .pill, .icon-btn, .btn, .badge, .card {
+button, .chip, .tab, .tile, .menu-item, .sheet-item, .release-row, .type-row, .ep-row, .icon-btn, .btn, .badge, .card {
   transition: background-color .18s var(--ease-std), color .18s var(--ease-std), border-color .18s var(--ease-std),
     opacity .18s var(--ease-std), filter .18s var(--ease-std), transform .18s var(--ease-std), box-shadow .18s var(--ease-std);
 }
@@ -508,6 +628,9 @@ button, .chip, .tab, .tile, .menu-item, .sheet-item, .release-row, .type-row, .e
 @keyframes content-in { from { opacity: 0; } }
 img.fade { opacity: 0; transition: opacity .35s var(--ease-std); }
 img.fade.loaded { opacity: 1; }
+/* .appeared — уже проявился (app.js) или подменён тихим обновлением: браузер перезапускает анимации при
+   повторной вставке в DOM (возврат на вкладку), и без этого контент мигал бы заново */
+.appeared { animation: none !important; }
 /* без fill-mode: если анимация не отработает (свёрнутое окно), элемент всё равно виден */
 .release-row, .release-card, .comment, .article, .ep-row, .type-row { animation: content-in .3s var(--ease-std); }
 
@@ -545,6 +668,17 @@ html.economy .sk, html.economy .ai-typing span { animation: none !important; }
 .sk-pill { height: 36px; border-radius: 18px; }
 .sk-appbar { height: var(--appbar-h); }
 .screen > .skeleton { animation: none; }
+/* Индикаторы загрузки (скелетон, одиночные .sk вне скелетона, спиннер, .load-reveal) появляются, только
+   если загрузка дольше 250 мс: быстрые ответы подменяют пустое место сразу. Место под раскладку занято и во
+   время задержки — контент не прыгает. --sk-delay задаёт ui.js: у скелетона, сменившего уже показанный,
+   задержка меньше или отрицательная — он продолжает отсчёт предыдущего и не прячется заново. Задержка и
+   минимальное время показа согласованы с skeletonSettled() в ui.js. В режиме экономии задержка остаётся.
+   fill both: закончившаяся анимация остаётся у элемента — по ней skeletonSettled узнаёт, сколько скелетон
+   уже на экране (без fill браузер её удаляет, и после 450 мс замер терялся). */
+.sk-root, .screen > .sk-root, .spinner-wrap, .load-reveal { animation: sk-reveal .2s var(--ease-std) var(--sk-delay, .25s) both; }
+.sk:not(.sk-root .sk) { animation: sk-reveal .2s var(--ease-std) var(--sk-delay, .25s) both, sk-shimmer 1.4s linear infinite; }
+html.economy .sk:not(.sk-root .sk) { animation: sk-reveal .01ms var(--sk-delay, .25s) both !important; }
+@keyframes sk-reveal { from { opacity: 0; } }
 /* у .sk свой радиус 6px — аватары в скелетоне должны оставаться кругами */
 .avatar.sk { border-radius: 50%; }
 /* ленты в скелетоне не прокручиваются: иначе scroll-snap прижимает первую карточку к краю и съедает отступ */

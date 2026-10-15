@@ -27,7 +27,7 @@ const get = (p) => p.split('.').reduce((o, k) => (o && o[k] != null && o[k] !== 
 // Что доступно в этой сборке — для фронтенда (скрыть соцвход без ключей)
 function features() {
   return {
-    kodik: !!get('kodik.token'),
+    kodik: true, // ключ не нужен: ссылки берутся через kodikplayer.com/ftor, kodik.token — запасной путь
     studiomir: !!get('studiomir.apiKey'),
     vkVideo: !!(get('vkVideo.clientId') && get('vkVideo.clientSecret')),
     social: {

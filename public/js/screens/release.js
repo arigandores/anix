@@ -1,5 +1,5 @@
 // Релиз, связанные, коллекции релиза, видео, онлайн-платформы
-import { h, icon, iconButton, img, toast, dialog, sheet, pagedList, emptyView, spinner, skeleton, skLine, skParts, errorView } from '../ui.js';
+import { h, icon, iconButton, img, toast, dialog, sheet, pagedList, emptyView, spinner, skeleton, skLine, skParts, errorView, skeletonSettled, markAppeared } from '../ui.js';
 import { A, api, auth, takePrefetchedRelease } from '../api.js';
 import { t, tp, prefs } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
@@ -7,6 +7,7 @@ import {
   gradeText, digits, seasonName, LIST_NAMES, chooseListStatus, toggleFavorite, requireAuth, commentItem, commentComposer,
   openRelease, imageViewer, report, backToolbar, sectionHead, collectionCard, relTime, releaseRow,
 } from './common.js';
+import { prefetchWatch } from './episodes.js';
 
 const AGE = ['', '0+', '6+', '12+', '16+', '18+'];
 const BROADCAST = ['', 'каждый понедельник', 'каждый вторник', 'каждую среду', 'каждый четверг', 'каждую пятницу', 'каждую субботу', 'каждое воскресенье'];
@@ -75,7 +76,8 @@ registerScreen('release', ({ id, random, profileId, status, collectionId, preloa
     root.replaceChildren(backToolbar(''), ...previewPage(usePreload));
     usePreload = null; // «Случайный» и повторная загрузка — без старых данных
     let r;
-    try { r = await fetchRelease(); } catch (e) { root.replaceChildren(backToolbar(''), errorView(e, render)); return; }
+    try { r = await fetchRelease(); } catch (e) { await skeletonSettled(root); root.replaceChildren(backToolbar(''), errorView(e, render)); return; }
+    const instant = await skeletonSettled(root);
     rel = r.release;
     if (!rel || r.code !== 0 || rel.is_deleted) {
       root.replaceChildren(backToolbar(''), h('div', { class: 'empty' }, icon('ic_error', 'big'),
@@ -92,6 +94,7 @@ registerScreen('release', ({ id, random, profileId, status, collectionId, preloa
       return;
     }
     build();
+    if (instant) markAppeared(root); // страница сменила видимый скелетон — без проявления блоков
   }
 
   function build() {
@@ -130,6 +133,8 @@ registerScreen('release', ({ id, random, profileId, status, collectionId, preloa
     else if (rel.is_play_disabled) watch = h('div', { class: 'muted' }, 'Недоступно');
     else if (st === 3 && !rel.episodes_released) watch = h('div', { class: 'rel-note' }, rel.aired_on_date ? `Анонс: ${new Date(rel.aired_on_date * 1000).toLocaleDateString('ru-RU')}` : 'Анонс');
     else {
+      // «Воспроизвести» сразу к сериям — их озвучки, источники и серии запрашиваем заранее, в фоне
+      if (watchGoesToEpisodes(rel)) prefetchWatch(rel);
       watch = h('div', { class: 'col', style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
         h('button', { class: 'btn btn-primary lg btn-watch', onclick: () => openWatch(rel) }, icon('ic_play'), 'Воспроизвести'),
         rel.episode_last_update ? h('div', { class: 'muted', style: { fontSize: '13px' } }, `Добавлено: ${rel.episode_last_update.last_episode_update_name || rel.episode_last_update.episode_name || 'неизвестная серия'} | ${rel.episode_last_update.lastEpisodeTypeUpdateName || rel.episode_last_update.last_episode_type_update_name || ''} | ${rel.episode_last_update.last_episode_source_update_name || ''}`) : null);
@@ -176,14 +181,18 @@ registerScreen('release', ({ id, random, profileId, status, collectionId, preloa
     if (rel.translators) infoRows.push(['ic_voice', rel.translators]);
     if (rel.release_date) infoRows.push(['ic_calendar', rel.release_date]);
 
-    const desc = h('div', { class: 'desc-text collapsed' }, rel.description || t('description_not_specified'));
+    // Длинное описание свёрнуто: раскрывается и кнопкой, и нажатием на сам текст, сворачивается только кнопкой
+    const longDesc = (rel.description || '').length > 300;
+    const desc = h('div', { class: `desc-text collapsed ${longDesc ? 'expandable' : ''}` }, rel.description || t('description_not_specified'));
     const descToggle = h('button', { class: 'btn btn-text', style: { paddingLeft: 0 } }, 'Подробнее…');
-    descToggle.onclick = () => { const c = desc.classList.toggle('collapsed'); descToggle.textContent = c ? 'Подробнее…' : 'Скрыть'; };
+    const setCollapsed = (c) => { desc.classList.toggle('collapsed', c); descToggle.textContent = c ? 'Подробнее…' : 'Скрыть'; };
+    descToggle.onclick = () => setCollapsed(!desc.classList.contains('collapsed'));
+    if (longDesc) desc.onclick = () => { if (desc.classList.contains('collapsed')) setCollapsed(false); };
 
     const left = h('div', null,
       h('div', { class: 'card' },
         h('div', { class: 'info-rows' }, infoRows.map(([ic, txt, raw]) => h('div', { class: 'info-row' }, raw ? h('img', { src: `/icons/${ic}.svg`, style: { width: '20px', height: '20px' } }) : icon(ic), h('div', null, txt)))),
-        h('div', { style: { marginTop: '14px' } }, desc, (rel.description || '').length > 300 ? descToggle : null)),
+        h('div', { style: { marginTop: '14px' } }, desc, longDesc ? descToggle : null)),
       videoBanners(rel),
       screenshots(rel),
       relatedBlock(rel),
@@ -268,7 +277,7 @@ function ratingBlock(rel) {
           h('div', { class: 'grow' }, h('div', null, `${rel.your_vote} из 5`), h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Вы проголосовали')),
           h('button', { class: 'btn btn-text', onclick: async () => { try { const r = await A.deleteVote(rel.id); if (r.code !== 0) throw 0; rel.your_vote = null; paint(); } catch { toast('Произошла ошибка при удалении голоса.'); } } }, 'Изменить')));
       } else {
-        zone.append(h('div', { class: 'stars' }, [1, 2, 3, 4, 5].map((i) => h('button', { title: STAR_LABELS[i], onclick: () => confirmVote(i) }, icon('ic_star_rate')))));
+        zone.append(h('div', { class: 'stars pick' }, [1, 2, 3, 4, 5].map((i) => h('button', { title: STAR_LABELS[i], onclick: () => confirmVote(i) }, icon('ic_star_rate')))));
       }
     };
     const confirmVote = (n) => dialog({
@@ -382,19 +391,52 @@ function screenshots(rel) {
     h('div', { class: 'screens' }, s.map((src) => { const i = h('img', { src, loading: 'lazy', referrerpolicy: 'no-referrer' }); i.onclick = () => imageViewer(src); return i; })));
 }
 
+// Связанные релизы — вся франшиза по порядку выхода. В ответе release/{id} только первые три, поэтому
+// полный список (related/{id}, по годам и сезонам) догружается в фоне. Стрелки между карточками
+// показывают порядок, лента прокручивается к текущему релизу («Вы здесь»).
+async function loadRelated(relatedId) {
+  let all = [];
+  for (let page = 0; page < 8; page++) {
+    const items = (await A.related(relatedId, page)).content || [];
+    all = all.concat(items);
+    if (items.length < 25) break;
+  }
+  return all;
+}
+
 function relatedBlock(rel) {
-  const list = rel.related_releases || [];
-  if (!list.length) return null;
-  return h('div', { class: 'card' },
-    h('div', { class: 'card-title' }, h('span', { class: 'grow' }, 'Связанные релизы'),
-      rel.related ? h('button', { class: 'section-more', onclick: () => navigate('related', { related: rel.related }) }, 'Показать все', icon('ic_chevron_end', 'sm')) : null),
-    h('div', { class: 'screens', style: { gap: '14px' } }, list.map((r) => {
+  const first = rel.related_releases || [];
+  if (!first.length) return null;
+  const strip = h('div', { class: 'screens related-strip', style: { gap: '6px' } });
+  const paint = (list, instant) => {
+    const cards = [];
+    list.forEach((r, i) => {
       const here = r.id === rel.id;
-      return h('div', { class: 'release-card', style: { width: '128px', flex: 'none', opacity: here ? 0.55 : 1 }, onclick: () => !here && openRelease(r) },
+      if (i) cards.push(h('div', { class: 'chain-arrow', 'aria-hidden': 'true' }, icon('ic_chevron_end', 'sm')));
+      const card = h('div', { class: `release-card ${here ? 'here' : ''}`, style: { width: '128px', flex: 'none', opacity: here ? 0.55 : 1 }, onclick: () => !here && openRelease(r) },
         h('div', { class: 'poster', style: { width: '100%' } }, img(r.image), here ? h('div', { class: 'player-msg', style: { background: 'rgba(0,0,0,.5)', whiteSpace: 'pre-line', fontWeight: 500 } }, 'Вы\nздесь') : null),
         h('div', { class: 't clamp2', style: { fontSize: '13px' } }, r.title_ru || t('unnamed')),
         h('div', { class: 'meta' }, [r.year ? `${r.year} год` : '', r.category?.name, r.vote_count > 50 ? `★ ${gradeText(r.grade)}` : ''].filter(Boolean).join(' • ')));
-    })));
+      cards.push(instant ? markAppeared(card) : card);
+    });
+    strip.replaceChildren(...cards);
+    // к текущему релизу: прокрутка только самой ленты (страница не сдвигается); блок может быть ещё не на странице
+    let tries = 60;
+    const center = () => {
+      const cur = strip.querySelector('.here');
+      if (!cur) return;
+      if (!strip.isConnected || !strip.clientWidth) { if (tries-- > 0) requestAnimationFrame(center); return; }
+      strip.scrollLeft += cur.getBoundingClientRect().left - strip.getBoundingClientRect().left - (strip.clientWidth - cur.offsetWidth) / 2;
+    };
+    requestAnimationFrame(center);
+  };
+  paint(first, false);
+  // полный список — на место первых трёх, без повторного проявления уже видных карточек
+  if (rel.related) loadRelated(rel.related.id).then((all) => { if (all.length > first.length) paint(all, true); }).catch(() => {});
+  return h('div', { class: 'card' },
+    h('div', { class: 'card-title' }, h('span', { class: 'grow' }, 'Связанные релизы'),
+      rel.related ? h('button', { class: 'section-more', onclick: () => navigate('related', { related: rel.related, currentId: rel.id }) }, 'Показать все', icon('ic_chevron_end', 'sm')) : null),
+    strip);
 }
 
 function recommendedBlock(rel) {
@@ -424,10 +466,30 @@ function commentsBlock(rel, rebuild) {
 }
 
 // Связанные релизы (франшиза)
-registerScreen('related', ({ related }) => h('div', null,
-  backToolbar(related.name_ru || related.name || 'Связанные релизы'),
-  related.description ? h('div', { class: 'muted', style: { padding: '0 20px 10px' } }, related.description) : null,
-  pagedList({ load: (page) => A.related(related.id, page), render: (r) => releaseRow(r) })));
+// Вся франшиза хронологией: номер по порядку выхода и год на линии слева, текущий релиз выделен,
+// список открывается на нём
+registerScreen('related', ({ related, currentId }) => {
+  let tries = 60;
+  const toCurrent = () => {
+    const cur = list.querySelector('.chain-row.current');
+    // кадр спустя после показа: роутер в первом кадре выставляет прокрутку экрана
+    if (cur?.isConnected) requestAnimationFrame(() => requestAnimationFrame(() => cur.scrollIntoView({ block: 'center' })));
+    else if (tries-- > 0) requestAnimationFrame(toCurrent);
+  };
+  const list = pagedList({
+    load: (page) => A.related(related.id, page),
+    onFirst: () => requestAnimationFrame(toCurrent),
+    render: (r, i) => h('div', { class: `chain-row ${r.id === currentId ? 'current' : ''}` },
+      h('div', { class: 'chain-rail' }, h('div', { class: 'chain-mark' },
+        h('span', { class: 'chain-num', title: r.id === currentId ? 'Вы здесь' : null }, String(i + 1)),
+        r.year ? h('span', { class: 'chain-year' }, String(r.year)) : null)),
+      releaseRow(r)),
+  });
+  return h('div', null,
+    backToolbar(related.name_ru || related.name || 'Связанные релизы'),
+    related.description ? h('div', { class: 'muted', style: { padding: '0 20px 10px' } }, related.description) : null,
+    list);
+});
 
 // Коллекции с релизом
 registerScreen('release-collections', ({ release }) => {
@@ -473,8 +535,9 @@ registerScreen('release-videos', async ({ release, categoryId, categoryName }) =
 
 // «Воспроизвести»: сразу к вариантам, если включено «Непроверенные источники» и они не скрыты в регионе,
 // иначе — экран «Онлайн просмотр» с официальными платформами
+const watchGoesToEpisodes = (rel) => prefs.get('IS_REMEMBERING_SKIP_THIRD_PARTY_PLATFORM') && !rel.is_tpp_disabled;
 function openWatch(rel) {
-  if (prefs.get('IS_REMEMBERING_SKIP_THIRD_PARTY_PLATFORM') && !rel.is_tpp_disabled) navigate('episodes', { release: rel });
+  if (watchGoesToEpisodes(rel)) navigate('episodes', { release: rel });
   else navigate('streaming', { release: rel });
 }
 

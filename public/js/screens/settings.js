@@ -6,6 +6,7 @@ import { registerScreen, navigate } from '../router.js';
 import { backToolbar } from './common.js';
 import { choosePlayer } from './episodes.js';
 import { AI_MODELS, AI_EFFORTS } from './ai.js';
+import { trtStatus, trtInstall, benchRunDialog, benchResultsDialog, benchInfo, SHARPNESS, SHARP_LABEL } from '../upscale/index.js';
 
 function item(ic, title, sub, onClick) {
   return h('div', { class: 'menu-item', onclick: onClick }, icon(ic), h('div', { class: 'grow' }, h('div', null, title), sub ? h('div', { class: 'sub' }, sub) : null));
@@ -56,16 +57,24 @@ registerScreen('settings', () => {
     h('div', { class: 'menu-cat' }, 'Воспроизведение'),
     choice('ic_play_circle', t('player'), PLAYERS, () => prefs.get('SELECTED_PLAYER'), (v) => prefs.set('SELECTED_PLAYER', v)),
     choice('ic_quality', t('video_quality_priority'), QUALITY, () => prefs.get('SELECTED_VIDEO_QUALITY_V2'), (v) => prefs.set('SELECTED_VIDEO_QUALITY_V2', v)),
-    choice('ic_quality', t('kodik_video_quality'), [[0, `${t('quality_high_title')} (720p, с рекламой)`], [1, `${t('quality_medium_title')} (480p, без рекламы)`]],
-      () => prefs.get('SELECTED_KODIK_VIDEO_QUALITY'), (v) => prefs.set('SELECTED_KODIK_VIDEO_QUALITY', v)),
+    // улучшение картинки во встроенном плеере — то же, что в шестерёнке плеера (upscale/index.js)
+    choice('ic_upscale', 'Улучшение картинки', [['off', 'Выключено'], ['auto', 'Авто — подберёт под серию и видеокарту'],
+      ['fast', 'Лёгкое — немного чётче, почти без нагрузки'], ['quality', 'Сильное — чистые линии, меньше артефактов сжатия'],
+      ['max', 'Максимальное — лучшее качество, для мощной видеокарты']], () => prefs.get('UPSCALE_MODE'), (v) => prefs.set('UPSCALE_MODE', v)),
+    choice('ic_quality', 'Разрешение улучшения', [['auto', 'Авто — под размер окна'], ['1080', '1080p'], ['1440', '1440p'], ['2160', '4K']],
+      () => prefs.get('UPSCALE_TARGET'), (v) => prefs.set('UPSCALE_TARGET', v)),
+    trtSetting(),
+    choice('ic_tune_variant', 'Резкость на ручном уровне', SHARPNESS.map((v) => [v, SHARP_LABEL[v]]), () => prefs.get('UPSCALE_SHARP') || 'normal', (v) => prefs.set('UPSCALE_SHARP', v)),
+    // бенчмарк: каждая модель на 480p / 720p / 1080p (WebGPU и TensorRT) — по нему «Авто» берёт лучшую, что успевает
+    item('ic_play_speed', 'Проверить видеокарту', benchInfo() && !benchInfo().partial ? `Проверено ${new Date(benchInfo().at).toLocaleDateString('ru-RU')} — нажмите, чтобы повторить` : 'Подобрать модели улучшения под видеокарту · несколько секунд', async () => {
+      const r = await benchRunDialog();
+      toast(r ? 'Готово — «Авто» будет брать лучшую модель, которая успевает' : 'Проверка остановлена');
+      if (r) benchResultsDialog();
+    }),
+    item('ic_info_outline', 'Результаты проверки', 'Сколько мс на кадр занимает каждая модель', () => benchResultsDialog()),
     toggle('ic_player_next', t('pref_autoplay_title'), t('pref_autoplay_summary'), 'AUTO_PLAY'),
     toggle('ic_voice', t('remember_type_source'), t('remember_type_source_summary'), 'IS_REMEMBERING_TYPE_SOURCE'),
     toggle('ic_streaming_platform', t('remember_third_party_platform'), t('remember_third_party_platform_summary'), 'IS_REMEMBERING_SKIP_THIRD_PARTY_PLATFORM'),
-    item('ic_player_rewind_fast', t('title_player_rewind'), `${prefs.get('PLAYER_REWIND_TIME')} c`, async (e) => {
-      const v = await prompt(t('selected_player_rewind_time'), { value: String(prefs.get('PLAYER_REWIND_TIME')) });
-      const n = Number(v);
-      if (v != null && n >= 5 && n < 3600) { prefs.set('PLAYER_REWIND_TIME', Math.floor(n)); e.currentTarget?.querySelector?.('.sub') && (e.currentTarget.querySelector('.sub').textContent = `${n} c`); toast('Сохранено'); }
-    }),
     item('ic_open_link', t('pref_external_player'), prefs.get('THIRD_PARTY_PLAYER_PATH') || 'mpv / VLC (автоопределение)', async () => {
       const v = await prompt('Путь к плееру (mpv.exe или vlc.exe)', { value: prefs.get('THIRD_PARTY_PLAYER_PATH') });
       if (v != null) { prefs.set('THIRD_PARTY_PLAYER_PATH', v.trim()); toast('Сохранено'); }
@@ -110,6 +119,31 @@ registerScreen('settings', () => {
   root.append(list);
   return root;
 });
+
+// Ускорение NVIDIA (TensorRT) для улучшения картинки: только на видеокартах RTX. Пока библиотеки не скачаны —
+// пункт «Установить» с прогрессом, после — переключатель (electron/trt.js, upscale/index.js)
+function trtSetting() {
+  const slot = h('div');
+  const TITLE = 'Ускорение NVIDIA (TensorRT)';
+  const SUB = 'Тяжёлые модели улучшения картинки в 2–4 раза быстрее на тензорных ядрах';
+  trtStatus().then((st) => {
+    if (st.reason === 'driver') { slot.replaceWith(item('ic_upscale', TITLE, 'Обновите драйвер видеокарты NVIDIA (версия 580 или новее) — тогда ускорение заработает', () => {})); return; }
+    if (!st.supported) { slot.remove(); return; }
+    if (st.installed) { slot.replaceWith(toggle('ic_upscale', TITLE, SUB, 'UPSCALE_TRT')); return; }
+    let busy = false;
+    const el = item('ic_upscale', TITLE, `Не установлено · скачать ${Math.round(st.size / 1048576)} МБ (библиотеки NVIDIA)`, async () => {
+      if (busy) return;
+      busy = true;
+      const sub = el.querySelector('.sub');
+      const r = await trtInstall((p) => { sub.textContent = p.done ? 'Установка…' : `Скачивание ${Math.floor((p.received / (p.total || 1)) * 100)}%`; })
+        .catch((e) => ({ ok: false, error: e.message }));
+      busy = false;
+      if (r.ok) { toast('Ускорение NVIDIA установлено'); el.replaceWith(toggle('ic_upscale', TITLE, SUB, 'UPSCALE_TRT')); } else { toast(`Не удалось установить: ${r.error}`); sub.textContent = 'Не установлено — нажмите, чтобы повторить'; }
+    });
+    slot.replaceWith(el);
+  });
+  return slot;
+}
 
 function changePassword() {
   const cur = h('input', { class: 'input', type: 'password', placeholder: 'Текущий пароль' });

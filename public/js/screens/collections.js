@@ -1,5 +1,5 @@
 // Коллекции: список, коллекция, коллекции профиля
-import { h, icon, iconButton, img, pagedList, emptyView, sheet, toast, confirmDialog, skeleton, skParts } from '../ui.js';
+import { h, icon, iconButton, img, pagedList, emptyView, sheet, toast, confirmDialog, skeleton, skParts, guardClick } from '../ui.js';
 import { A, auth } from '../api.js';
 import { t } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
@@ -56,13 +56,13 @@ registerScreen('collection', async ({ id }) => {
   const mine = auth.profileId && c.creator?.id === auth.profileId;
   const favBtn = h('button', { class: 'btn list-btn' });
   const paintFav = () => favBtn.replaceChildren(icon(c.is_favorite ? 'ic_favorite' : 'ic_favorite_border', `sm ${c.is_favorite ? 'heart' : ''}`), c.is_favorite ? 'Удалить из закладок' : 'Добавить в закладки', ` ${digits(c.favorites_count)}`);
-  favBtn.onclick = async () => {
+  favBtn.onclick = guardClick(favBtn, async () => {
     if (!requireAuth()) return;
     try {
       const res = c.is_favorite ? await A.collectionFavDelete(c.id) : await A.collectionFavAdd(c.id);
       if (res.code === 0 || res.code === 3) { c.is_favorite = !c.is_favorite; c.favorites_count += c.is_favorite ? 1 : -1; paintFav(); }
     } catch { toast(t('error_load')); }
-  };
+  });
   paintFav();
   const base = (window.__toggles && window.__toggles.baseUrl) || 'https://anixart-app.com/';
   const toolbar = h('div', { class: 'appbar' },

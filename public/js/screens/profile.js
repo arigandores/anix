@@ -1,5 +1,5 @@
 // Профиль и подэкраны (друзья, списки, оценки, комментарии)
-import { h, icon, iconButton, img, toast, tabs, pagedList, emptyView, sheet, confirmDialog, skeleton } from '../ui.js';
+import { h, icon, iconButton, img, toast, tabs, pagedList, emptyView, sheet, confirmDialog, skeleton, markAppeared } from '../ui.js';
 import { A, api, auth } from '../api.js';
 import { t, tp } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
@@ -42,12 +42,26 @@ function friendButtons(p, rebuild) {
   return [h('button', { class: 'btn btn-primary', disabled: p.is_friend_requests_disallowed || p.is_me_blocked || p.is_blocked, onclick: send }, 'Добавить в друзья')];
 }
 
-async function profileView(id, { fromMain = false } = {}) {
+// blog — блок «Записи» прежнего вида того же профиля: при тихом обновлении переносится как есть,
+// чтобы не грузить его заново со скелетоном
+async function profileView(id, { fromMain = false, blog = null } = {}) {
   const root = h('div');
   const r = await A.profile(id);
   const p = r.profile;
   if (!p) { root.append(fromMain ? mainToolbar() : backToolbar(t('profile')), emptyView('Профиль не найден')); return root; }
   p.is_my_profile = r.is_my_profile || p.id === auth.profileId;
+  let blogHolder = blog;
+  const blogSection = () => {
+    if (blogHolder) return blogHolder;
+    blogHolder = h('div');
+    const holder = blogHolder;
+    A.blog(p.id).then((b) => {
+      if (!b.channel) return;
+      holder.append(h('div', { class: 'section-head', style: { padding: '18px 0 6px' } }, h('div', { class: 'section-title' }, 'Записи')),
+        pagedList({ skeleton: 'articles', load: (page) => A.channelArticles(b.channel.id, page), render: (a) => articleCard(a), empty: () => emptyView('Похоже, нет ни одной записи') }));
+    }).catch(() => {});
+    return holder;
+  };
   const build = () => {
     root.replaceChildren();
     root.append(fromMain ? mainToolbar({ hint: 'Поиск пользователей', onSearch: () => navigate('search', { scope: 'profiles' }) })
@@ -117,16 +131,11 @@ async function profileView(id, { fromMain = false } = {}) {
         p.comments_preview.map((c) => commentItem(c, { kind: 'release', showTarget: true }))));
     }
     // Блог
-    const blogHolder = h('div');
-    body.append(blogHolder);
-    A.blog(p.id).then((b) => {
-      if (!b.channel) return;
-      blogHolder.append(h('div', { class: 'section-head', style: { padding: '18px 0 6px' } }, h('div', { class: 'section-title' }, 'Записи')),
-        pagedList({ skeleton: 'articles', load: (page) => A.channelArticles(b.channel.id, page), render: (a) => articleCard(a), empty: () => emptyView('Похоже, нет ни одной записи') }));
-    }).catch(() => {});
+    body.append(blogSection());
     root.append(body);
   };
   build();
+  root.blog = blogHolder;
   return root;
 }
 
@@ -147,7 +156,11 @@ registerScreen('tab:profile', async (_p, ctx) => {
   // свой профиль обновляется при возврате на вкладку: «Просмотрено недавно», счётчики списков и т.д.
   const holder = h('div');
   const load = async () => {
-    try { holder.replaceChildren(await profileView(auth.profileId, { fromMain: true })); } catch { /* оставляем прежний вид */ }
+    const prev = holder.firstChild;
+    try {
+      const view = await profileView(auth.profileId, { fromMain: true, blog: prev?.blog || null });
+      holder.replaceChildren(prev ? markAppeared(view) : view);
+    } catch { /* оставляем прежний вид */ }
   };
   await load();
   ctx.setOnShow(({ returning }) => { if (returning) load(); });

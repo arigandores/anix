@@ -4,6 +4,7 @@
 // playback — для плеера, download — для скачивания (отличается только у Kodik).
 const crypto = require('crypto');
 const config = require('../config');
+const { parseKodikSkipButton, skipFromLibriaEpisode } = require('./skip-marks');
 
 // Источник с ключом, которого нет в конфиге (server/config.js)
 function needKey(name, value) {
@@ -39,18 +40,66 @@ async function getLocation(url, headers = {}, ua = '') {
   try { const r = await request(url, { follow: false, headers, ua }); return r.headers.get('location'); } catch { return null; }
 }
 
+// skip — таймкоды опенинга/эндинга { opening, ending } (skip-marks.js), если источник их отдаёт
 class Result {
-  constructor(input) { this.input = input; this.playback = {}; this.download = {}; this.cookie = ''; this.referer = ''; }
+  constructor(input) { this.input = input; this.playback = {}; this.download = {}; this.cookie = ''; this.referer = ''; this.skip = null; }
   put(k, v) { this.playback[k] = v; this.download[k] = v; }
   toJSON() {
-    return { playback: this.playback, download: this.download, cookie: this.cookie, referer: this.referer || this.input };
+    return { playback: this.playback, download: this.download, cookie: this.cookie, referer: this.referer || this.input, skip: this.skip };
   }
 }
 
 function replaceAll(s, a, b) { return s.split(a).join(b); }
 
 // ---------------- Kodik ----------------
+// Основной путь без токена (как в anixapp): type/id/hash из ссылки плеера → kodikplayer.com/ftor.
+// Ссылки в ответе зашифрованы: буквы сдвинуты на 18 по кругу, затем base64.
+// Запасной путь — API kodikres.com, если в конфиге есть kodik.token.
+const KODIK_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+
+function decryptKodikSrc(src) {
+  const shifted = src.replace(/[a-zA-Z]/g, (ch) => {
+    const c = ch.charCodeAt(0) + 18;
+    return String.fromCharCode((ch <= 'Z' ? 90 : 122) >= c ? c : c - 26);
+  });
+  return Buffer.from(shifted, 'base64').toString('utf8');
+}
+
+async function kodikFtor(r, page, htmlP) {
+  const m = /\/(seria|video|movie|anime)\/(\d+)\/([0-9a-f]+)/i.exec(new URL(page).pathname);
+  let info = m && { type: m[1], id: m[2], hash: m[3] };
+  if (!info) {
+    const html = await htmlP;
+    const v = (k) => (new RegExp(`\\w+\\.${k}\\s=\\s'([^']+)';`).exec(html) || [])[1];
+    info = { type: v('type'), id: v('id'), hash: v('hash') };
+    if (!info.type || !info.id || !info.hash) return;
+  }
+  const resp = await request(`https://kodikplayer.com/ftor?${new URLSearchParams(info)}`, {
+    ua: KODIK_UA, headers: { Referer: page, Accept: 'application/json' },
+  });
+  if (!resp.ok) return;
+  const links = (await resp.json()).links || {};
+  for (const q of ['360', '480', '720', '1080']) {
+    let s = links[q] && links[q][0] && links[q][0].src;
+    if (!s) continue;
+    if (!/^(https?:)?\/\//.test(s)) s = decryptKodikSrc(s);
+    if (s.startsWith('//')) s = `https:${s}`;
+    // прямой MP4 с CDN Kodik часто уводит на недоступный edge — берём его HLS-вариант
+    if (/\.mp4$/i.test(new URL(s).pathname)) s += ':hls:manifest.m3u8';
+    r.put(`${q}p`, replaceAll(s, ':hls:hls.m3u8', ':hls:manifest.m3u8'));
+  }
+}
+
 async function kodik(r) {
+  const page = `https://kodikplayer.com${new URL(r.input).pathname}`;
+  // страница плеера — параллельно: в ней таймкоды опенинга и эндинга (parseSkipButton)
+  const htmlP = getText(page, { ua: KODIK_UA, headers: { Referer: 'https://kodikplayer.com/' } });
+  try { await kodikFtor(r, page, htmlP); } catch { /* запасной путь ниже */ }
+  if (!Object.keys(r.playback).length && config.get('kodik.token')) await kodikApi(r);
+  r.skip = parseKodikSkipButton(await htmlP);
+}
+
+async function kodikApi(r) {
   const parts = r.input.split('d=');
   if (parts.length < 2) throw new Error('Kodik: нет параметра d= (нужна ссылка из episode/target)');
   const link = replaceAll(parts[0].slice(0, -1), 'https://', '//');
@@ -143,6 +192,7 @@ async function anilibria(r, ctx) {
     const j = JSON.parse(await getText(`https://anilibria.top/api/v1/anime/releases/${id}`));
     const e = (j.episodes || []).find((o) => String(o.ordinal) === String(ep));
     if (e) {
+      r.skip = skipFromLibriaEpisode(e);
       if (e.hls_1080 && e.hls_1080.trim()) r.put('1080p', e.hls_1080);
       if (e.hls_720 && e.hls_720.trim()) r.put('720p', e.hls_720);
       if (e.hls_480 && e.hls_480.trim()) r.put('480p', e.hls_480);

@@ -6,6 +6,7 @@ const { app, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { start } = require('../server');
+const settle = require('./_settle'); // ждать загрузки экрана, а не фиксированную паузу
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const out = process.argv[2] || path.join(__dirname, 'shots');
 fs.mkdirSync(out, { recursive: true });
@@ -54,11 +55,11 @@ app.whenReady().then(async () => {
   for (const theme of ['dark', 'light']) {
     await js(`localStorage.setItem('anixart.theme','${theme}')`);
     await new Promise((ok) => { win.webContents.once('did-finish-load', ok); win.webContents.reload(); });
-    await sleep(3000);
+    await js(settle.INSTALL); await sleep(300); await settle(js, 3000);
     await js(mockProfile);
     for (const [label, code, wait] of screens) {
       await js(`(async () => { document.querySelectorAll('.backdrop').forEach(b => b.remove()); const r = await import('/js/router.js'); ${code} })()`);
-      await sleep(wait);
+      await sleep(150); await settle(js, wait);
       const bad = await js(AUDIT);
       if (bad.length) report[`${theme}/${label}`] = bad;
       if (label === 'profile') {

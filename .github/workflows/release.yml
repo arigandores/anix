@@ -40,6 +40,10 @@ jobs:
 
       - run: npm ci
 
+      # новые npm не запускают install-скрипты зависимостей: бинарник Electron скачиваем сами
+      - name: Electron
+        run: node node_modules/electron/install.js
+
       - name: Кэш anix-trt.exe
         id: trt
         uses: actions/cache@v4

@@ -19,8 +19,9 @@ const parked = `${keysFile}.parked`;
 // electron-builder берёт config.local.json по списку files; для --no-keys файл на время убирается
 if (noKeys && fs.existsSync(keysFile)) fs.renameSync(keysFile, parked);
 try {
-  // CLI electron-builder напрямую через Node — без npx и shell
-  execFileSync(process.execPath, [path.join(root, 'node_modules', 'electron-builder', 'cli.js'), '--win', 'nsis', '--x64'], { cwd: root, stdio: 'inherit' });
+  // CLI electron-builder напрямую через Node — без npx и shell. --publish never: в CI он сам выкладывал бы файлы
+  // в черновик релиза; релиз делает workflow (.github/workflows/release.yml)
+  execFileSync(process.execPath, [path.join(root, 'node_modules', 'electron-builder', 'cli.js'), '--win', 'nsis', '--x64', '--publish', 'never'], { cwd: root, stdio: 'inherit' });
 } finally {
   if (fs.existsSync(parked)) fs.renameSync(parked, keysFile);
 }

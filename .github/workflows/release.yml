@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: windows-2025
+    runs-on: windows-2022 # Visual Studio 2022: nvcc CUDA 13.1 не принимает VS 2026 из windows-2025
     timeout-minutes: 75
     env:
       CUDA_VERSION: '13.1.1' # как у локальной сборки; SDK TensorRT for RTX — из trt/build.js
@@ -45,7 +45,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: trt/bin/anix-trt.exe
-          key: anix-trt-cuda${{ env.CUDA_VERSION }}-${{ hashFiles('trt/anix-trt.cu', 'trt/build.js') }}
+          key: anix-trt-cuda${{ env.CUDA_VERSION }}-${{ runner.os }}-${{ hashFiles('trt/anix-trt.cu', 'trt/build.js') }}
 
       - name: CUDA Toolkit (только если trt/ изменился)
         if: steps.trt.outputs.cache-hit != 'true'

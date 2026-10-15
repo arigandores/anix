@@ -26,7 +26,9 @@ if (!fs.existsSync(path.join(SDK, 'include', 'NvInfer.h'))) {
   fs.rmSync(zip, { force: true });
 }
 const vswhere = path.join(process.env['ProgramFiles(x86)'], 'Microsoft Visual Studio', 'Installer', 'vswhere.exe');
-const vs = execSync(`"${vswhere}" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`).toString().trim();
+// nvcc CUDA 13.1 принимает только Visual Studio 2019–2022 — более новую (2026) берём, лишь если других нет
+const findVs = (range) => execSync(`"${vswhere}" -latest -products * ${range} -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`).toString().trim();
+const vs = findVs('-version [16.0,18.0)') || findVs('');
 const vcvars = path.join(vs, 'VC', 'Auxiliary', 'Build', 'vcvars64.bat');
 const cuda = process.env.CUDA_PATH;
 if (!cuda) throw new Error('нет CUDA_PATH — установите CUDA Toolkit 13.x');

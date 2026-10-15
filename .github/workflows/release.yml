@@ -1,0 +1,91 @@
+# Сборка установщика Windows и релиз на GitHub.
+#   Тег vX.Y.Z (версия = package.json) → установщик собирается и выкладывается в релиз; текст релиза — сообщение
+#   аннотированного тега (git tag -a v1.4.0 -F notes.md).
+#   Вручную (Actions → Release → Run workflow) → только сборка: установщик в артефактах запуска, релиз не создаётся.
+# Ключи источников, соцвхода и Discord (config.local.json) — из секрета CONFIG_LOCAL_JSON, в репозитории их нет.
+# anix-trt.exe (ускорение NVIDIA) собирается с CUDA Toolkit только при изменении trt/, иначе берётся из кэша.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write # создать релиз
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 75
+    env:
+      CUDA_VERSION: '13.1.1' # как у локальной сборки; SDK TensorRT for RTX — из trt/build.js
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Версия тега совпадает с package.json
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          v=$(node -p "require('./package.json').version")
+          if [ "${GITHUB_REF_NAME#v}" != "$v" ]; then echo "::error::Тег $GITHUB_REF_NAME, а в package.json версия $v"; exit 1; fi
+
+      - run: npm ci
+
+      - name: Кэш anix-trt.exe
+        id: trt
+        uses: actions/cache@v4
+        with:
+          path: trt/bin/anix-trt.exe
+          key: anix-trt-cuda${{ env.CUDA_VERSION }}-${{ hashFiles('trt/anix-trt.cu', 'trt/build.js') }}
+
+      - name: CUDA Toolkit (только если trt/ изменился)
+        if: steps.trt.outputs.cache-hit != 'true'
+        uses: Jimver/cuda-toolkit@v0.2.36
+        with:
+          cuda: ${{ env.CUDA_VERSION }}
+          method: local
+
+      - name: Сборка anix-trt.exe
+        if: steps.trt.outputs.cache-hit != 'true'
+        run: node trt/build.js
+
+      - name: Ключи из секрета CONFIG_LOCAL_JSON
+        shell: pwsh
+        env:
+          CONFIG_LOCAL_JSON: ${{ secrets.CONFIG_LOCAL_JSON }}
+        run: |
+          if (-not $env:CONFIG_LOCAL_JSON) {
+            if ($env:GITHUB_REF -like 'refs/tags/*') { Write-Output '::error::Нет секрета CONFIG_LOCAL_JSON — релиз без ключей не выпускаем'; exit 1 }
+            Write-Output '::warning::Нет секрета CONFIG_LOCAL_JSON — сборка без ключей'; exit 0
+          }
+          try { $null = $env:CONFIG_LOCAL_JSON | ConvertFrom-Json } catch { Write-Output '::error::CONFIG_LOCAL_JSON — не JSON'; exit 1 }
+          [IO.File]::WriteAllText("$PWD/config.local.json", $env:CONFIG_LOCAL_JSON)
+
+      - name: Сборка установщика
+        run: npm run build:release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AnixDesktop-Setup
+          path: release/AnixDesktop-Setup-*.exe
+          retention-days: 14
+
+      - name: Релиз на GitHub
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # checkout оставляет тег без аннотации — забираем его целиком, текст релиза берётся из неё
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          v=$(node -p "require('./package.json').version")
+          gh release create "$GITHUB_REF_NAME" "release/AnixDesktop-Setup-$v.exe" --title "Anix Desktop $v" --notes-from-tag --verify-tag

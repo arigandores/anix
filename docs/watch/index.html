@@ -1,0 +1,77 @@
+<!doctype html>
+<!-- Переходник для приглашений в совместный просмотр: мессенджеры не делают кликабельными ссылки anixdesktop://,
+     поэтому приложение отправляет https-ссылку сюда (GitHub Pages), а страница открывает anixdesktop://watch/<код>.
+     Код — после #: он не уходит ни на сервер, ни в превью ссылок мессенджеров. -->
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Смотреть вместе — Anix Desktop</title>
+  <meta name="description" content="Приглашение в совместный просмотр аниме в Anix Desktop">
+  <meta property="og:title" content="Смотреть вместе — Anix Desktop">
+  <meta property="og:description" content="Приглашение в совместный просмотр аниме: пауза, перемотка и серии — у всех одновременно">
+  <style>
+    :root { color-scheme: dark; --bg: #121212; --card: #1f1f1f; --text: #fff; --text2: rgba(255,255,255,.62); --accent: #c8283c; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: var(--bg); color: var(--text);
+      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { width: min(440px, 100%); padding: 32px 28px; border-radius: 26px; background: var(--card); text-align: center; box-shadow: 0 12px 40px rgba(0,0,0,.4); }
+    .icon { width: 56px; height: 56px; margin: 0 auto 16px; display: grid; place-items: center; border-radius: 50%; background: rgba(239,60,82,.14); color: #ff6b7d; }
+    h1 { margin: 0 0 8px; font-size: 22px; }
+    p { margin: 0 0 20px; color: var(--text2); }
+    .code { margin: 0 0 22px; padding: 14px; border-radius: 14px; background: rgba(255,255,255,.06); }
+    .code small { display: block; color: var(--text2); font-size: 13px; }
+    .code b { font-size: 24px; letter-spacing: .08em; font-variant-numeric: tabular-nums; }
+    .btn { display: flex; align-items: center; justify-content: center; height: 48px; margin: 0 0 10px; border-radius: 24px; text-decoration: none; font-weight: 600; }
+    .primary { background: var(--accent); color: #fff; }
+    .tonal { background: rgba(255,255,255,.1); color: var(--text); }
+    .hint { margin: 16px 0 0; font-size: 13px; }
+    .missing { margin: 6px 0 0; padding: 14px 14px 4px; border-radius: 16px; background: rgba(255,255,255,.06); color: rgba(255,255,255,.8);
+      font-size: 14px; text-align: left; animation: in .25s ease-out; }
+    .missing b { color: var(--text); }
+    .missing .btn { margin: 12px 0 10px; }
+    @keyframes in { from { opacity: 0; transform: translateY(6px); } }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="icon" aria-hidden="true">
+      <svg width="28" height="28" viewBox="0 -960 960 960" fill="currentColor"><path d="M40-160v-112q0-34 17.5-62.5T104-378q62-31 126-46.5T360-440q66 0 130 15.5T616-378q29 15 46.5 43.5T680-272v112H40Zm720 0v-120q0-44-24.5-84.5T666-434q51 6 96 20.5t84 35.5q36 20 55 44.5t19 53.5v120H760ZM360-480q-66 0-113-47t-47-113q0-66 47-113t113-47q66 0 113 47t47 113q0 66-47 113t-113 47Zm400-160q0 66-47 113t-113 47q-11 0-28-2.5t-28-5.5q27-32 41.5-71t14.5-81q0-42-14.5-81T544-792q14-5 28-6.5t28-1.5q66 0 113 47t47 113Z"/></svg>
+    </div>
+    <h1>Смотрим аниме вместе</h1>
+    <div id="ok">
+      <p>Вас пригласили в комнату Anix Desktop: пауза, перемотка и серии — у всех одновременно.</p>
+      <div class="code"><small>Код комнаты</small><b id="code"></b></div>
+      <a class="btn primary" id="open">Открыть в Anix Desktop</a>
+      <div class="missing" id="missing" hidden>
+        <b>Не открылось?</b> Скорее всего, Anix Desktop ещё не установлен. Установите его и снова нажмите на приглашение
+        или «Открыть в Anix Desktop».
+        <a class="btn tonal" href="https://github.com/arigandores/anix-desktop">Anix Desktop на GitHub</a>
+      </div>
+      <p class="hint">Или в приложении: «Смотреть вместе» → «Войти по коду» и введите код выше.</p>
+    </div>
+    <p id="bad" hidden>В ссылке нет кода комнаты. Попросите друга прислать приглашение ещё раз.</p>
+  </main>
+  <script>
+    (function () {
+      // тот же алфавит, что в приложении (public/js/party/net.js): Crockford base32, 12 знаков
+      var raw = decodeURIComponent((location.hash || '').slice(1));
+      var code = raw.toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1').replace(/[^0-9A-Z]/g, '');
+      if (!/^[0-9A-HJKMNP-TV-Z]{12}$/.test(code)) {
+        document.getElementById('ok').hidden = true;
+        document.getElementById('bad').hidden = false;
+        return;
+      }
+      var link = 'anixdesktop://watch/' + code;
+      document.getElementById('code').textContent = code.match(/.{4}/g).join('-');
+      document.getElementById('open').href = link;
+      // Сразу пробуем открыть приложение. Узнать, открылось ли оно, браузер странице не даёт — поэтому никуда сами не
+      // уводим (иначе ушли бы и у тех, кто ещё думает над «Открыть Anix Desktop?»): через 2,5 с, если страница всё ещё
+      // на экране, просто показываем заметную подсказку со ссылкой на страницу проекта на GitHub.
+      location.href = link;
+      setTimeout(function () { if (!document.hidden) document.getElementById('missing').hidden = false; }, 2500);
+    })();
+  </script>
+</body>
+</html>

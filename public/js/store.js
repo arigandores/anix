@@ -48,6 +48,11 @@ const DEFAULTS = {
   UPSCALE_SHARP: 'normal', // «Резкость»: 'soft' | 'normal' | 'sharp' — вариант той же модели (DN / Sharp1 / DS)
   UPSCALE_PICK: null, // пресет ручного уровня по классам исходника: { tier: { sd|hd|fhd: id } }
   UPSCALE_BENCH: null, // замеры бенчмарка (upscale/bench.js)
+  // улучшение звука во встроенном плеере (audio.js): выравнивание громкости, чёткий голос, объёмный звук для наушников
+  AUDIO_LEVEL: false,
+  AUDIO_VOICE: false,
+  AUDIO_SURROUND: false,
+  DISCORD_PRESENCE: false, // статус «Смотрит …» в Discord (discord.js): включает сам пользователь в настройках
   SELECTED_PLAYER_SPEED: 3,
   AUTO_PLAY: false,
   SELECTED_VIDEO_QUALITY_V2: 0, // приоритет качества во встроенном плеере: 0 — максимально доступное

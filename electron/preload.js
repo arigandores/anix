@@ -23,6 +23,9 @@ contextBridge.exposeInMainWorld('anixartNative', {
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   // «Очистить кэш веб-плееров» (clear_webview_cache): HTTP-кэш и данные сайтов, кроме localStorage приложения
   clearWebCache: () => ipcRenderer.invoke('clear-web-cache'),
+  // Приглашения anixdesktop://watch/<код> (electron/main.js): та, с которой запустили приложение, и новые
+  pendingDeepLink: () => ipcRenderer.invoke('deep-link-pending'),
+  onDeepLink: (cb) => { ipcRenderer.on('deep-link', (_e, url) => cb(url)); },
   trt: trtOk ? {
     status: () => ipcRenderer.invoke('trt-status'),
     install: () => ipcRenderer.invoke('trt-install'),

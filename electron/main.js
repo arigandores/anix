@@ -148,7 +148,21 @@ ipcMain.handle('social-auth', (_e, req) => new Promise((resolve) => {
 // Один экземпляр: второй запуск занял бы запасной порт (другой origin — «пустые» настройки) — вместо этого
 // показываем уже открытое окно.
 if (!app.requestSingleInstanceLock()) app.quit();
-app.on('second-instance', () => { if (win && !win.isDestroyed()) { if (win.isMinimized()) win.restore(); win.focus(); } });
+app.on('second-instance', (_e, argv) => { if (win && !win.isDestroyed()) { if (win.isMinimized()) win.restore(); win.focus(); } openLink(linkIn(argv)); });
+
+// Приглашение в совместный просмотр: ссылка anixdesktop://watch/<код> открывает приложение (или уже открытое окно)
+// и предлагает войти в комнату (party/ui.js). Схему регистрирует установщик (build.protocols в package.json);
+// запуск из исходников реестр не трогает.
+const PROTOCOL = 'anixdesktop';
+if (app.isPackaged) app.setAsDefaultProtocolClient(PROTOCOL);
+const linkIn = (argv) => (argv || []).find((a) => String(a).startsWith(`${PROTOCOL}://`)) || null;
+let pendingLink = linkIn(process.argv);
+function openLink(url) {
+  if (!url) return;
+  if (win && !win.isDestroyed() && !win.webContents.isLoading()) win.webContents.send('deep-link', url);
+  else pendingLink = url;
+}
+ipcMain.handle('deep-link-pending', () => { const u = pendingLink; pendingLink = null; return u; });
 
 app.whenReady().then(() => {
   // Разрешаем полноэкранный режим для плеера (iframe/HTML5 video)

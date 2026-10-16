@@ -24,6 +24,11 @@ const SUITE = [
   ['e2e', 'e2e.js', 'electron'],
   ['resume', 'resume.js', 'electron'],
   ['player-ind', 'player-ind.js', 'electron'],
+  ['audio', 'audio.js', 'electron'], // улучшение звука: громкость сочетаний, задержка, живой <video>
+  ['discord', 'discord.js', 'electron'], // статус в Discord против поддельного Discord (~1 мин: ждёт переподключения и лимита)
+  ['party', 'party.js', 'electron'], // совместный просмотр: два окна через публичные MQTT-брокеры
+  ['party-edge', 'party-edge.js', 'electron'], // совместный просмотр: граничные случаи (~2 мин, тайминги протокола укорочены)
+
   ['smoke', 'smoke.js', 'node'],
   // после остальных и один: два видеотеста одновременно делили бы видеокарту
   ['upscale-trt', 'upscale-trt.js', 'electron', true],

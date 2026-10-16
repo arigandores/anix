@@ -8,6 +8,7 @@ import {
   openRelease, imageViewer, report, backToolbar, sectionHead, collectionCard, relTime, releaseRow,
 } from './common.js';
 import { prefetchWatch } from './episodes.js';
+import { partyWatchButton } from '../party/ui.js';
 
 const AGE = ['', '0+', '6+', '12+', '16+', '18+'];
 const BROADCAST = ['', 'каждый понедельник', 'каждый вторник', 'каждую среду', 'каждый четверг', 'каждую пятницу', 'каждую субботу', 'каждое воскресенье'];
@@ -136,7 +137,9 @@ registerScreen('release', ({ id, random, profileId, status, collectionId, preloa
       // «Воспроизвести» сразу к сериям — их озвучки, источники и серии запрашиваем заранее, в фоне
       if (watchGoesToEpisodes(rel)) prefetchWatch(rel);
       watch = h('div', { class: 'col', style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
-        h('button', { class: 'btn btn-primary lg btn-watch', onclick: () => openWatch(rel) }, icon('ic_play'), 'Воспроизвести'),
+        h('div', { class: 'watch-row' },
+          h('button', { class: 'btn btn-primary lg btn-watch', onclick: () => openWatch(rel) }, icon('ic_play'), 'Воспроизвести'),
+          partyWatchButton(rel, () => openWatch(rel))), // «Смотреть вместе» / «Предложить комнате» (party/ui.js)
         rel.episode_last_update ? h('div', { class: 'muted', style: { fontSize: '13px' } }, `Добавлено: ${rel.episode_last_update.last_episode_update_name || rel.episode_last_update.episode_name || 'неизвестная серия'} | ${rel.episode_last_update.lastEpisodeTypeUpdateName || rel.episode_last_update.last_episode_type_update_name || ''} | ${rel.episode_last_update.last_episode_source_update_name || ''}`) : null);
     }
 

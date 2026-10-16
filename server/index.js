@@ -3,6 +3,7 @@
 //  /api/*     — прокси к бекенду Anixart с заголовками мобильного клиента
 //  /parse     — серверные парсеры видео
 //  /stream    — прокси медиа (Range, Referer/UA, перезапись m3u8) для источников без CORS
+//  /discord/* — статус «Смотрит …» в Discord (discord.js)
 //  остальное  — статический фронтенд из public/
 const http = require('http');
 const fs = require('fs');
@@ -13,6 +14,7 @@ const { parse } = require('./parsers');
 const social = require('./social');
 const config = require('./config');
 const ai = require('./ai');
+const discord = require('./discord');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const DEFAULT_API = 'https://api-s.anixsekai.com/'; // адрес бекенда по умолчанию
@@ -303,8 +305,9 @@ function createServer() {
       if (url.pathname.startsWith('/social/')) return await handleSocial(req, res, url);
       if (url.pathname.startsWith('/ai/')) return await ai.handleAi(req, res, url);
       if (url.pathname.startsWith('/mcp/')) return await ai.handleMcp(req, res, url);
+      if (url.pathname.startsWith('/discord/')) return await discord.handleDiscord(req, res, url, { readBody, sendJson });
       if (url.pathname === '/__info') return sendJson(res, 200, { apiBase, versionCode: VERSION_CODE, appVersion: require('../package.json').version });
-      if (url.pathname === '/__features') return sendJson(res, 200, config.features());
+      if (url.pathname === '/__features') return sendJson(res, 200, { ...config.features(), discord: discord.configured() });
       if (url.pathname === '/__errors') return sendJson(res, 200, errorLog);
       return handleStatic(req, res, url);
     } catch (e) {
@@ -324,7 +327,7 @@ async function start(port = Number(process.env.PORT) || 8371, host = '127.0.0.1'
   });
   const actual = server.address().port;
   ai.setPort(actual);
-  server.on('close', () => ai.shutdown());
+  server.on('close', () => { ai.shutdown(); discord.shutdown(); });
   return { server, port: actual, url: `http://${host}:${actual}/`, apiBase };
 }
 

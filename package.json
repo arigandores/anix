@@ -1,7 +1,7 @@
 {
   "name": "anix-desktop",
   "productName": "Anix Desktop",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Anix Desktop — неофициальный клиент Anixart для Windows и браузера",
   "author": "arigandores",
   "main": "electron/main.js",
@@ -50,6 +50,14 @@
       "shortcutName": "Anix Desktop",
       "artifactName": "AnixDesktop-Setup-${version}.${ext}"
     },
+    "protocols": [
+      {
+        "name": "Anix Desktop",
+        "schemes": [
+          "anixdesktop"
+        ]
+      }
+    ],
     "asarUnpack": [
       "node_modules/**"
     ],

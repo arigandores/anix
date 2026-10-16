@@ -3,7 +3,8 @@
 // Текст при этом не выделяется (см. user-select в app.css); поля ввода работают как обычно.
 
 const H_SCROLLERS = '.hscroll, .banners, .screens, .tabbar.scrollable';
-const IGNORE = 'input, textarea, select, [contenteditable], .player-overlay, .seek, input[type=range], .lightbox';
+// .sortable — элементы, которые перетаскивают сами (очередь совместного просмотра, party/ui.js)
+const IGNORE = 'input, textarea, select, [contenteditable], .player-overlay, .seek, input[type=range], .lightbox, .sortable';
 const THRESHOLD = 6;
 
 function scrollerFor(target, axis) {

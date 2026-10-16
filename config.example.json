@@ -2,6 +2,7 @@
   "kodik": { "token": "" },
   "studiomir": { "apiKey": "" },
   "vkVideo": { "clientId": "", "clientSecret": "" },
+  "discord": { "clientId": "" },
   "social": {
     "google": { "apiKey": "", "authHandler": "" },
     "telegram": { "clientId": "", "redirectUri": "" },

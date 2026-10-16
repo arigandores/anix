@@ -5,6 +5,8 @@ import { t, prefs, db } from '../store.js';
 import { registerScreen, replace } from '../router.js';
 import { backToolbar, digits } from './common.js';
 import { resolveEpisode, openBuiltinPlayer, openWebPlayer, openThirdParty } from '../player.js';
+import { party, canControl } from '../party/room.js';
+import { partyPick, queueAdd, suggestMode, partyInfo } from '../party/ui.js';
 
 const epSort = () => Number(localStorage.getItem('anixart.pref.EPISODES_SORT') || 1);
 const sortIcon = (sort) => (sort === 1 ? 'ic_sort_ascending' : 'ic_sort_descending');
@@ -217,6 +219,21 @@ async function episodesList(release, type, source, ctx) {
       }));
       if (!ok) return;
     }
+    // В комнате совместного просмотра — встроенный плеер (синхронизируется только он); серия другого аниме или
+    // озвучки — «включить для всех» или в очередь «Дальше» (party/ui.js)
+    if (party.room) {
+      const content = { releaseId: release.id, typeId: type.id, sourceId: source.id, position: ep.position, sort,
+        title: release.title_ru || release.title_original || '', image: release.image || '', dub: type.name || '', epName: ep.name || `${ep.position} серия` };
+      // в комнате ничего не идёт — серия включается сразу (очередь нужна, только когда что-то уже смотрят);
+      // иначе «Предложить …» — сразу в очередь, а без него — спросить
+      const idle = !party.room.state?.content;
+      const how = idle && canControl() ? 'play' : party.intent?.queue ? 'queue' : await partyPick(content);
+      suggestMode(false);
+      if (!how) return;
+      if (how === 'queue') { queueAdd(content); partyInfo(`Добавлено в очередь «Дальше»: ${content.title} · ${content.epName}`); return; }
+      play(i, 2);
+      return;
+    }
     let player = prefs.get('SELECTED_PLAYER');
     if (player === 0) player = await choosePlayer();
     if (!player) return;
@@ -234,7 +251,7 @@ async function episodesList(release, type, source, ctx) {
     db.putEpisode(release.id, source.id, ep.position, { isWatched: true });
     ep.is_watched = true;
     paint();
-    if (player === 1) { openWebPlayer(ep, release); return; }
+    if (player === 1) { openWebPlayer(ep, release, type.name); return; }
     // Встроенный / сторонний: episode/target → парсер. Пока готовится ссылка — спиннер на месте номера
     // нажатой серии (появляется через SK_DELAY, как все индикаторы); повторный клик не запускает вторую загрузку
     if (starting) return;
@@ -242,13 +259,13 @@ async function episodesList(release, type, source, ctx) {
     listEl.children[i]?.querySelector('.num')?.replaceChildren(h('div', { class: 'load-reveal' }, h('div', { class: 'spinner' })));
     try {
       const res = await resolveEpisode(ep);
-      if (player === 2) openBuiltinPlayer({ release, episodes, index: i, sort, resolved: res });
+      if (player === 2) openBuiltinPlayer({ release, episodes, index: i, sort, resolved: res, dub: type.name, typeId: type.id });
       else openThirdParty(ep, release, res);
     } catch (e) {
       dialog({
         title: t('error_cannot_launch_player'),
         content: h('p', null, `${t('error_cannot_play_in_selected_player')}`),
-        actions: [{ label: t('close') }, { label: t('player_web'), primary: true, onClick: () => openWebPlayer(ep, release) }],
+        actions: [{ label: t('close') }, { label: t('player_web'), primary: true, onClick: () => openWebPlayer(ep, release, type.name) }],
       });
     } finally { starting = false; paint(); }
   }

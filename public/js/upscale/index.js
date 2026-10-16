@@ -511,6 +511,9 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
     benchStart() { benching = true; buildSeq++; building = null; if (stages[0] && stages[0].trt) stages[0].closing = true; },
     benchFinished() { benching = false; resetCap(); stagesKey = ''; trtStatus(true).then((st) => { trt = st; update(); }); },
     setSplit(v) { split = v; renderNow(); },
+    // размер области сменился не от окна (мини-плеер свернули/развернули): слой ставим по новому размеру сразу,
+    // до отрисовки — иначе до следующего кадра видео он мелькает в старом месте
+    relayout() { renderNow(); },
     setHoldOriginal(v) { holdOriginal = v; canvas.hidden = v || !stages.length; if (!v) renderNow(); },
     // для меню: сколько уровень займёт при текущем исходнике. load: 'ok' — с запасом, 'heavy' — успевает, но
     // видеокарта почти без запаса, 'no' — не успеет (кадры будут пропадать), null — ещё не знаем

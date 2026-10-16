@@ -7,6 +7,8 @@ import { backToolbar } from './common.js';
 import { choosePlayer } from './episodes.js';
 import { AI_MODELS, AI_EFFORTS } from './ai.js';
 import { trtStatus, trtInstall, benchRunDialog, benchResultsDialog, benchInfo, SHARPNESS, SHARP_LABEL } from '../upscale/index.js';
+import { AUDIO_OPTS } from '../audio.js';
+import { clearPresence, discordStatus } from '../discord.js';
 
 function item(ic, title, sub, onClick) {
   return h('div', { class: 'menu-item', onclick: onClick }, icon(ic), h('div', { class: 'grow' }, h('div', null, title), sub ? h('div', { class: 'sub' }, sub) : null));
@@ -72,6 +74,9 @@ registerScreen('settings', () => {
       if (r) benchResultsDialog();
     }),
     item('ic_info_outline', 'Результаты проверки', 'Сколько мс на кадр занимает каждая модель', () => benchResultsDialog()),
+    // улучшение звука во встроенном плеере — то же, что «Звук» в шестерёнке плеера (audio.js)
+    ...AUDIO_OPTS.map((o) => toggle(o.icon, o.label, o.sub, o.pref)),
+    discordSetting(),
     toggle('ic_player_next', t('pref_autoplay_title'), t('pref_autoplay_summary'), 'AUTO_PLAY'),
     toggle('ic_voice', t('remember_type_source'), t('remember_type_source_summary'), 'IS_REMEMBERING_TYPE_SOURCE'),
     toggle('ic_streaming_platform', t('remember_third_party_platform'), t('remember_third_party_platform_summary'), 'IS_REMEMBERING_SKIP_THIRD_PARTY_PLATFORM'),
@@ -140,6 +145,25 @@ function trtSetting() {
       busy = false;
       if (r.ok) { toast('Ускорение NVIDIA установлено'); el.replaceWith(toggle('ic_upscale', TITLE, SUB, 'UPSCALE_TRT')); } else { toast(`Не удалось установить: ${r.error}`); sub.textContent = 'Не установлено — нажмите, чтобы повторить'; }
     });
+    slot.replaceWith(el);
+  });
+  return slot;
+}
+
+// Статус в Discord: привязывать ничего не нужно — статус уходит в Discord, запущенный на этом компьютере
+// (server/discord.js). Подпись показывает, видит ли приложение Discord.
+function discordSetting() {
+  const slot = h('div');
+  discordStatus().then((st) => {
+    if (!st.configured) { slot.remove(); return; }
+    const el = toggle('ic_discord', 'Статус в Discord', '', 'DISCORD_PRESENCE', (on) => { if (!on) clearPresence(); paint(); });
+    const sub = h('div', { class: 'sub' }); el.querySelector('.grow').append(sub);
+    const paint = () => {
+      sub.textContent = prefs.get('DISCORD_PRESENCE') !== true ? 'Выключено — включите, чтобы друзья видели, что вы смотрите'
+        : st.running ? 'Discord подключён — друзья видят, что вы смотрите: тайтл, серию и время'
+          : 'Discord не запущен на этом компьютере — статус появится, как только вы его откроете';
+    };
+    paint();
     slot.replaceWith(el);
   });
   return slot;

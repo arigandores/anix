@@ -3,6 +3,7 @@ import { h, icon, iconButton, img, toast, dialog, sheet, prompt, confirmDialog }
 import { A, auth, prefetchRelease, dropPrefetchedRelease } from '../api.js';
 import { t, tp } from '../store.js';
 import { navigate } from '../router.js';
+import { partyEntryButton } from '../party/ui.js';
 
 // ---------- Форматирование ----------
 export function gradeText(g) {
@@ -236,6 +237,7 @@ export function mainToolbar({ hint = t('search_bar_text'), onSearch } = {}) {
       icon('ic_search'), h('span', { class: 'placeholder' }, hint)),
     h('div', { class: 'grow' }),
     h('div', { class: 'actions' },
+      partyEntryButton(), // «Смотреть вместе» (party/ui.js)
       notifButton(),
       iconButton('ic_settings', t('settings') !== 'settings' ? t('settings') : 'Настройки', () => navigate('settings'))));
   return bar;
@@ -245,7 +247,7 @@ export function backToolbar(title, actions = [], { bordered = false } = {}) {
   return h('div', { class: `appbar ${bordered ? 'bordered' : ''}` },
     iconButton('ic_back', 'Назад', () => history.back()),
     h('div', { class: 'title small' }, title),
-    h('div', { class: 'actions' }, actions));
+    h('div', { class: 'actions' }, partyEntryButton({ onlyInRoom: true }), actions)); // 👥 — пока вы в комнате
 }
 
 export function sectionHead(title, more, sub) {

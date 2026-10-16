@@ -44,7 +44,6 @@ app.whenReady().then(async () => {
     ['episodes-types', `r.navigate('episodes', { release: { id: 21, title_ru: ${P(rel.title_ru)} }, pick: true })`],
     type && sources[0] && ['episodes-list', `r.navigate('episodes', { release: { id: 21, title_ru: ${P(rel.title_ru)} }, type: ${P(type)}, source: ${P(sources[0])} })`],
     comment && ['replies', `r.navigate('replies', { kind: 'release', id: ${comment.id}, release: { id: 21 } })`],
-    ['streaming', `r.navigate('streaming', { release: { id: 21 } })`],
     ['release-videos', `r.navigate('release-videos', { release: { id: 21 } })`],
     ['channels', `r.navigate('channels', {})`],
     ['comments', `r.navigate('comments', { kind: 'release', id: 21 })`],

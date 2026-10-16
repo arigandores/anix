@@ -5,6 +5,7 @@ const { app, BrowserWindow, shell, Menu, nativeImage, session, ipcMain } = requi
 const path = require('path');
 const { start } = require('../server');
 const trt = require('./trt'); // ускорение апскейла на тензорных ядрах NVIDIA
+const { attachWebQuality } = require('./web-quality'); // веб-плеер: качество по «Приоритету качества»
 
 let win;
 let serverInfo;
@@ -39,6 +40,7 @@ async function createWindow() {
     },
   });
   Menu.setApplicationMenu(null);
+  attachWebQuality(win.webContents);
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith(serverInfo.url)) return { action: 'allow' };
     shell.openExternal(url);

@@ -4,7 +4,6 @@ import { A, auth } from '../api.js';
 import { t, prefs, theme, setTheme } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
 import { backToolbar } from './common.js';
-import { choosePlayer } from './episodes.js';
 import { AI_MODELS, AI_EFFORTS } from './ai.js';
 import { trtStatus, trtInstall, benchRunDialog, benchResultsDialog, benchInfo, SHARPNESS, SHARP_LABEL } from '../upscale/index.js';
 import { AUDIO_OPTS } from '../audio.js';
@@ -47,7 +46,8 @@ function choice(ic, title, options, get, set) {
 
 registerScreen('settings', () => {
   // строки берутся при открытии экрана: strings.json грузится после импорта модулей
-  const PLAYERS = [[0, t('player_always_ask')], [2, t('player_embedded')], [1, t('player_web')], [3, t('player_third_party')]];
+  // от лучшего качества к худшему, как в чипе плеера над сериями; «спрашивать» — диалог перед каждой серией
+  const PLAYERS = [[2, t('player_embedded')], [3, t('player_third_party')], [1, t('player_web')], [0, 'Спрашивать перед каждой серией']];
   const QUALITY = [[0, t('quality_max_available')], [1, t('quality_min_available')], [3, '480p'], [4, '720p'], [5, '1080p'], [6, '1440p'], [7, '2160p']];
   const root = h('div', null, backToolbar('Настройки'));
   const list = h('div', { class: 'menu-list', style: { maxWidth: '760px' } });
@@ -78,13 +78,12 @@ registerScreen('settings', () => {
     ...AUDIO_OPTS.map((o) => toggle(o.icon, o.label, o.sub, o.pref)),
     discordSetting(),
     toggle('ic_player_next', t('pref_autoplay_title'), t('pref_autoplay_summary'), 'AUTO_PLAY'),
+    toggle('ic_player_next', 'Пропускать филлеры', '«Следующая серия» перескакивает филлеры; в плеере покажем, сколько пропущено', 'SKIP_FILLERS'),
     toggle('ic_voice', t('remember_type_source'), t('remember_type_source_summary'), 'IS_REMEMBERING_TYPE_SOURCE'),
-    toggle('ic_streaming_platform', t('remember_third_party_platform'), t('remember_third_party_platform_summary'), 'IS_REMEMBERING_SKIP_THIRD_PARTY_PLATFORM'),
     item('ic_open_link', t('pref_external_player'), prefs.get('THIRD_PARTY_PLAYER_PATH') || 'mpv / VLC (автоопределение)', async () => {
       const v = await prompt('Путь к плееру (mpv.exe или vlc.exe)', { value: prefs.get('THIRD_PARTY_PLAYER_PATH') });
       if (v != null) { prefs.set('THIRD_PARTY_PLAYER_PATH', v.trim()); toast('Сохранено'); }
-    }),
-    item('ic_play_speed', t('title_choose_player'), 'Выбрать плеер сейчас', () => choosePlayer(true)));
+    }));
 
   list.append(h('div', { class: 'menu-cat' }, 'AI-помощник'),
     choice('ic_ai', 'Модель', AI_MODELS.map(([v, l, d]) => [v, `${l} — ${d}`]), () => prefs.get('AI_MODEL'), (v) => prefs.set('AI_MODEL', v)),

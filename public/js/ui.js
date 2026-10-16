@@ -123,6 +123,55 @@ export function sheet(title, items) {
   return d;
 }
 
+// --- Выпадающее меню у кнопки (чипы озвучки, источника и плеера) ---
+// Встаёт под кнопкой (над ней, если снизу мало места), закрывается кликом мимо, Esc, повторным нажатием на
+// кнопку и уходом кнопки со страницы. host — куда вставлять: в плеере это его оверлей, чтобы меню было видно и
+// во весь экран. Открыто одно меню за раз; возвращает { el, close } или null, если нажатие закрыло это же меню.
+let openPop = null;
+export function popover(anchor, content, { host, align = 'start', cls = '', onClose } = {}) {
+  if (openPop) {
+    const same = openPop.anchor === anchor;
+    openPop.close();
+    if (same) return null;
+  }
+  const el = h('div', { class: `popover ${cls}`, role: 'menu' }, content);
+  let closed = false;
+  const place = () => {
+    if (!anchor.isConnected) { close(); return; }
+    const a = anchor.getBoundingClientRect();
+    el.style.maxHeight = '';
+    const w = el.offsetWidth; const hh = el.offsetHeight;
+    const left = Math.max(8, Math.min(align === 'end' ? a.right - w : a.left, innerWidth - w - 8));
+    const below = innerHeight - a.bottom - 14; const above = a.top - 14;
+    const up = hh > below && above > below;
+    el.style.left = `${left}px`;
+    el.style.top = up ? `${Math.max(8, a.top - 6 - Math.min(hh, above))}px` : `${a.bottom + 6}px`;
+    el.style.maxHeight = `${up ? above : below}px`;
+  };
+  const onDown = (e) => { if (!el.contains(e.target) && !anchor.contains(e.target)) close(); };
+  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } };
+  function close() {
+    if (closed) return;
+    closed = true;
+    if (openPop?.el === el) openPop = null;
+    document.removeEventListener('pointerdown', onDown, true);
+    window.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('resize', place);
+    anchor.classList.remove('open'); anchor.setAttribute('aria-expanded', 'false');
+    el.classList.add('closing');
+    setTimeout(() => el.remove(), 120);
+    onClose && onClose();
+  }
+  (host || overlayHost()).append(el);
+  place();
+  anchor.classList.add('open'); anchor.setAttribute('aria-expanded', 'true');
+  document.addEventListener('pointerdown', onDown, true);
+  window.addEventListener('keydown', onKey, true); // раньше плеера: Esc закрывает меню, а не плеер
+  window.addEventListener('resize', place);
+  openPop = { anchor, el, close };
+  return { el, close, place };
+}
+
 export function confirmDialog(title, text, okLabel = 'Да') {
   return new Promise((resolve) => {
     let done = false;

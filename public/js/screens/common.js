@@ -147,8 +147,8 @@ export function needAuthDialog() {
 }
 export function requireAuth() { if (auth.loggedIn) return true; needAuthDialog(); return false; }
 export function needAuthView() {
-  return h('div', { class: 'empty', style: { paddingTop: '90px' } },
-    h('div', { style: { color: 'var(--carmine)' } }, icon('logo', 'big')),
+  return h('div', { class: 'empty center-gate' }, // посередине экрана (app.css)
+    icon('logo', 'big brand'), // фирменный, а не приглушённый, как иконки других пустых экранов
     h('div', { class: 'empty-title', style: { fontSize: '22px' } }, t('need_auth_title')),
     h('div', { class: 'empty-sub', style: { maxWidth: '380px' } }, t('need_auth_desc')),
     h('button', { class: 'btn btn-primary lg', style: { marginTop: '14px' }, onclick: () => navigate('auth') }, t('log_in')));
@@ -243,11 +243,12 @@ export function mainToolbar({ hint = t('search_bar_text'), onSearch } = {}) {
   return bar;
 }
 
-export function backToolbar(title, actions = [], { bordered = false } = {}) {
+// party — 👥 «Смотреть вместе» всегда (страница аниме, как в главной шапке); иначе — только пока вы в комнате
+export function backToolbar(title, actions = [], { bordered = false, party = false } = {}) {
   return h('div', { class: `appbar ${bordered ? 'bordered' : ''}` },
     iconButton('ic_back', 'Назад', () => history.back()),
     h('div', { class: 'title small' }, title),
-    h('div', { class: 'actions' }, partyEntryButton({ onlyInRoom: true }), actions)); // 👥 — пока вы в комнате
+    h('div', { class: 'actions' }, partyEntryButton(party ? {} : { onlyInRoom: true }), actions));
 }
 
 export function sectionHead(title, more, sub) {
@@ -266,7 +267,7 @@ export function profileName(profile) {
   return h('span', { class: 'row', style: { gap: '4px', display: 'inline-flex', cursor: 'pointer' }, onclick: (e) => { e.stopPropagation(); if (profile?.id) navigate('profile', { id: profile.id }); } },
     profile?.login || 'Гость',
     profile?.is_verified ? icon('ic_verified', 'xs verified') : null,
-    profile?.badge_url && profile?.badge_type === 0 ? h('img', { src: profile.badge_url, style: { width: '18px', height: '18px' }, alt: profile.badge_name || '' }) : null);
+    profile?.badge_url && profile?.badge_type === 0 ? h('img', { src: profile.badge_url, referrerpolicy: 'no-referrer', style: { width: '18px', height: '18px' }, alt: profile.badge_name || '' }) : null);
 }
 
 // ---------- Комментарии (CommentModel) ----------
@@ -404,7 +405,8 @@ export function linkify(text) {
 }
 
 // Комментарий-композер (5..720 символов)
-export function commentComposer({ onSend, placeholder = 'Ваш комментарий' }) {
+// top — над списком (страница аниме, «Комментарии»): без прилипания к низу экрана, разделитель снизу
+export function commentComposer({ onSend, placeholder = 'Ваш комментарий', top = false }) {
   const ta = h('textarea', { class: 'input', rows: 1, placeholder, maxlength: 720 });
   const spoiler = h('button', { class: 'chip', type: 'button' }, 'Спойлер');
   let isSpoiler = false;
@@ -433,7 +435,7 @@ export function commentComposer({ onSend, placeholder = 'Ваш коммента
     if (r && prefixText && !ta.value.startsWith(prefixText)) ta.value = prefixText + ta.value;
     if (r) ta.focus();
   }
-  const root = h('div', null, replyBar, h('div', { class: 'comment-input' }, ta, spoiler, send));
+  const root = h('div', null, replyBar, h('div', { class: `comment-input ${top ? 'top' : ''}` }, ta, spoiler, send));
   root.setReply = setReply;
   return root;
 }
@@ -447,11 +449,120 @@ export function collectionCard(c) {
       h('span', { class: `row ${c.is_favorite ? 'heart' : ''}`, style: { gap: '3px' } }, icon(c.is_favorite ? 'ic_favorite' : 'ic_favorite_border', 'xs'), String(c.favorites_count ?? 0))));
 }
 
-export function imageViewer(src) {
-  const lb = h('div', { class: 'lightbox', onclick: () => lb.remove() }, h('img', { src, referrerpolicy: 'no-referrer' }));
-  document.body.append(lb);
-  const onKey = (e) => { if (e.key === 'Escape') { lb.remove(); document.removeEventListener('keydown', onKey); } };
-  document.addEventListener('keydown', onKey);
+// Просмотр картинок (кадры, постер, картинки в ленте): во весь экран, вписано в окно. Несколько — листание стрелками,
+// ← → (Home, End), колесом и свайпом, счётчик «3 / 8», лента миниатюр. Клик по картинке — ×2 к месту клика (ещё клик — обратно),
+// увеличенное тянется мышью.
+// Esc или клик мимо картинки — закрыть. imageViewer(src) — одна картинка; { images, index, title } — несколько.
+export function imageViewer(src, { images, index = 0, title = '' } = {}) {
+  const list = images && images.length ? images : [src];
+  const many = list.length > 1;
+  let i = Math.max(0, Math.min(index, list.length - 1));
+  let zoom = false; let pan = { x: 0, y: 0 };
+  const pic = h('img', { class: 'iv-img', alt: '', referrerpolicy: 'no-referrer', draggable: 'false' });
+  const count = h('span', { class: 'iv-count' });
+  const btn = (cls, label, ic, fn) => h('button', { class: `iv-btn ${cls}`, title: label, 'aria-label': label, onclick: (e) => { e.stopPropagation(); fn(); } }, icon(ic));
+  const prev = many ? btn('iv-nav prev', 'Предыдущая (←)', 'ic_chevron_end', () => go(i - 1)) : null;
+  const next = many ? btn('iv-nav next', 'Следующая (→)', 'ic_chevron_end', () => go(i + 1)) : null;
+  const thumbs = many ? h('div', { class: 'iv-thumbs' }, list.map((s, k) => h('button', {
+    class: 'iv-thumb', 'aria-label': `${k + 1} из ${list.length}`, onclick: (e) => { e.stopPropagation(); go(k); },
+  }, h('img', { src: s, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' })))) : null;
+  const stage = h('div', { class: 'iv-stage' }, pic);
+  const root = h('div', { class: 'iv', role: 'dialog', 'aria-modal': 'true', 'aria-label': title || 'Просмотр картинки' },
+    h('div', { class: 'iv-top' },
+      h('div', { class: 'iv-title' }, title ? h('b', null, title) : null, many ? count : null),
+      h('a', { class: 'iv-btn', href: list[i], target: '_blank', rel: 'noopener', title: 'Открыть в браузере', 'aria-label': 'Открыть в браузере', onclick: (e) => { e.stopPropagation(); e.currentTarget.href = list[i]; } }, icon('ic_open_in_new')),
+      btn('', 'Закрыть (Esc)', 'ic_close', () => close())),
+    stage, prev, next, thumbs);
+
+  // вписать в сцену: маленькие кадры (у источника 600px) крупнее, но не больше чем вдвое — дальше слишком мыльно
+  function fit() {
+    if (!pic.naturalWidth) return;
+    const r = stage.getBoundingClientRect(); const cs = getComputedStyle(stage);
+    const w = r.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight); const hh = r.height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    const k = Math.min(w / pic.naturalWidth, hh / pic.naturalHeight, 2);
+    pic.style.width = `${Math.round(pic.naturalWidth * k)}px`; pic.style.height = `${Math.round(pic.naturalHeight * k)}px`;
+  }
+  pic.addEventListener('load', fit);
+  window.addEventListener('resize', fit);
+  const paintZoom = () => {
+    root.classList.toggle('zoomed', zoom);
+    pic.style.transform = zoom ? `translate(${pan.x}px, ${pan.y}px) scale(2)` : '';
+  };
+  function go(k) {
+    if (k < 0 || k >= list.length) return;
+    i = k; zoom = false; pan = { x: 0, y: 0 }; paintZoom();
+    pic.src = list[i]; // листание — сразу, без анимации: быстро мотать (появление с анимацией — только при открытии)
+    count.textContent = `${i + 1} / ${list.length}`;
+    if (prev) { prev.disabled = i === 0; next.disabled = i === list.length - 1; }
+    if (thumbs) {
+      [...thumbs.children].forEach((t, k2) => t.classList.toggle('on', k2 === i));
+      thumbs.children[i].scrollIntoView({ block: 'nearest', inline: 'center' });
+    }
+    for (const d of [-1, 1]) if (list[i + d]) { const pre = new Image(); pre.referrerPolicy = 'no-referrer'; pre.src = list[i + d]; } // соседние — заранее
+  }
+  function close() {
+    document.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('resize', fit);
+    root.classList.add('closing');
+    setTimeout(() => root.remove(), 160);
+  }
+  // клавиши — раньше остальных (плеер, экраны): ← → листают, Esc закрывает только просмотр
+  const onKey = (e) => {
+    const k = e.key;
+    if (k === 'Escape') close();
+    else if (k === 'ArrowLeft') go(i - 1);
+    else if (k === 'ArrowRight') go(i + 1);
+    else if (k === 'Home') go(0);
+    else if (k === 'End') go(list.length - 1);
+    else return;
+    e.preventDefault(); e.stopPropagation();
+  };
+  document.addEventListener('keydown', onKey, true);
+  // клик мимо картинки — закрыть (по картинке, кнопкам и миниатюрам — нет)
+  root.addEventListener('click', (e) => { if (e.target === root || e.target === stage) close(); });
+  // колесо — листать, когда не увеличено: щелчок колеса — кадр (не чаще раза в 80 мс), мелкие прокрутки тачпада копятся
+  let wheelAt = 0; let wheelAcc = 0;
+  root.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    if (zoom || !many) return;
+    wheelAcc += e.deltaY || e.deltaX;
+    if (Math.abs(wheelAcc) < 40 || performance.now() - wheelAt < 80) return;
+    wheelAt = performance.now(); go(i + (wheelAcc > 0 ? 1 : -1)); wheelAcc = 0;
+  }, { passive: false });
+  // перетаскивание: увеличенная — двигается, обычная — свайп листает
+  let drag = null;
+  stage.addEventListener('pointerdown', (e) => { if (e.target !== pic) return; drag = { x: e.clientX, y: e.clientY, pan: { ...pan }, moved: false }; pic.setPointerCapture(e.pointerId); });
+  stage.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x; const dy = e.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+    if (zoom) {
+      const r = pic.getBoundingClientRect(); const mx = r.width / 4; const my = r.height / 4; // увеличенная вдвое — сдвиг до четверти
+      pan = { x: Math.max(-mx, Math.min(mx, drag.pan.x + dx)), y: Math.max(-my, Math.min(my, drag.pan.y + dy)) };
+      paintZoom();
+    }
+  });
+  stage.addEventListener('pointerup', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    if (!drag.moved) toggleZoom(e); // клик (без перетаскивания) — увеличить к месту клика или вернуть
+    else if (!zoom && many && Math.abs(dx) > 60) go(i + (dx < 0 ? 1 : -1));
+    drag = null;
+  });
+  // ×2: точка под курсором остаётся под ним (сдвиг — до половины картинки, чтобы край не уходил внутрь)
+  function toggleZoom(e) {
+    zoom = !zoom;
+    if (zoom) {
+      const r = pic.getBoundingClientRect();
+      const mx = r.width / 2; const my = r.height / 2;
+      pan = { x: Math.max(-mx, Math.min(mx, r.left + mx - e.clientX)), y: Math.max(-my, Math.min(my, r.top + my - e.clientY)) };
+    } else pan = { x: 0, y: 0 };
+    paintZoom();
+  }
+  document.body.append(root);
+  go(i);
+  root.querySelector('.iv-top .iv-btn:last-child').focus({ preventScroll: true });
+  return { close, go, get index() { return i; } };
 }
 
 export const emptyFilter = () => ({

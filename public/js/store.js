@@ -36,10 +36,11 @@ export function arr(name) { return R.arrays[name] || []; }
 // ---------------- Prefs ----------------
 const PREFIX = 'anixart.pref.';
 const DEFAULTS = {
-  SELECTED_PLAYER: 0, // 0 спрашивать, 1 веб, 2 встроенный, 3 сторонний
+  SELECTED_PLAYER: 2, // 0 спрашивать перед каждой серией, 1 веб, 2 встроенный, 3 сторонний
   LAST_SELECTED_PLAYER: 2,
   SKIP_OPENING: null, // пропуск опенинга и эндинга во встроенном плеере: 'auto' | 'watch' | null (спрашивать)
   SKIP_ENDING: null,
+  SKIP_FILLERS: false, // «следующая серия» перескакивает филлеры (плеер, «Смотреть N серию», «⏭»)
   UPSCALE_MODE: 'off', // улучшение картинки (апскейл нейросетью): 'off' | 'auto' | 'fast' | 'quality' | 'max'
   UPSCALE_TARGET: 'auto', // разрешение: 'auto' (под окно) | '1080' | '1440' | '2160'
   UPSCALE_LAST: 'auto', // режим, который включает клавиша U
@@ -56,14 +57,7 @@ const DEFAULTS = {
   SELECTED_PLAYER_SPEED: 3,
   AUTO_PLAY: false,
   SELECTED_VIDEO_QUALITY_V2: 0, // приоритет качества во встроенном плеере: 0 — максимально доступное
-  SELECTED_THIRD_PARTY_VIDEO_QUALITY_V2: 0,
-  ON_EPISODE_DISCLAIMER: false,
   IS_REMEMBERING_TYPE_SOURCE: true,
-  // «Непроверенные источники»: запомнить переход к вариантам из непроверенных источников
-  IS_REMEMBERING_SKIP_THIRD_PARTY_PLATFORM: false,
-  IS_ASKED_SKIP_THIRD_PARTY_PLATFORM: false,
-  SEARCH_VIDEO_TPP: false,
-  COUNT_SKIP_STREAMING_PLATFORM: 0,
   // «Альтернативное соединение» / «Режим экономии ресурсов»
   FORCE_SHOULD_USE_MIRROR_URLS: false,
   SHOULD_USE_MIRROR_URLS: false,
@@ -105,6 +99,17 @@ export const prefs = {
   },
 };
 
+// Плеер выбирается чипом над списком серий, а не диалогом перед каждой серией. В прежнем диалоге галочка
+// «Спрашивать всегда» стояла по умолчанию — такой сохранённый выбор один раз меняем на последний плеер
+// (спрашивать по-прежнему можно, выбрав это в настройках)
+try {
+  if (!localStorage.getItem(`${PREFIX}PLAYER_ASK_MIGRATED`)) {
+    if (prefs.get('SELECTED_PLAYER') === 0) prefs.set('SELECTED_PLAYER', prefs.get('LAST_SELECTED_PLAYER') || 2);
+    prefs.set('PLAYER_ASK_MIGRATED', true);
+    for (const k of ['IS_REMEMBERING_SKIP_THIRD_PARTY_PLATFORM', 'IS_ASKED_SKIP_THIRD_PARTY_PLATFORM', 'SEARCH_VIDEO_TPP', 'COUNT_SKIP_STREAMING_PLATFORM']) localStorage.removeItem(PREFIX + k);
+  }
+} catch { /* storage недоступен */ }
+
 export function theme() {
   try { return localStorage.getItem('anixart.theme') || 'system'; } catch { return 'system'; }
 }
@@ -123,8 +128,12 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme
 function load(key, def) { try { return JSON.parse(localStorage.getItem(key) || 'null') ?? def; } catch { return def; } }
 function save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* ignore */ } }
 
+// Серия досмотрена, если до конца осталось меньше этого (когда источник не отметил эндинг)
+const FINISH_LEFT_MS = 120000;
+
 export const db = {
-  // Episode(releaseId, sourceId, position, playbackPosition, isWatched)
+  // Episode(releaseId, sourceId, position, playbackPosition, isWatched, duration, endingStart, finished).
+  // isWatched — отметка «просмотрено» (ставится при запуске, как на сервере); досмотрена ли — progress()
   episodeKey: (r, s, p) => `${r}:${s}:${p}`,
   episodes() { return load('anixart.db.episodes', {}); },
   getEpisode(r, s, p) { return this.episodes()[this.episodeKey(r, s, p)] || null; },
@@ -140,21 +149,71 @@ export const db = {
     for (const e of Object.values(this.episodes())) if (e.releaseId === r && e.sourceId === s && e.isWatched) out[e.position] = e.playbackPosition || 0;
     return out;
   },
+  // Отметки всего аниме — в любой озвучке и источнике (номер серии один и тот же)
+  watchedOfRelease(r) {
+    const out = new Set();
+    for (const e of Object.values(this.episodes())) if (e.releaseId === r && e.isWatched) out.add(e.position);
+    return out;
+  },
   setAllWatched(r, s, positions, watched) {
     const all = this.episodes();
     for (const p of positions) {
       const k = this.episodeKey(r, s, p);
       all[k] = { releaseId: r, sourceId: s, position: p, playbackPosition: 0, ...(all[k] || {}), isWatched: watched };
-      if (!watched) all[k].playbackPosition = 0;
+      if (!watched) Object.assign(all[k], { playbackPosition: 0, finished: false });
     }
     save('anixart.db.episodes', all);
   },
+  // Снять отметку серии во всех источниках аниме; возвращает источники, где она стояла (снять и на сервере)
+  unwatchEverywhere(r, p) {
+    const all = this.episodes(); const sources = [];
+    for (const e of Object.values(all)) {
+      if (e.releaseId !== r || e.position !== p || !e.isWatched) continue;
+      sources.push(e.sourceId);
+      Object.assign(e, { isWatched: false, playbackPosition: 0, finished: false });
+    }
+    save('anixart.db.episodes', all);
+    return sources;
+  },
+  // Сколько просмотрено и досмотрена ли: «⏭ следующая», конец файла (-1), начало эндинга в конце серии
+  // или меньше FINISH_LEFT_MS до конца. Нет записи или позиции — null
+  progress(r, s, p) {
+    const e = this.getEpisode(r, s, p);
+    if (!e) return null;
+    const pos = e.playbackPosition > 0 ? e.playbackPosition : 0; const dur = e.duration > 0 ? e.duration : 0;
+    const finished = !!e.finished || e.playbackPosition === -1
+      || (dur > 0 && pos > 0 && ((e.endingStart > 0 && pos >= e.endingStart) || dur - pos <= FINISH_LEFT_MS));
+    if (!finished && !pos) return null;
+    return { pos, dur, finished, toEnd: e.playbackPosition === -1 };
+  },
+  // Прогресс серии в любом источнике аниме (отметки общие для всех озвучек): сначала — в этом источнике
+  progressAny(r, p, preferSource) {
+    const sources = [preferSource, ...Object.values(this.episodes()).filter((e) => e.releaseId === r && e.position === p && e.sourceId !== preferSource).map((e) => e.sourceId)];
+    for (const s of sources) { const pr = this.progress(r, s, p); if (pr && (pr.pos || pr.toEnd)) return pr; }
+    return null;
+  },
+  // Выбранные озвучка и источник аниме — запоминаются сразу при выборе (чипы), ещё до запуска серии
+  choice(releaseId) { return load('anixart.db.choice', {})[releaseId] || null; },
+  setChoice(releaseId, { typeId, sourceId, typeName, sourceName, typeIcon }) {
+    const all = load('anixart.db.choice', {});
+    all[releaseId] = { typeId, sourceId, typeName, sourceName, typeIcon };
+    save('anixart.db.choice', all);
+  },
+  // Максимальное качество источника (по названию), узнанное при запуске серии
+  sourceQuality(name) { return load('anixart.db.sourceQuality', {})[name] || null; },
+  setSourceQuality(name, q) {
+    if (!name || !q) return;
+    const all = load('anixart.db.sourceQuality', {});
+    if (all[name] === q) return;
+    all[name] = q; save('anixart.db.sourceQuality', all);
+  },
   // Последняя просмотренная серия: releaseId, typeId, sourceId, position, timestamp;
   // typeName/sourceName — для заголовка скелетона, пока экран серий открывает запомненный выбор
-  addLastWatched(releaseId, typeId, sourceId, position, { typeName, sourceName } = {}) {
+  addLastWatched(releaseId, typeId, sourceId, position, { typeName, sourceName, typeIcon } = {}) {
     const all = load('anixart.db.lastWatched', {});
-    all[releaseId] = { releaseId, typeId, sourceId, position, typeName, sourceName, timestamp: Math.floor(Date.now() / 1000) };
+    all[releaseId] = { releaseId, typeId, sourceId, position, typeName, sourceName, typeIcon, timestamp: Math.floor(Date.now() / 1000) };
     save('anixart.db.lastWatched', all);
+    this.setChoice(releaseId, { typeId, sourceId, typeName, sourceName, typeIcon });
   },
   lastWatched(releaseId) { return load('anixart.db.lastWatched', {})[releaseId] || null; },
   // История поиска

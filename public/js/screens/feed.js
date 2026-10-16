@@ -46,12 +46,12 @@ function renderBlocks(blocks) {
       case 'media': {
         const items = d.items || [];
         const grid = h('div', { style: { display: 'grid', gap: '4px', gridTemplateColumns: items.length === 1 ? '1fr' : 'repeat(2, 1fr)' } });
-        items.slice(0, 4).forEach((m) => { const i = img(m.url); i.style.cursor = 'zoom-in'; i.style.width = '100%'; if (m.width && m.height) i.style.aspectRatio = `${m.width} / ${m.height}`; i.onclick = () => imageViewer(m.url); grid.append(i); });
+        items.slice(0, 4).forEach((m, k) => { const i = img(m.url); i.style.cursor = 'zoom-in'; i.style.width = '100%'; if (m.width && m.height) i.style.aspectRatio = `${m.width} / ${m.height}`; i.onclick = () => imageViewer(m.url, { images: items.map((x) => x.url), index: k }); grid.append(i); });
         box.append(grid); break;
       }
       case 'embed':
         box.append(h('a', { class: 'card', href: d.url, target: '_blank', rel: 'noopener', style: { display: 'flex', gap: '12px', alignItems: 'center', padding: '10px' } },
-          d.image ? h('img', { src: d.image, style: { width: '120px', borderRadius: '8px', objectFit: 'cover', aspectRatio: '16/9' } }) : icon('ic_link'),
+          d.image ? h('img', { src: d.image, referrerpolicy: 'no-referrer', style: { width: '120px', borderRadius: '8px', objectFit: 'cover', aspectRatio: '16/9' } }) : icon('ic_link'),
           h('div', { class: 'grow' }, h('div', { class: 'muted', style: { fontSize: '12px' } }, d.site_name || d.service || ''), h('b', { class: 'clamp2' }, d.title || d.url), d.description ? h('div', { class: 'muted clamp2', style: { fontSize: '13px' } }, d.description) : null)));
         break;
       case 'delimiter': box.append(h('hr', { style: { border: 0, borderTop: '1px solid var(--sep)', width: '100%' } })); break;

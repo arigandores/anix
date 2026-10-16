@@ -177,7 +177,6 @@ export const A = {
   filter: (page, body, extended = true) => api.post(`filter/${page}`, body, { extended_mode: extended }),
   related: (relatedId, page) => api.get(`related/${relatedId}/${page}`, {}, { apiVersion: 'v2' }),
   schedule: () => api.get('schedule'),
-  streaming: (rid) => api.get(`release/streaming/platform/${rid}`),
   videoMain: (rid) => api.get(`video/release/${rid}`),
   videos: (rid, page) => api.get(`video/release/${rid}/${page}`),
   videoCategory: (rid, cid, page) => api.get(`video/release/${rid}/category/${cid}/${page}`),

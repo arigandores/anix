@@ -1,13 +1,13 @@
-// Релиз, связанные, коллекции релиза, видео, онлайн-платформы
-import { h, icon, iconButton, img, toast, dialog, sheet, pagedList, emptyView, spinner, skeleton, skLine, skParts, errorView, skeletonSettled, markAppeared } from '../ui.js';
+// Релиз, связанные, коллекции релиза, видео
+import { h, icon, iconButton, img, toast, dialog, sheet, pagedList, emptyView, spinner, skeleton, skLine, errorView, skeletonSettled, markAppeared } from '../ui.js';
 import { A, api, auth, takePrefetchedRelease } from '../api.js';
-import { t, tp, prefs } from '../store.js';
+import { t, tp } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
 import {
   gradeText, digits, seasonName, LIST_NAMES, chooseListStatus, toggleFavorite, requireAuth, commentItem, commentComposer,
   openRelease, imageViewer, report, backToolbar, sectionHead, collectionCard, relTime, releaseRow,
 } from './common.js';
-import { prefetchWatch } from './episodes.js';
+import { prefetchWatch, watchBlock } from './episodes.js';
 import { partyWatchButton } from '../party/ui.js';
 
 const AGE = ['', '0+', '6+', '12+', '16+', '18+'];
@@ -62,8 +62,7 @@ function previewPage(p) {
 registerScreen('release', ({ id, random, profileId, status, collectionId, preload }, ctx) => {
   const root = h('div', null);
   let rel;
-  // 18+ без подтверждения возраста — без постера и названия до экрана предупреждения
-  let usePreload = !random && preload && !(preload.age_rating === 5 && !prefs.get('IS_ADULT')) ? preload : null;
+  let usePreload = !random && preload ? preload : null;
   async function fetchRelease() {
     let r;
     if (random === 1) r = await A.random(true);
@@ -74,24 +73,16 @@ registerScreen('release', ({ id, random, profileId, status, collectionId, preloa
     return r;
   }
   async function render() {
-    root.replaceChildren(backToolbar(''), ...previewPage(usePreload));
+    root.replaceChildren(backToolbar('', [], { party: true }), ...previewPage(usePreload));
     usePreload = null; // «Случайный» и повторная загрузка — без старых данных
     let r;
-    try { r = await fetchRelease(); } catch (e) { await skeletonSettled(root); root.replaceChildren(backToolbar(''), errorView(e, render)); return; }
+    try { r = await fetchRelease(); } catch (e) { await skeletonSettled(root); root.replaceChildren(backToolbar('', [], { party: true }), errorView(e, render)); return; }
     const instant = await skeletonSettled(root);
     rel = r.release;
     if (!rel || r.code !== 0 || rel.is_deleted) {
-      root.replaceChildren(backToolbar(''), h('div', { class: 'empty' }, icon('ic_error', 'big'),
+      root.replaceChildren(backToolbar('', [], { party: true }), h('div', { class: 'empty' }, icon('ic_error', 'big'),
         h('div', { class: 'empty-title' }, 'Страница не найдена'), h('div', { class: 'empty-sub' }, 'Возможно, она была удалена и больше недоступна'),
         h('button', { class: 'btn btn-tonal', onclick: () => history.back() }, 'Назад')));
-      return;
-    }
-    if (rel.age_rating === 5 && !prefs.get('IS_ADULT')) {
-      root.replaceChildren(backToolbar(''), h('div', { class: 'empty' }, h('div', { class: 'empty-title' }, 'Возрастное ограничение'),
-        h('div', { class: 'empty-sub' }, 'Для просмотра подтвердите, что Вам уже исполнилось 18 лет'),
-        h('div', { class: 'row' }, h('button', { class: 'btn btn-tonal', onclick: () => history.back() }, 'Назад'),
-          h('button', { class: 'btn btn-primary', onclick: () => { prefs.set('IS_ADULT', true); build(); } }, 'Да, мне есть 18')),
-        h('div', { class: 'muted3', style: { fontSize: '12px', marginTop: '8px' } }, 'При нажатии на кнопку «Подтвердить» данное сообщение больше показываться не будет.')));
       return;
     }
     build();
@@ -105,7 +96,7 @@ registerScreen('release', ({ id, random, profileId, status, collectionId, preloa
       random ? iconButton('ic_shuffle', t('label_random'), () => render()) : null,
       iconButton('ic_bell', 'Уведомления о новых сериях', () => typeNotifications(rel)),
       iconButton('ic_more', 'Ещё', () => moreSheet(rel)),
-    ]);
+    ], { party: true }); // 👥 «Смотреть вместе» — как в главной шапке
     toolbar.querySelector('.title').style.opacity = '0';
     ctx.entry.node.closest('#viewport')?.addEventListener('scroll', function onS(e) {
       if (!toolbar.isConnected) { e.currentTarget.removeEventListener('scroll', onS); return; }
@@ -130,23 +121,23 @@ registerScreen('release', ({ id, random, profileId, status, collectionId, preloa
     // --- Кнопка просмотра ---
     const st = rel.status?.id ?? rel.status_id;
     let watch;
-    if (rel.is_view_blocked) watch = h('div', { class: 'muted' }, 'Недоступно в вашей стране');
+    // анонс — раньше «недоступно»: у не вышедшего сервер тоже ставит is_play_disabled, и вместо «Анонс» было «Недоступно»
+    if (st === 3 && !rel.episodes_released) watch = h('div', { class: 'muted' }, rel.aired_on_date ? `Анонс — выйдет ${new Date(rel.aired_on_date * 1000).toLocaleDateString('ru-RU')}` : 'Анонс — серии ещё не вышли');
+    else if (rel.is_view_blocked) watch = h('div', { class: 'muted' }, 'Недоступно в вашей стране');
     else if (rel.is_play_disabled) watch = h('div', { class: 'muted' }, 'Недоступно');
-    else if (st === 3 && !rel.episodes_released) watch = h('div', { class: 'rel-note' }, rel.aired_on_date ? `Анонс: ${new Date(rel.aired_on_date * 1000).toLocaleDateString('ru-RU')}` : 'Анонс');
+    else if (rel.is_tpp_disabled) watch = h('div', { class: 'muted' }, 'Недоступно в вашем регионе');
     else {
-      // «Воспроизвести» сразу к сериям — их озвучки, источники и серии запрашиваем заранее, в фоне
-      if (watchGoesToEpisodes(rel)) prefetchWatch(rel);
-      watch = h('div', { class: 'col', style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
-        h('div', { class: 'watch-row' },
-          h('button', { class: 'btn btn-primary lg btn-watch', onclick: () => openWatch(rel) }, icon('ic_play'), 'Воспроизвести'),
-          partyWatchButton(rel, () => openWatch(rel))), // «Смотреть вместе» / «Предложить комнате» (party/ui.js)
-        rel.episode_last_update ? h('div', { class: 'muted', style: { fontSize: '13px' } }, `Добавлено: ${rel.episode_last_update.last_episode_update_name || rel.episode_last_update.episode_name || 'неизвестная серия'} | ${rel.episode_last_update.lastEpisodeTypeUpdateName || rel.episode_last_update.last_episode_type_update_name || ''} | ${rel.episode_last_update.last_episode_source_update_name || ''}`) : null);
+      // «Смотреть» / «Продолжить» (episodes.js): озвучки, источники и серии запрашиваем заранее, в фоне
+      prefetchWatch(rel);
+      watch = watchBlock(rel, partyWatchButton(rel, () => navigate('episodes', { release: rel }))); // «Смотреть вместе» / «Предложить комнате» (party/ui.js)
+      ctx.setOnShow(() => watch.repaint()); // вернулись со своей серии или с экрана серий — кнопка по свежему прогрессу
+      ctx.setDispose(() => watch.dispose());
     }
 
     const hero = h('div', { class: 'rel-hero' },
       h('div', { class: 'bg', style: { backgroundImage: `url("${rel.image}")` } }),
       h('div', { class: 'inner' },
-        h('div', { class: 'poster', onclick: () => imageViewer(rel.image) }, img(rel.image)),
+        h('div', { class: 'poster', onclick: () => imageViewer(rel.image, { title: rel.title_ru || rel.title_original || '' }) }, img(rel.image)),
         h('div', { class: 'head' },
           h('h1', { class: 'rel-title' }, title),
           sub ? h('div', { class: 'rel-orig' }, sub) : null,
@@ -227,7 +218,6 @@ function moreSheet(rel) {
   const base = (window.__toggles && window.__toggles.baseUrl) || 'https://anixart-app.com/';
   const link = `${base}release/${rel.id}`;
   sheet(null, [
-    { label: 'Онлайн просмотр', icon: 'ic_streaming_platform', onClick: () => navigate('streaming', { release: rel }) },
     { label: 'Поделиться', icon: 'ic_export_variant', onClick: () => { const text = `${rel.title_ru}\n${link}`; if (navigator.share) navigator.share({ text }).catch(() => {}); else { navigator.clipboard?.writeText(text); toast('Скопировано'); } } },
     { label: 'Скопировать ссылку', icon: 'ic_link', onClick: () => { navigator.clipboard?.writeText(link); toast('Скопировано'); } },
     { label: 'Пожаловаться', icon: 'ic_alert', onClick: () => report('release', rel.id) },
@@ -381,7 +371,8 @@ function videoBanners(rel) {
   const card = h('div', { class: 'card' }, h('div', { class: 'card-title' }, h('span', { class: 'grow' }, 'Видео'),
     h('button', { class: 'section-more', onclick: () => navigate('release-videos', { release: rel }) }, 'Показать все', icon('ic_chevron_end', 'sm'))));
   if (!banners.length) card.append(h('div', { class: 'muted' }, 'Ой, а тут пока ничего нет!'));
-  else card.append(h('div', { class: 'screens' }, banners.map((b) => h('div', { style: { position: 'relative', cursor: 'pointer', flex: 'none' }, onclick: () => navigate('release-videos', { release: rel, categoryId: Number(b.value), categoryName: b.name }) },
+  // плитки ведут к видео раздела, а не увеличивают картинку — курсор-указатель, а не лупа скриншотов (.vb в app.css)
+  else card.append(h('div', { class: 'screens' }, banners.map((b) => h('div', { class: 'vb', style: { position: 'relative', cursor: 'pointer', flex: 'none' }, onclick: () => navigate('release-videos', { release: rel, categoryId: Number(b.value), categoryName: b.name }) },
     h('img', { src: b.image, referrerpolicy: 'no-referrer' }), h('div', { style: { position: 'absolute', left: '10px', bottom: '8px', color: '#fff', fontWeight: 500, textShadow: '0 1px 4px #000' } }, b.name),
     b.is_new ? h('span', { class: 'badge', style: { position: 'absolute', top: '6px', left: '6px', background: 'var(--carmine)', color: '#fff' } }, 'NEW') : null))));
   return card;
@@ -391,7 +382,7 @@ function screenshots(rel) {
   const s = rel.screenshot_images || [];
   if (!s.length) return null;
   return h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Кадры'),
-    h('div', { class: 'screens' }, s.map((src) => { const i = h('img', { src, loading: 'lazy', referrerpolicy: 'no-referrer' }); i.onclick = () => imageViewer(src); return i; })));
+    h('div', { class: 'screens' }, s.map((src, k) => { const i = h('img', { src, loading: 'lazy', referrerpolicy: 'no-referrer' }); i.onclick = () => imageViewer(src, { images: s, index: k, title: rel.title_ru || rel.title_original || '' }); return i; })));
 }
 
 // Связанные релизы — вся франшиза по порядку выхода. В ответе release/{id} только первые три, поэтому
@@ -454,10 +445,9 @@ function commentsBlock(rel, rebuild) {
   const card = h('div', { class: 'card', style: { padding: '16px 0 0' } },
     h('div', { class: 'card-title', style: { padding: '0 16px' } }, h('div', { class: 'grow' }, 'Комментарии', h('div', { class: 'muted', style: { fontSize: '13px', fontWeight: 400 } }, 'Популярные и актуальные')),
       h('button', { class: 'section-more', onclick: () => navigate('comments', { kind: 'release', id: rel.id, release: rel }) }, 'Показать все', icon('ic_chevron_end', 'sm'))));
-  const list = rel.comments || [];
-  if (!list.length) card.append(h('div', { class: 'muted', style: { padding: '8px 16px 12px' } }, 'Еще никто не оставлял комментарии. Будьте первыми!'));
-  list.forEach((c) => card.append(commentItem(c, { kind: 'release', release: rel })));
+  // написать — сразу под заголовком, над комментариями
   card.append(commentComposer({
+    top: true,
     onSend: async (body) => {
       const r = await A.releaseCommentAdd(rel.id, body);
       if (r.code === 0) { toast('Комментарий отправлен'); const fresh = await A.release(rel.id, true); Object.assign(rel, fresh.release); rebuild(); return true; }
@@ -465,6 +455,9 @@ function commentsBlock(rel, rebuild) {
       return false;
     },
   }));
+  const list = rel.comments || [];
+  if (!list.length) card.append(h('div', { class: 'muted', style: { padding: '8px 16px 12px' } }, 'Еще никто не оставлял комментарии. Будьте первыми!'));
+  list.forEach((c) => card.append(commentItem(c, { kind: 'release', release: rel })));
   return card;
 }
 
@@ -506,95 +499,47 @@ registerScreen('release-collections', ({ release }) => {
   ]))]), holder);
 });
 
-// Видео релиза
-function videoCard(v) {
-  return h('div', { class: 'release-card', style: { width: '260px', flex: 'none' }, onclick: () => playVideo(v) },
-    h('div', { class: 'poster', style: { aspectRatio: '16/9', width: '100%' } }, img(v.image), v.hosting?.icon ? h('img', { src: v.hosting.icon, style: { position: 'absolute', right: '8px', bottom: '8px', width: '22px', height: '22px' } }) : null),
-    h('div', { class: 't clamp2' }, v.title), h('div', { class: 'meta' }, [v.category?.name, v.profile?.login, relTime(v.timestamp)].filter(Boolean).join(' • ')));
+// Видео релиза. В ленте (hscroll) карточка 260px; в сетке — по ширине колонки (фиксированная ширина вылезала
+// в соседние колонки: карточки и подписи накладывались)
+function videoCard(v, { grid = false } = {}) {
+  return h('div', { class: 'release-card', style: grid ? { minWidth: '0' } : { width: '260px', flex: 'none' }, onclick: () => playVideo(v) },
+    // превью не загрузилось (Sibnet закрыт для IP вне России) — вместо сломанной картинки название сайта (app.css, .vid-poster)
+    h('div', { class: 'poster vid-poster', 'data-host': videoHost(v), style: { aspectRatio: '16/9', width: '100%' } }, img(v.image), v.hosting?.icon ? h('img', { src: v.hosting.icon, referrerpolicy: 'no-referrer', alt: '', onerror: (e) => e.currentTarget.remove(), style: { position: 'absolute', right: '8px', bottom: '8px', width: '22px', height: '22px' } }) : null),
+    h('div', { class: 't clamp2' }, v.title), h('div', { class: 'meta clamp2' }, [v.category?.name, v.profile?.login, relTime(v.timestamp)].filter(Boolean).join(' • ')));
 }
-function playVideo(v) {
+const gridVideoCard = (v) => videoCard(v, { grid: true });
+// сайт видео: название хостинга от сервера, а «Неизвестно» — по адресу (video.sibnet.ru → sibnet.ru)
+function videoHost(v) {
+  if (v.hosting?.name && v.hosting.name !== 'Неизвестно') return v.hosting.name;
+  try { return new URL(v.player_url || v.url).host.replace(/^(www|video)\./, ''); } catch { return 'Видео'; }
+}
+// Не YouTube — сначала спрашиваем, открывается ли (сервер, /probe): Sibnet целиком закрыт для IP вне России, и вместо
+// белой страницы «403 Forbidden» объясняем, в чём дело
+async function playVideo(v) {
   const url = v.player_url || v.url;
-  import('../player.js').then(({ openWebPlayer }) => openWebPlayer({ url, iframe: false, name: v.title }, { title_ru: v.release?.title_ru || v.title }));
+  if (!/(^|\.)(youtube\.com|youtu\.be)\//i.test(url.replace(/^https?:\/\//, ''))) {
+    const p = await fetch(`/probe?url=${encodeURIComponent(url)}`).then((r) => r.json()).catch(() => null);
+    if (p && (p.status === 403 || p.status === 451)) {
+      dialog({ title: 'Видео не открывается', content: h('p', null, `${p.host || videoHost(v)} не пускает из вашей страны — сайт отвечает «доступ запрещён». Откройте видео с VPN или выберите другое.`), actions: [{ label: t('close'), primary: true }] });
+      return;
+    }
+  }
+  const { openWebPlayer } = await import('../player.js');
+  openWebPlayer({ url, iframe: false, name: v.title }, { title_ru: v.release?.title_ru || v.title });
 }
 registerScreen('release-videos', async ({ release, categoryId, categoryName }) => {
   const root = h('div', null, backToolbar(categoryName || 'Видео'));
   if (categoryId) {
-    root.append(pagedList({ skeleton: 'collections', load: (page) => A.videoCategory(release.id, categoryId, page), render: videoCard, grid: true }));
+    root.append(pagedList({ skeleton: 'collections', load: (page) => A.videoCategory(release.id, categoryId, page), render: gridVideoCard, grid: true }));
     return root;
   }
   const r = await A.videoMain(release.id);
-  for (const p of r.streaming_platforms || []) void p;
-  if ((r.streaming_platforms || []).length) {
-    root.append(sectionHead('Онлайн-кинотеатры'), h('div', { class: 'hscroll' }, r.streaming_platforms.map((p) => h('a', { class: 'tile', href: p.url, target: '_blank' }, p.icon ? h('img', { src: p.icon, style: { width: '28px', height: '28px', borderRadius: '6px' } }) : null, p.name))));
-  }
   for (const b of r.blocks || []) {
     root.append(sectionHead(b.category?.name || 'Видео', (b.videos || []).length >= 25 ? () => navigate('release-videos', { release, categoryId: b.category.id, categoryName: b.category.name }) : null));
-    root.append(h('div', { class: 'hscroll' }, (b.videos || []).map(videoCard)));
+    root.append(h('div', { class: 'hscroll' }, (b.videos || []).map((v) => videoCard(v))));
   }
   root.append(sectionHead('Последние видео'));
-  root.append(pagedList({ skeleton: 'collections', load: (page) => A.videos(release.id, page), render: videoCard, grid: true, empty: () => emptyView('Видео пока нет') }));
+  root.append(pagedList({ skeleton: 'collections', load: (page) => A.videos(release.id, page), render: gridVideoCard, grid: true, empty: () => emptyView('Видео пока нет') }));
   return root;
 }, ({ categoryName, categoryId }) => [backToolbar(categoryName || 'Видео'), categoryId ? skeleton('collections') : skeleton('videos')]);
 
-// «Воспроизвести»: сразу к вариантам, если включено «Непроверенные источники» и они не скрыты в регионе,
-// иначе — экран «Онлайн просмотр» с официальными платформами
-const watchGoesToEpisodes = (rel) => prefs.get('IS_REMEMBERING_SKIP_THIRD_PARTY_PLATFORM') && !rel.is_tpp_disabled;
-function openWatch(rel) {
-  if (watchGoesToEpisodes(rel)) navigate('episodes', { release: rel });
-  else navigate('streaming', { release: rel });
-}
-
-// «Искать другие варианты / Из непроверенных источников»
-function onThirdParty(release) {
-  const count = prefs.get('COUNT_SKIP_STREAMING_PLATFORM') || 0;
-  const toEpisodes = () => navigate('episodes', { release });
-  if (count === 4 && !prefs.get('IS_REMEMBERING_SKIP_THIRD_PARTY_PLATFORM') && !prefs.get('IS_ASKED_SKIP_THIRD_PARTY_PLATFORM')) {
-    // после нескольких переходов — предложить запомнить выбор
-    prefs.set('IS_ASKED_SKIP_THIRD_PARTY_PLATFORM', true);
-    dialog({
-      title: t('remembering_skip_third_party_platform_title'), content: h('p', null, t('remembering_skip_third_party_platform_desc')),
-      actions: [{ label: t('cancel'), onClick: toEpisodes },
-        { label: t('yes'), primary: true, onClick: () => { prefs.set('IS_REMEMBERING_SKIP_THIRD_PARTY_PLATFORM', true); prefs.set('SEARCH_VIDEO_TPP', true); toEpisodes(); } }],
-    });
-  } else if (!prefs.get('SEARCH_VIDEO_TPP')) {
-    dialog({
-      title: t('search_video_title'), content: h('p', null, t('search_video_desc')),
-      actions: [{ label: t('cancel') },
-        { label: t('search_video'), primary: true, onClick: () => { prefs.set('SEARCH_VIDEO_TPP', true); prefs.set('COUNT_SKIP_STREAMING_PLATFORM', count + 1); toEpisodes(); } }],
-    });
-  } else {
-    if (count < 4) prefs.set('COUNT_SKIP_STREAMING_PLATFORM', count + 1);
-    toEpisodes();
-  }
-}
-
-// Онлайн просмотр (стриминговые платформы)
-registerScreen('streaming', async ({ release }) => {
-  const root = h('div', null, backToolbar(t('title_streaming_platform')));
-  let items = [];
-  try { items = (await A.streaming(release.id)).content || []; } catch { /* как пустой список */ }
-  const list = h('div', { class: 'menu-list', style: { maxWidth: '760px' } }, h('div', { class: 'menu-cat' }, t('streaming_platform_official')));
-  if (!items.length) list.append(h('div', { class: 'muted', style: { padding: '8px 24px 12px' } }, t('streaming_platform_no_result')));
-  list.append(...items.map((p) => h('a', { class: 'menu-item', href: p.url, target: '_blank', rel: 'noopener' },
-    p.icon ? h('img', { src: p.icon, referrerpolicy: 'no-referrer', style: { width: '36px', height: '36px', borderRadius: '8px' } }) : icon('ic_streaming_platform'),
-    h('div', { class: 'grow' }, p.name), icon('ic_open_in_new'))));
-  if (!release.is_tpp_disabled) {
-    list.append(h('div', { class: 'menu-cat' }, t('streaming_platform_unofficial')),
-      h('div', { class: 'menu-item', onclick: () => onThirdParty(release) }, icon('ic_search'),
-        h('div', { class: 'grow' }, h('div', null, t('streaming_platform_search_services')), h('div', { class: 'sub' }, t('streaming_platform_unofficial'))), icon('ic_chevron_end')));
-  } else {
-    list.append(h('div', { class: 'card', style: { margin: '16px 20px', cursor: 'pointer' },
-      onclick: () => dialog({ title: t('third_party_disabled_title'), content: h('p', null, t('third_party_disabled_message')), actions: [{ label: t('close'), primary: true }] }) },
-    h('b', null, t('third_party_disabled_hint_title')), h('div', { class: 'muted', style: { marginTop: '4px' } }, t('third_party_disabled_hint_message'))));
-  }
-  root.append(list);
-  return root;
-}, () => {
-  const { line, circle } = skParts;
-  // «Официальный источник» (обычно — текст «не удалось найти»), «Из непроверенных источников» + строка поиска
-  return [backToolbar(t('title_streaming_platform')), h('div', { class: 'menu-list', style: { maxWidth: '760px' } },
-    h('div', { class: 'menu-cat' }, line('150px', '', { height: '14px' })),
-    h('div', { style: { padding: '10px 24px 14px' } }, line('70%')),
-    h('div', { class: 'menu-cat' }, line('190px', '', { height: '14px' })),
-    h('div', { class: 'menu-item' }, circle('24px'), skParts.col('7px', line('180px', 'title'), line('160px'))))];
-});

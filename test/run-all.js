@@ -22,12 +22,15 @@ const SUITE = [
   ['layout-audit', 'layout-audit.js', 'electron'],
   ['contrast', 'contrast.js', 'electron'],
   ['e2e', 'e2e.js', 'electron'],
+  ['watch-flow', 'watch-flow.js', 'electron'],
+  ['web-quality', 'web-quality.js', 'electron'], // веб-плеер: качество AniLibria по «Приоритету качества», а не 720p сайта // путь до серии: «Продолжить», чипы озвучки/источника/плеера, переключатели в плеере
   ['resume', 'resume.js', 'electron'],
   ['player-ind', 'player-ind.js', 'electron'],
   ['audio', 'audio.js', 'electron'], // улучшение звука: громкость сочетаний, задержка, живой <video>
   ['discord', 'discord.js', 'electron'], // статус в Discord против поддельного Discord (~1 мин: ждёт переподключения и лимита)
   ['party', 'party.js', 'electron'], // совместный просмотр: два окна через публичные MQTT-брокеры
   ['party-edge', 'party-edge.js', 'electron'], // совместный просмотр: граничные случаи (~2 мин, тайминги протокола укорочены)
+  ['party-watch', 'party-watch.js', 'electron'], // переключатели плеера в комнате: права хоста и гостя, смена озвучки у всех с места
 
   ['smoke', 'smoke.js', 'node'],
   // после остальных и один: два видеотеста одновременно делили бы видеокарту

@@ -1,12 +1,12 @@
 // Плееры: встроенный, веб-плеер и сторонний.
-import { h, icon, toast, dialog } from './ui.js';
+import { h, icon, toast, dialog, popover } from './ui.js';
 import { A, auth } from './api.js';
 import { prefs, db, t } from './store.js';
 import { createUpscale, TIER_LABEL, TIERS, SHARPNESS, SHARP_LABEL, benchPrompt, benchRunDialog } from './upscale/index.js';
 import { createAudioFx, AUDIO_OPTS } from './audio.js';
 import { playerPresence, webPresence } from './discord.js';
-import { party, bindPlayer, playerEpisode, partyEnded, partyWhy, roomSkip, setRoomSkip, partySkipAuto, isHost as partyIsHost } from './party/room.js';
-import { partyPlayerButton } from './party/ui.js';
+import { party, bindPlayer, playerEpisode, partyEnded, partyWhy, roomSkip, setRoomSkip, partySkipAuto, isHost as partyIsHost, canControl, fillersText } from './party/room.js';
+import { partyPlayerButton, queueAdd, partyInfo } from './party/ui.js';
 
 const QUALITIES = ['Default', '360p', '480p', '720p', '1080p', '1440p', '2160p']; // utils/domain/release/Quality
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
@@ -37,8 +37,32 @@ function streamSrc(url, referer, cookie) {
   return s;
 }
 
+// Наибольшее качество из доступных: «Default» — только если других нет
+export const maxQuality = (qs) => qs.filter((q) => QUALITIES.includes(q)).sort((a, b) => QUALITIES.indexOf(a) - QUALITIES.indexOf(b)).pop() || null;
+
+// Ссылки, разобранные заранее (кнопка «Продолжить» на странице аниме): серия запускается без ожидания парсера.
+// Ссылки источников живут часы, но держим недолго; повторная попытка после ошибки (fresh) идёт мимо запаса
+const RESOLVE_TTL = 10 * 60000;
+const resolvedAhead = new Map(); // `${releaseId}:${sourceId}:${position}` → { promise, at }
+const resolveKey = (ep) => `${ep.releaseId ?? ep.release?.id}:${ep.sourceId ?? ep.source?.id}:${ep.position}`;
+export function prefetchEpisode(ep) {
+  const k = resolveKey(ep);
+  const c = resolvedAhead.get(k);
+  if (c && performance.now() - c.at < RESOLVE_TTL) return c.promise;
+  const promise = parseEpisode(ep);
+  resolvedAhead.set(k, { promise, at: performance.now() });
+  promise.catch(() => resolvedAhead.delete(k));
+  return promise;
+}
+
 // episode/target → Parser (на сервере). Возвращает {qualities: {q:url}, referer, cookie, url}
-export async function resolveEpisode(ep) {
+export function resolveEpisode(ep, { fresh = false } = {}) {
+  const c = !fresh && resolvedAhead.get(resolveKey(ep));
+  if (c && performance.now() - c.at < RESOLVE_TTL) return c.promise;
+  return parseEpisode(ep);
+}
+
+async function parseEpisode(ep) {
   let url = ep.url;
   try {
     const r = await A.episodeTarget(ep.releaseId ?? ep.release?.id, ep.sourceId ?? ep.source?.id, ep.position);
@@ -51,6 +75,7 @@ export async function resolveEpisode(ep) {
   const qualities = {};
   for (const k of QUALITIES) if (p.playback && p.playback[k]) qualities[k] = p.playback[k];
   if (!Object.keys(qualities).length) throw new Error('Return 1#null 5#null');
+  db.setSourceQuality(ep.source?.name, maxQuality(Object.keys(qualities))); // для значка качества у источника
   return { url, qualities, referer: p.referer || url, cookie: p.cookie || '', download: p.download || {}, skip: p.skip || null };
 }
 
@@ -107,7 +132,8 @@ export function openWebPlayer(ep, release, dub) {
     h('div', { class: 'player-top', style: { position: 'relative', background: '#000' } },
       h('button', { class: 'icon-btn', title: 'Назад', onclick: close }, icon('ic_back')),
       h('div', { class: 'ttl' }, h('b', null, release?.title_ru || ''), h('span', null, ep.name || `${ep.position} серия`)),
-      h('button', { class: 'icon-btn', title: 'Во весь экран', onclick: () => ov.requestFullscreen?.() }, icon('ic_player_fill'))),
+      // во весь экран и обратно — как у встроенного (раньше кнопка только включала полноэкранный режим)
+      h('button', { class: 'icon-btn', title: 'Во весь экран / выйти', onclick: () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else ov.requestFullscreen?.(); } }, icon('ic_player_fill'))),
     h('div', { class: 'player-stage' },
       h('iframe', { src, allow: 'autoplay; fullscreen; encrypted-media; picture-in-picture', allowfullscreen: true, referrerpolicy: 'no-referrer-when-downgrade' })));
   document.addEventListener('keydown', onKey);
@@ -116,9 +142,10 @@ export function openWebPlayer(ep, release, dub) {
 
 // Встроенный плеер
 // keepMini — свёрнутый плеер не разворачивать (серию переключила комната, а не сам человек)
-export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved, dub, typeId, keepMini = false }) {
+// startAt (мс) — продолжить с этого места без вопроса «Продолжить?» (кнопка «Продолжить» на странице аниме)
+export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved, dub, typeId, keepMini = false, startAt }) {
   // уже открыт встроенный плеер (в том числе свёрнутый) — другое аниме грузим в нём же, без закрытия и открытия
-  if (active && active.replace) return active.replace({ release, episodes, index, sort, resolved, dub, typeId, keepMini });
+  if (active && active.replace) return active.replace({ release, episodes, index, sort, resolved, dub, typeId, keepMini, startAt });
   if (active) active.close();
   let idx = index;
   let cur = null; // {ep, res, quality}
@@ -152,9 +179,13 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   const skipGoBtn = h('button', { class: 'skip-go', title: 'S' }, goFill, goLabel);
   const skipRow = h('div', { class: 'skip-row' }, skipWatchBtn, skipGoBtn);
 
-  const top = h('div', { class: 'player-top' },
-    h('button', { class: 'icon-btn', title: 'Закрыть (Esc)', onclick: () => close() }, icon('ic_back')),
-    h('div', { class: 'ttl' }, ttlB, ttlS));
+  // Сверху три колонки: «Назад» и название (длинное обрезается) | переключатели озвучки, серии и плеера — по центру,
+  // на месте при любой длине названия (paintPChips) | «Свернуть» и совместный просмотр
+  const pchips = h('div', { class: 'p-chips' });
+  const topRight = h('div', { class: 'p-right' });
+  const top = h('div', { class: 'player-top p-top3' },
+    h('div', { class: 'p-left' }, h('button', { class: 'icon-btn', title: 'Закрыть (Esc)', onclick: () => close() }, icon('ic_back')), h('div', { class: 'ttl' }, ttlB, ttlS)),
+    pchips, topRight);
   const controls = h('div', { class: 'player-controls' },
     seek,
     h('div', { class: 'row' },
@@ -212,8 +243,8 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     pc = bindPlayer({ video, content: () => (cur ? contentOf(cur.ep) : null), isLoading: () => loading, loadPosition, close: () => close(), minimize: () => setMini(true) });
     if (pc && cur && !loading) playerEpisode(contentOf(cur.ep), { pos: video.currentTime, paused: video.paused });
   }
-  const offParty = party.on((type) => { if (type === 'joined') partyBind(); else if (type === 'left') pc = null; });
-  top.append(partyPlayerButton(ov, { canWatch: !!typeId }));
+  const offParty = party.on((type) => { if (type === 'joined') partyBind(); else if (type === 'left') pc = null; paintPChips(); }); // права в комнате могли смениться
+  topRight.append(partyPlayerButton(ov, { canWatch: !!typeId }));
 
   // --- Мини-плеер: свернуть в угол и листать каталог, пока серия идёт (и комната синхронизируется) ---
   const miniPlay = h('button', { class: 'icon-btn', title: 'Пауза' }, icon('ic_player_pause'));
@@ -227,7 +258,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   const isMini = () => ov.classList.contains('mini');
   function setMini(on) {
     if (on === isMini()) return;
-    if (on) { closeMenu(); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); }
+    if (on) { closeMenu(); pop?.close(); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); }
     ov.classList.toggle('mini', on);
     up.relayout(); // слой апскейла — сразу по новому размеру, без мелькания в старом месте
     miniTitle.textContent = `${ttlB.textContent} · ${ttlS.textContent}`;
@@ -235,8 +266,106 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     if (!on) ov.focus();
     poke();
   }
-  top.insertBefore(h('button', { class: 'icon-btn', title: 'Свернуть — видео продолжит идти, а вы сможете листать каталог', onclick: () => setMini(true) }, icon('ic_player_mini')), top.lastChild);
+  topRight.insertBefore(h('button', { class: 'icon-btn', title: 'Свернуть — видео продолжит идти, а вы сможете листать каталог', onclick: () => setMini(true) }, icon('ic_player_mini')), topRight.lastChild);
   ov.mini = setMini; // для тестов
+  // --- Переключатели сверху: озвучка (продолжает с того же места), серия (сетка номеров), плеер ---
+  // В комнате совместного просмотра озвучку и серию меняет тот, кто может управлять (у всех сразу); остальные
+  // предлагают серию в очередь «Дальше», а озвучку не меняют. Плеер в комнате — только встроенный (синхронизируется он)
+  let pop = null; // открытое меню переключателя
+  const pchip = (cls, lead, label, title, onclick, disabled) => h('button', {
+    class: `p-chip ${cls}`, title, 'aria-haspopup': 'menu', 'aria-expanded': 'false', disabled: !!disabled,
+    onclick: (e) => { e.stopPropagation(); onclick(e.currentTarget); },
+  }, lead, h('span', { class: 'lbl' }, label), icon('ic_arrow_drop_down', 'sm'));
+  const openPop = (anchor, content, o = {}) => {
+    pop = popover(anchor, content, { host: ov, ...o, onClose: () => { pop = null; poke(); } });
+    poke();
+  };
+  let typeIcon = null; // логотип озвучки: из данных серии, иначе — из списка озвучек (подгружается в фоне)
+  let iconFor = null; // для какой озвучки логотип уже искали
+  function ensureTypeIcon() {
+    if (!typeId || iconFor === typeId) return;
+    iconFor = typeId;
+    const t0 = cur?.ep.source?.type;
+    if (t0 && typeof t0 === 'object' && t0.icon) { typeIcon = t0.icon; return; }
+    const want = typeId;
+    import('./screens/episodes.js').then((m) => m.typesOf(release.id)).then((types) => {
+      const ty = types.find((x) => x.id === want);
+      if (ty?.icon && typeId === want) { typeIcon = ty.icon; paintPChips(); }
+    }).catch(() => {});
+  }
+  function paintPChips() {
+    if (!typeId || !cur) { pchips.replaceChildren(); return; }
+    const control = !pc || canControl();
+    const logo = typeIcon ? h('img', { class: 'p-logo', src: typeIcon, alt: '' }) : null;
+    pchips.replaceChildren(
+      pchip('p-dub', [icon('ic_voice', 'sm'), logo].filter(Boolean), dub || 'Озвучка', control ? 'Озвучка — серия продолжится с того же места' : 'В комнате озвучку меняет хост', openDubMenu, !control),
+      pchip('p-eps', icon('ic_episodes', 'sm'), `${cur.ep.position} серия`, control ? 'Серии' : 'Серии — выбранная уйдёт в очередь «Дальше»', openEpsMenu),
+      pchip('p-player', icon('ic_play_circle', 'sm'), 'Встроенный', pc ? 'В комнате — только встроенный плеер: синхронизируется он' : 'Плеер', openPlayerMenu, !!pc));
+  }
+  async function openDubMenu(anchor) {
+    const m = await import('./screens/episodes.js');
+    let types;
+    try { types = await m.typesOf(release.id); } catch { toast('Не удалось загрузить озвучки'); return; }
+    const cur0 = types.find((ty) => ty.id === typeId);
+    if (cur0?.icon && typeIcon !== cur0.icon) { typeIcon = cur0.icon; paintPChips(); anchor = pchips.querySelector('.p-dub'); }
+    openPop(anchor, [h('div', { class: 'pop-note' }, 'Серия продолжится с того же места'),
+      ...types.map((ty) => h('button', {
+        class: `pop-item ${ty.id === typeId ? 'on' : ''}`, role: 'menuitemradio', 'aria-checked': String(ty.id === typeId),
+        onclick: () => { pop?.close(); if (ty.id !== typeId) switchDub(ty, m); },
+      }, m.typeLogo(ty), h('span', { class: 'grow' }, h('span', { class: 'pop-title' }, ty.name), h('span', { class: 'pop-sub' }, m.typeMeta(ty))), m.checkMark(ty.id === typeId)))],
+    { cls: 'pop-dub' });
+  }
+  // другая озвучка — та же серия с того же места (в комнате — у всех)
+  async function switchDub(ty, m) {
+    if (pc && !canControl()) { toast('В комнате озвучку меняет хост'); return; }
+    const pos = cur.ep.position; const at = Math.floor((video.currentTime || 0) * 1000);
+    showMsg('', true);
+    let r;
+    try { r = await m.episodesOfType(release, ty, sort); } catch { r = null; }
+    const i = r ? r.episodes.findIndex((e) => e.position === pos) : -1;
+    if (i < 0) { showMsg(''); toast(r ? `В озвучке ${ty.name} нет ${pos} серии` : 'Не удалось загрузить серии'); return; }
+    savePosition();
+    episodes = r.episodes; typeId = ty.id; dub = ty.name; typeIcon = ty.icon || null; iconFor = ty.id;
+    rp.setRelease(release, dub);
+    db.setChoice(release.id, { typeId: ty.id, sourceId: r.source.id, typeName: ty.name, sourceName: r.source.name, typeIcon: ty.icon });
+    toast(`${ty.name}${at > 5000 ? ` — продолжаем с ${fmt(at / 1000)}` : ''}`);
+    load(i, null, at);
+  }
+  // сетка номеров серий: просмотренные — зелёные, текущая — с обводкой
+  function openEpsMenu(anchor) {
+    const control = !pc || canControl();
+    const watched = db.watchedOfRelease(release.id);
+    const grid = h('div', { class: 'p-eps-grid' }, episodes.map((ep, i) => h('button', {
+      class: `p-ep ${i === idx ? 'cur' : watched.has(ep.position) ? 'w' : ''}`,
+      title: `${ep.name || `${ep.position} серия`}${watched.has(ep.position) ? ' · просмотрена' : ''}`,
+      onclick: () => {
+        pop?.close();
+        if (i === idx) return;
+        if (control) { goEpisode(i); return; }
+        const c = contentOf(ep); queueAdd(c); partyInfo(`Добавлено в очередь «Дальше»: ${c.title} · ${c.epName}`);
+      },
+    }, String(ep.position))));
+    openPop(anchor, [
+      h('div', { class: 'p-eps-head' }, h('b', null, 'Серии'), h('span', null, [dub, cur.ep.source?.name].filter(Boolean).join(' • '))),
+      grid,
+      h('div', { class: 'p-eps-legend' }, h('span', null, h('i', { class: 'w' }), 'просмотрена'), h('span', null, h('i', { class: 'cur' }), 'сейчас'),
+        control ? null : h('span', null, 'выбранная уйдёт в очередь «Дальше»')),
+    ], { cls: 'pop-eps' });
+    pop?.el.querySelector('.p-ep.cur')?.scrollIntoView({ block: 'nearest' });
+  }
+  async function openPlayerMenu(anchor) {
+    const m = await import('./screens/episodes.js');
+    const source = cur.ep.source && typeof cur.ep.source === 'object' ? cur.ep.source : null;
+    openPop(anchor, m.playerMenuItems(source, (id) => {
+      pop?.close();
+      if (id === 2) return;
+      // веб-плеер и сторонний — серия открывается там, встроенный закрывается
+      const ep = cur.ep; const res = cur.res; const quality = cur.quality; const start = video.currentTime;
+      video.pause(); close();
+      if (id === 1) openWebPlayer(ep, release, dub); else openThirdParty(ep, release, res, { quality, start });
+    }), { cls: 'pop-player' });
+  }
+
   // шторка стоит над картинкой: левее — исходный кадр, правее — улучшенный
   function placeSplit() {
     const on = up.split > 0 && !upCanvas.hidden;
@@ -262,13 +391,23 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     msg.style.display = text || spinner ? 'grid' : 'none';
   }
 
+  // Серию начали заново («⏭», «Смотреть N серию», «Начать с начала»): прежняя позиция больше не верна. Позиция
+  // сохраняется только после 5 с — закрыли раньше, и «Продолжить» звала бы на старое место
+  function restartPosition(ep) {
+    if (db.getEpisode(ep.releaseId, ep.sourceId, ep.position)?.playbackPosition) db.putEpisode(ep.releaseId, ep.sourceId, ep.position, { playbackPosition: 0 });
+  }
+  // Пока серия грузится, у <video> ещё время и длительность прежней серии (мини-плеер, «⏭», следующая серия) —
+  // закрыли до загрузки, и они записались бы новой. Пометку «досмотрена» («⏭») не трогаем: её снимает запуск серии
   function savePosition() {
-    if (!cur || !video.duration) return;
+    if (!cur || !video.duration || loading) return;
     const ms = Math.floor(video.currentTime * 1000);
     const dur = Math.floor(video.duration * 1000);
     if (ms < 5000) return;
     const val = ms + 5000 >= dur ? -1 : ms;
-    db.putEpisode(cur.ep.releaseId, cur.ep.sourceId, cur.ep.position, { playbackPosition: val, isWatched: true });
+    // длительность и начало эндинга (если он в конце серии) — чтобы понять, досмотрена ли серия (db.progress)
+    const end = marksNow()?.ending;
+    const endingStart = end && endingAtEpisodeEnd(end, video.duration) ? Math.floor(end.start * 1000) : 0;
+    db.putEpisode(cur.ep.releaseId, cur.ep.sourceId, cur.ep.position, { playbackPosition: val, isWatched: true, duration: dur, endingStart });
   }
 
   function attach(src) {
@@ -291,7 +430,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     const pos = video.currentTime;
     showMsg('', true);
     try {
-      const res = await resolveEpisode(cur.ep);
+      const res = await resolveEpisode(cur.ep, { fresh: true });
       cur.res = res;
       const q = res.qualities[cur.quality] ? cur.quality : initialQuality(Object.keys(res.qualities));
       cur.quality = q;
@@ -329,9 +468,18 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
       return;
     }
     const available = Object.keys(res.qualities);
-    const quality = cur && res.qualities[cur.quality] ? cur.quality : initialQuality(available);
+    // качество, выбранное вручную в меню, держим и на следующих сериях; без выбора — по настройке «Приоритет качества»
+    // (раньше переносилось и само собой: после серии Kodik в 720p серия Liberty тоже открывалась в 720p, а не в 1080p)
+    const quality = pickedQuality && res.qualities[pickedQuality] ? pickedQuality : initialQuality(available);
     cur = { ep, res, quality };
+    if (startAt === 0) restartPosition(ep); // «⏭», «Смотреть N серию» — с начала
+    // серию смотрят снова — пометка «досмотрена» («⏭») больше не верна, дальше решает позиция
+    if (db.getEpisode(ep.releaseId, ep.sourceId, ep.position)?.finished) db.putEpisode(ep.releaseId, ep.sourceId, ep.position, { finished: false });
+    // последняя серия аниме — для «Продолжить» на его странице (и когда серию переключили в самом плеере)
+    if (typeId) db.addLastWatched(release.id, typeId, ep.sourceId, ep.position, { typeName: dub, sourceName: ep.source?.name, typeIcon: ep.source?.type?.icon });
     rp.episode(ep);
+    ensureTypeIcon();
+    paintPChips();
     segKey = ''; skipState.kind = null; skipState.dismissed = null; hideSkipRow(); // метки новой серии
     updateButtons();
     up.setSourceKey(`${ep.releaseId}:${ep.sourceId}:${quality}`); // запомненная оценка разрешения этой озвучки
@@ -340,10 +488,11 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     const saved = startAt ?? (local && local.playbackPosition > 0 ? local.playbackPosition : 0);
     video.addEventListener('loadedmetadata', async () => {
       showMsg('');
-      if (pc) { loading = false; playerEpisode(contentOf(ep)); return; } // в комнате место и пуск задаёт комната
+      // в комнате место и пуск задаёт комната; своя смена серии с места (startAt: «Продолжить», смена озвучки) — у всех с него
+      if (pc) { loading = false; playerEpisode(contentOf(ep), startAt > 0 ? { pos: startAt / 1000, wait: true } : null, loadWhy); loadWhy = null; return; }
       if (saved > 0 && startAt == null) {
         const choice = await askResume();
-        if (choice) video.currentTime = saved / 1000;
+        if (choice) video.currentTime = saved / 1000; else restartPosition(ep);
       } else if (saved > 0) video.currentTime = saved / 1000;
       video.playbackRate = SPEEDS[prefs.get('SELECTED_PLAYER_SPEED')] || 1;
       loading = false;
@@ -368,8 +517,27 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     });
   }
 
+  // --- Филлеры: «следующая серия» (кнопка, N, после эндинга, автозапуск) перескакивает их, если включено (в комнате —
+  // настройка комнаты, её меняет хост). Серию, выбранную явно (сетка, список), включаем как есть ---
+  let loadWhy = null; // почему сменилась серия — уходит комнате вместе с ней (уведомление остальным)
+  const skipFillers = () => (pc ? roomSkip('filler') : !!prefs.get('SKIP_FILLERS'));
+  // следующая (dir = 1) или предыдущая серия; филлеры пропускаем, только если дальше есть не филлер
+  function stepIndex(dir) {
+    const d = sort === 2 ? -dir : dir;
+    const ni = idx + d;
+    if (!skipFillers()) return { ni, skipped: 0 };
+    let j = ni; let skipped = 0;
+    while (episodes[j]?.is_filler) { j += d; skipped++; }
+    return episodes[j] ? { ni: j, skipped } : { ni, skipped: 0 };
+  }
   async function switchEpisode(dir) {
-    const ni = sort === 2 ? idx - dir : idx + dir;
+    const { ni, skipped } = stepIndex(dir);
+    if (skipped) loadWhy = `fillers:${skipped}`;
+    const ok = await goEpisode(ni);
+    if (ok && skipped) toast(`Пропущено ${fillersText(skipped)} — сейчас ${episodes[ni].position} серия`);
+    return ok;
+  }
+  async function goEpisode(ni) {
     const ep = episodes[ni];
     if (!ep) return false;
     const rid = ep.releaseId ?? release.id; const sid = ep.sourceId ?? ep.source?.id;
@@ -399,7 +567,9 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   function closeMenu() { if (!menu) return; menu.remove(); menu = null; gearBtn.classList.remove('on'); poke(); }
   // Качество у каждого своё. В комнате после перезагрузки потока место и пуск задаёт комната: позиция до смены
   // за время загрузки устарела бы на 1–2 с, и возврат к ней ушёл бы всем как перемотка назад
+  let pickedQuality = null; // выбрано вручную в меню «Качество»
   function setQuality(q) {
+    pickedQuality = q;
     const pos = video.currentTime; const paused = video.paused;
     cur.quality = q;
     up.setSourceKey(`${cur.ep.releaseId}:${cur.ep.sourceId}:${q}`);
@@ -445,6 +615,14 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     cb.checked = prefs.get(SKIP_PREF[kind]) === 'auto';
     cb.onchange = () => { prefs.set(SKIP_PREF[kind], cb.checked ? 'auto' : 'watch'); skipState.countKind = null; };
     return h('label', { class: 'pm-row' }, icon('ic_player_rewind_fast', 'sm'), h('span', { class: 'grow' }, label), h('span', { class: 'switch' }, cb, h('span')));
+  }
+  // «Пропускать филлеры»: вне комнаты — личная настройка (та же, что в настройках), в комнате — настройка комнаты
+  function fillerSwitch() {
+    const cb = h('input', { type: 'checkbox' });
+    const sub = pc ? (partyIsHost() ? 'Для всей комнаты' : 'В комнате решает хост') : '«Следующая серия» перескакивает их';
+    if (pc) { cb.checked = roomSkip('filler'); cb.disabled = !partyIsHost(); cb.onchange = () => setRoomSkip('filler', cb.checked); }
+    else { cb.checked = !!prefs.get('SKIP_FILLERS'); cb.onchange = () => prefs.set('SKIP_FILLERS', cb.checked); }
+    return h('label', { class: 'pm-row' }, icon('ic_player_next', 'sm'), h('span', { class: 'grow' }, 'Пропускать филлеры', h('small', null, sub)), h('span', { class: 'switch' }, cb, h('span')));
   }
   // пропускать ли сам: вне комнаты — по личной настройке; в комнате — по настройке комнаты и только плеер хоста
   const skipAuto = (kind) => (pc ? partySkipAuto(kind) : prefs.get(SKIP_PREF[kind]) === 'auto');
@@ -585,6 +763,21 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
       row('ic_play_speed', 'Скорость', speedName(video.playbackRate), () => menuPage('Скорость', SPEEDS.map((s, i) => h('button', {
         class: `pm-row pm-opt ${video.playbackRate === s ? 'on' : ''}`, onclick: () => { video.playbackRate = s; prefs.set('SELECTED_PLAYER_SPEED', i); closeMenu(); },
       }, icon('ic_check', 'sm'), h('span', { class: 'grow' }, speedName(s)))))),
+      row('ic_player_rewind_fast', 'Пропуски', skipName(), () => menuShow('Пропуски', skipRows)),
+    ];
+  }
+  // «Пропуски»: филлеры (первыми — они меняют, какую серию включать), опенинг и эндинг. В комнате — настройки комнаты
+  const skipOn = (kind) => (kind === 'filler' ? skipFillers() : pc ? roomSkip(kind) : prefs.get(SKIP_PREF[kind]) === 'auto');
+  function skipName() {
+    const on = [['filler', 'филлеры'], ['opening', 'опенинг'], ['ending', 'эндинг']].filter(([k]) => skipOn(k)).map(([, l]) => l);
+    if (!on.length) return 'Выкл';
+    if (on.length === 3) return 'Всё';
+    const s = on.join(', ');
+    return s[0].toUpperCase() + s.slice(1);
+  }
+  function skipRows() {
+    return [
+      fillerSwitch(),
       h('div', { class: 'pm-sep' }),
       skipSwitch('opening', 'Пропускать опенинг'),
       skipSwitch('ending', 'Пропускать эндинг'),
@@ -687,7 +880,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   // и на перемотке: после пропуска видео может буферизоваться без единого timeupdate, и выход из секции
   // иначе не заметить — повторный вход в неё (перемотка назад) не предложил бы пропуск
   video.addEventListener('seeking', () => updateSkip());
-  const nextEpisode = () => episodes[sort === 2 ? idx - 1 : idx + 1];
+  const nextEpisode = () => episodes[stepIndex(1).ni];
   function skipTarget(kind) {
     const marks = marksNow();
     const range = marks && marks[kind];
@@ -833,7 +1026,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   function poke(ms = 2500) {
     ov.classList.remove('idle');
     clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => { if (!video.paused && !menu && !controls.matches(':hover') && !top.matches(':hover')) ov.classList.add('idle'); }, ms);
+    idleTimer = setTimeout(() => { if (!video.paused && !menu && !pop && !controls.matches(':hover') && !top.matches(':hover')) ov.classList.add('idle'); }, ms);
   }
   // мышь без сдвига (событие после смены раскладки) интерфейс не показывает
   let lastPt = '';
@@ -896,14 +1089,15 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   ov.focus();
   poke();
   partyBind();
-  load(idx, resolved);
+  load(idx, resolved, startAt);
   // Другое аниме в том же окне: меняем тайтл, серии и озвучку и грузим серию — как переход к следующей серии
   function replace(o) {
     savePosition();
     release = o.release; episodes = o.episodes; sort = o.sort || 1; dub = o.dub; typeId = o.typeId;
+    typeIcon = null; iconFor = null; // другое аниме или озвучка — логотип заново
     rp.setRelease(release, dub);
     if (!o.keepMini) setMini(false);
-    load(o.index, o.resolved);
+    load(o.index, o.resolved, o.startAt);
     return me;
   }
   const me = { close, replace };
@@ -911,24 +1105,14 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   return me;
 }
 
-// Сторонний плеер (на ПК — mpv/VLC через локальный сервер)
-export async function openThirdParty(ep, release, res) {
-  const qs = Object.keys(res.qualities);
-  const pref = prefs.get('SELECTED_THIRD_PARTY_VIDEO_QUALITY_V2');
-  let q;
-  if (pref === 1) q = qs[qs.length - 1];
-  else if (pref === 2) q = qs[0];
-  else if (pref >= 3) q = pickQuality(qs, pref - 2);
-  else q = await new Promise((resolve) => {
-    const list = h('div', { class: 'sheet-list' });
-    const d = dialog({ title: t('title_choose_quality'), content: list, cls: 'sheet', onClose: () => resolve(null) });
-    qs.slice().reverse().forEach((x) => list.append(h('button', { class: 'sheet-item', onclick: () => { resolve(x); d.close(); } }, x === 'Default' ? t('quality_default') : x)));
-  });
-  if (!q) return;
+// Сторонний плеер (на ПК — mpv/VLC через локальный сервер). Качество — то, что уже шло во встроенном плеере
+// (переключили из него), иначе — общая настройка «Приоритет качества»; start (с) — продолжить с этого места
+export async function openThirdParty(ep, release, res, { quality, start } = {}) {
+  const q = quality && res.qualities[quality] ? quality : initialQuality(Object.keys(res.qualities));
   const title = `${release.title_ru} — ${ep.name || `${ep.position} серия`}`;
   const r = await fetch('/external', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url: res.qualities[q], referer: res.referer, cookie: res.cookie, title, player: prefs.get('THIRD_PARTY_PLAYER_PATH') }),
+    body: JSON.stringify({ url: res.qualities[q], referer: res.referer, cookie: res.cookie, title, player: prefs.get('THIRD_PARTY_PLAYER_PATH'), start }),
   });
   const j = await r.json().catch(() => ({}));
   if (!j.ok) toast(j.error || t('msg_external_player_not_found'));

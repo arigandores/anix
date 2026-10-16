@@ -131,6 +131,19 @@ async function handleApi(req, res, url) {
   send(res, r.status, buf, { 'Content-Type': r.headers.get('content-type') || 'application/json; charset=utf-8' });
 }
 
+// Открывается ли страница видео (веб-плеер, видео аниме): статус ответа сайта. Sibnet, например, целиком закрыт для
+// IP вне России (403 «Request forbidden by administrative rules») — тогда вместо белой страницы с 403 приложение
+// объясняет, в чём дело. Только http(s), без тела ответа
+async function handleProbe(req, res, url) {
+  const target = url.searchParams.get('url') || '';
+  if (!/^https?:\/\//i.test(target)) return sendJson(res, 400, { error: 'url required' });
+  try {
+    const r = await fetch(target, { method: 'GET', redirect: 'follow', headers: { 'User-Agent': PLAYER_UA, Range: 'bytes=0-0' }, signal: AbortSignal.timeout(8000) });
+    try { await r.body?.cancel(); } catch { /* тело не нужно */ }
+    sendJson(res, 200, { status: r.status, host: new URL(r.url || target).host });
+  } catch (e) { sendJson(res, 200, { status: 0, error: String(e.message || e) }); }
+}
+
 async function handleParse(req, res, url) {
   const target = url.searchParams.get('url');
   if (!target) return sendJson(res, 400, { error: 'url required' });
@@ -232,16 +245,17 @@ function findPlayer(custom) {
 }
 
 async function handleExternal(req, res) {
-  const { url, referer, cookie, title, player } = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+  const { url, referer, cookie, title, player, start } = JSON.parse((await readBody(req)).toString('utf8') || '{}');
   if (!url) return sendJson(res, 400, { ok: false, error: 'url required' });
   const exe = findPlayer(player);
   if (!exe) return sendJson(res, 200, { ok: false, error: 'Сторонний плеер не найден (установите mpv или VLC)' });
   const ua = PLAYER_UA;
   const isVlc = /vlc/i.test(path.basename(exe));
+  const at = Math.floor(Number(start) || 0); // с какой секунды (продолжить серию с того же места)
   const args = isVlc
-    ? [url, `--http-referrer=${referer || ''}`, `--http-user-agent=${ua}`, `--meta-title=${title || ''}`]
+    ? [url, `--http-referrer=${referer || ''}`, `--http-user-agent=${ua}`, `--meta-title=${title || ''}`, ...(at > 0 ? [`--start-time=${at}`] : [])]
     : [url, `--referrer=${referer || ''}`, `--user-agent=${ua}`, `--force-media-title=${title || ''}`,
-      ...(cookie ? [`--http-header-fields=Cookie: ${cookie}`] : [])];
+      ...(cookie ? [`--http-header-fields=Cookie: ${cookie}`] : []), ...(at > 0 ? [`--start=${at}`] : [])];
   const { spawn } = require('child_process');
   const child = spawn(exe, args, { detached: true, stdio: 'ignore' });
   child.on('error', () => {});
@@ -300,6 +314,7 @@ function createServer() {
     try {
       if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
       if (url.pathname === '/parse') return await handleParse(req, res, url);
+      if (url.pathname === '/probe') return await handleProbe(req, res, url);
       if (url.pathname === '/stream') return await handleStream(req, res, url);
       if (url.pathname === '/external' && req.method === 'POST') return await handleExternal(req, res);
       if (url.pathname.startsWith('/social/')) return await handleSocial(req, res, url);

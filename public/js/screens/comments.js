@@ -31,6 +31,7 @@ registerScreen('comments', ({ kind = 'release', id, release }) => {
       h('button', { class: 'chip', onclick: () => sheet('Сортировка', SORTS.map(([v, l]) => ({ label: l, checked: v === sort, onClick: () => { sort = v; build(); } }))) }, icon('ic_sort', 'sm'), SORTS.find((s) => s[0] === sort)[1])), list);
   }
   composer = commentComposer({
+    top: true, // над списком: написать, не листая до конца
     onSend: async (body) => {
       const r = await L.add(id, body);
       if (r.code === 0) { build(); return true; }
@@ -39,7 +40,7 @@ registerScreen('comments', ({ kind = 'release', id, release }) => {
     },
   });
   build();
-  return h('div', { style: { display: 'flex', flexDirection: 'column', minHeight: '100%' } }, backToolbar('Комментарии'), h('div', { style: { flex: 1 } }, holder), composer);
+  return h('div', { style: { display: 'flex', flexDirection: 'column', minHeight: '100%' } }, backToolbar('Комментарии'), composer, h('div', { style: { flex: 1 } }, holder));
 });
 
 // ответы: исходный комментарий, разделитель, ответы с отступом

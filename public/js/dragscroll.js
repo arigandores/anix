@@ -4,7 +4,7 @@
 
 const H_SCROLLERS = '.hscroll, .banners, .screens, .tabbar.scrollable';
 // .sortable — элементы, которые перетаскивают сами (очередь совместного просмотра, party/ui.js)
-const IGNORE = 'input, textarea, select, [contenteditable], .player-overlay, .seek, input[type=range], .lightbox, .sortable';
+const IGNORE = 'input, textarea, select, [contenteditable], .player-overlay, .seek, input[type=range], .iv, .sortable';
 const THRESHOLD = 6;
 
 function scrollerFor(target, axis) {

@@ -70,7 +70,7 @@ async function profileView(id, { fromMain = false, blog = null } = {}) {
     const head = h('div', { class: 'profile-head' },
       h('div', { style: { position: 'relative' } }, img(p.avatar, 'avatar lg'), p.is_online ? h('span', { style: { position: 'absolute', right: '6px', bottom: '6px', width: '16px', height: '16px', borderRadius: '50%', background: 'var(--green)', border: '3px solid var(--bg)' } }) : null),
       h('div', { class: 'grow' },
-        h('div', { class: 'name' }, p.login, p.is_verified ? icon('ic_verified', 'sm verified') : null, p.badge?.image_url ? h('img', { src: p.badge.image_url, style: { width: '24px', height: '24px' } }) : null),
+        h('div', { class: 'name' }, p.login, p.is_verified ? icon('ic_verified', 'sm verified') : null, p.badge?.image_url ? h('img', { src: p.badge.image_url, referrerpolicy: 'no-referrer', style: { width: '24px', height: '24px' } }) : null),
         h('div', { class: 'muted' }, p.status || 'Статус не установлен'),
         h('div', { class: 'row muted', style: { fontSize: '13px', marginTop: '4px', flexWrap: 'wrap' } },
           h('span', { title: 'Уровень репутации пользователя' }, icon('ic_stars', 'xs'), ` ${p.rating_score ?? 0}`),

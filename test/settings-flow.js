@@ -1,5 +1,5 @@
 'use strict';
-// Настройки «Непроверенные источники» / «Альтернативное соединение» / «Режим экономии» и их эффект.
+// Настройки «Альтернативное соединение» / «Режим экономии» и их эффект; «Смотреть» — сразу к сериям.
 // Запуск: npx electron test/settings-flow.js
 const { app, BrowserWindow } = require('electron');
 const { start } = require('../server');
@@ -20,29 +20,17 @@ app.whenReady().then(async () => {
   // 1. Пункты в настройках
   await go(`r.navigate('settings', {})`); await sleep(800);
   const labels = await js(`[...document.querySelectorAll('.menu-item')].map(e => e.querySelector('.grow > div')?.textContent)`);
-  for (const l of ['Запоминать вариант и источник', 'Непроверенные источники', 'Альтернативное соединение', 'Режим экономии ресурсов']) check(`настройки: «${l}»`, labels.includes(l));
+  for (const l of ['Запоминать вариант и источник', 'Альтернативное соединение', 'Режим экономии ресурсов']) check(`настройки: «${l}»`, labels.includes(l));
+  check('настройки: нет «Непроверенные источники»', !labels.includes('Непроверенные источники'));
 
-  // 2. «Воспроизвести» → «Онлайн просмотр» → «Искать другие варианты» → подтверждение → варианты
+  // 2. Официальных площадок нет: «Смотреть» сразу ведёт к сериям, в меню аниме нет «Онлайн просмотр»
   await go(`r.navigate('release', { id: 21 })`); await sleep(2500);
-  await js(`document.querySelector('.btn-watch').click()`); await sleep(1800);
-  check('Воспроизвести → Онлайн просмотр', await js(`document.querySelector('#viewport .screen').dataset.screen === 'streaming'`));
-  const tpp = await js(`(() => { const it = [...document.querySelectorAll('#viewport .menu-item')].find(e => e.textContent.includes('Искать другие варианты')); it?.click(); return !!it; })()`);
-  check('строка «Искать другие варианты»', tpp); await sleep(400);
-  const dlg = await js(`document.querySelector('.dialog-title')?.textContent`);
-  check('диалог «Подтверждение»', dlg === 'Подтверждение', dlg);
-  await js(`[...document.querySelectorAll('.dialog-actions .btn')].find(b => b.textContent === 'Да, искать').click()`); await sleep(1500);
-  check('→ экран вариантов', await js(`document.querySelector('#viewport .screen').dataset.screen === 'episodes'`));
-  check('SEARCH_VIDEO_TPP и счётчик', await js(`localStorage.getItem('anixart.pref.SEARCH_VIDEO_TPP') === 'true' && localStorage.getItem('anixart.pref.COUNT_SKIP_STREAMING_PLATFORM') === '1'`));
-  // на 4-м переходе предлагает запомнить
-  await js(`localStorage.setItem('anixart.pref.COUNT_SKIP_STREAMING_PLATFORM', '4')`);
-  await go(`r.navigate('streaming', { release: { id: 21 } })`); await sleep(1500);
-  await js(`[...document.querySelectorAll('#viewport .menu-item')].find(e => e.textContent.includes('Искать другие варианты')).click()`); await sleep(400);
-  check('диалог «Запомнить?»', await js(`document.querySelector('.dialog-title')?.textContent === 'Запомнить?'`));
-  await js(`[...document.querySelectorAll('.dialog-actions .btn')].find(b => b.textContent === 'Да').click()`); await sleep(800);
-  check('запомнено → IS_REMEMBERING_SKIP_THIRD_PARTY_PLATFORM', await js(`localStorage.getItem('anixart.pref.IS_REMEMBERING_SKIP_THIRD_PARTY_PLATFORM') === 'true'`));
+  await js(`document.querySelector('#viewport .screen:last-child .btn-watch').click()`); await sleep(1800);
+  check('«Смотреть» → сразу серии', await js(`document.querySelector('#viewport .screen:last-child').dataset.screen === 'episodes'`));
   await go(`r.navigate('release', { id: 21 })`); await sleep(2500);
-  await js(`document.querySelector('.btn-watch').click()`); await sleep(1500);
-  check('с запоминанием «Воспроизвести» → сразу варианты', await js(`document.querySelector('#viewport .screen').dataset.screen === 'episodes'`));
+  await js(`document.querySelector('#viewport .screen:last-child .appbar .actions [aria-label="Ещё"]').click()`); await sleep(400);
+  check('в меню аниме нет «Онлайн просмотр»', await js(`![...document.querySelectorAll('.sheet-item')].some((b) => b.textContent.includes('Онлайн просмотр'))`));
+  await js(`document.querySelectorAll('.backdrop').forEach((b) => b.remove())`);
 
   // 3. Альтернативное соединение: картинки и адреса из toggles — на зеркалах
   await js(`localStorage.setItem('anixart.pref.FORCE_SHOULD_USE_MIRROR_URLS', 'true')`);

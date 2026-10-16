@@ -83,7 +83,7 @@ async function enter(code, creator) {
   r.timers.push(setInterval(leaderDuties, 500));
   r.timers.push(setInterval(() => syncPlayer(false), 1000));
   // пропуск опенинга/эндинга — настройка комнаты; поначалу — как в личных настройках создателя
-  const skip = { opening: prefs.get('SKIP_OPENING') === 'auto', ending: prefs.get('SKIP_ENDING') === 'auto' };
+  const skip = { opening: prefs.get('SKIP_OPENING') === 'auto', ending: prefs.get('SKIP_ENDING') === 'auto', filler: !!prefs.get('SKIP_FILLERS') };
   if (creator) r.state = { seq: 0, cmd: '', content: null, paused: true, pos: 0, at: Date.now(), from: peerId, rate: 1, wait: null, ctrl: 'all', host: peerId, queue: [], gone: [], skip };
   emit('joined');
   return r;
@@ -288,14 +288,19 @@ function notice(prev, s) {
   const q0 = prev.queue || []; const q1 = s.queue || [];
   if (c && contentKey(prev.content) !== contentKey(c)) { // другая серия или аниме
     const same = prev.content && prev.content.releaseId === c.releaseId && prev.content.sourceId === c.sourceId;
+    const fillers = /^fillers:(\d+)$/.exec(s.why || '');
     if (s.why === 'queue') say(from, `Из очереди: ${c.title} · ${c.epName}`);
+    else if (fillers) say(from, `Следующая серия: ${c.epName} — пропущено ${fillersText(Number(fillers[1]))}`);
     else if (same) say(from, `${c.position > prev.content.position ? 'Следующая' : 'Предыдущая'} серия: ${c.epName}`);
     else say(from, `Включает: ${c.title} · ${c.epName}`);
     return;
   }
   if (prev.ctrl !== s.ctrl) { say(from, s.ctrl === 'host' ? 'Теперь управляет только хост' : 'Теперь управлять могут все'); return; }
-  for (const k of ['opening', 'ending']) {
-    if (!!prev.skip?.[k] !== !!s.skip?.[k]) { say(from, `${k === 'opening' ? 'Опенинг' : 'Эндинг'} ${s.skip[k] ? 'теперь пропускается сам' : 'больше не пропускается сам'}`); return; }
+  for (const k of ['opening', 'ending', 'filler']) {
+    if (!!prev.skip?.[k] === !!s.skip?.[k]) continue;
+    if (k === 'filler') say(from, s.skip[k] ? 'Филлеры теперь пропускаются' : 'Филлеры больше не пропускаются');
+    else say(from, `${k === 'opening' ? 'Опенинг' : 'Эндинг'} ${s.skip[k] ? 'теперь пропускается сам' : 'больше не пропускается сам'}`);
+    return;
   }
   if (q1.length > q0.length) { const it = q1[q1.length - 1]; say(it.by, `Предлагает: ${it.content.title} · ${it.content.epName}`); return; }
   if (q1.length < q0.length) {
@@ -434,16 +439,24 @@ export function bindPlayer(ctl) {
 }
 function syncPlayer(hard) { if (room && room.player && room.player.sync) room.player.sync(hard); }
 
+// «3 филлера», «5 филлеров»
+export function fillersText(n) {
+  const a = n % 100; const b = n % 10;
+  return `${n} ${a > 10 && a < 20 ? 'филлеров' : b === 1 ? 'филлер' : b > 1 && b < 5 ? 'филлера' : 'филлеров'}`;
+}
 // Плеер загрузил серию: своя смена серии → команда комнате (с ожиданием всех); пришедшая от комнаты — синхронизация.
+// why — почему сменилась (остальным в уведомлении): 'fillers:N' — следующая серия через N пропущенных филлеров
 // at — с какого места и на паузе ли: когда комнату создают из открытого плеера посреди серии.
-export function playerEpisode(content, at = null) {
+// at.wait — серия с этого места, но с ожиданием всех (смена озвучки посреди серии, «Продолжить»)
+export function playerEpisode(content, at = null, why = null) {
   if (!room || !room.player) return;
   if (!room.synced) { room.pending = { content, at }; return; }
   const s = room.state;
   if (s && contentKey(s.content) === contentKey(content)) { syncPlayer(true); return; }
   if (!canControl() && s && s.content) { info('Серию выбирает хост'); applyToPlayer(null); return; }
-  if (at) commit({ content, paused: at.paused, pos: at.pos, wait: null });
-  else commit({ content, paused: true, pos: 0, wait: randomId(4) });
+  if (at && at.wait) commit({ content, paused: true, pos: at.pos, wait: randomId(4), why });
+  else if (at) commit({ content, paused: at.paused, pos: at.pos, wait: null, why });
+  else commit({ content, paused: true, pos: 0, wait: randomId(4), why });
 }
 // вошли в комнату с открытым плеером: в пустой комнате показываем свою серию, иначе — переходим на серию комнаты
 function flushPending() {

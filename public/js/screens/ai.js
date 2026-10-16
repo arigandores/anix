@@ -350,10 +350,11 @@ function renderMessage(m, live) {
 
 // ---------- экраны-ступени ----------
 function gate(ic, title, text, buttons) {
-  return h('div', { class: 'empty ai-gate' }, h('div', { class: 'ai-gate-ic' }, icon(ic, 'big')), h('div', { class: 'empty-title', style: { fontSize: '22px' } }, title),
+  return h('div', { class: 'empty ai-gate center-gate' }, h('div', { class: 'ai-gate-ic' }, icon(ic, 'big')), h('div', { class: 'empty-title', style: { fontSize: '22px' } }, title),
     h('div', { class: 'empty-sub', style: { maxWidth: '440px', whiteSpace: 'pre-line' } }, text), h('div', { class: 'col', style: { display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '14px', alignItems: 'center' } }, buttons));
 }
-const toolbar = (actions = []) => h('div', { class: 'appbar' }, h('div', { class: 'title small' }, 'AI-помощник'), h('div', { class: 'actions' }, actions));
+// Заглушки (вход, недоступен, проверка) — без шапки «AI-помощник»: в ней не было действий, а блок из-за неё стоял ниже,
+// чем такие же на других вкладках. Шапка — у самого чата
 
 function claudeGate(onReady, info) {
   const status = h('div', { class: 'muted', style: { fontSize: '13px', minHeight: '18px' } }, info || '');
@@ -368,7 +369,7 @@ function claudeGate(onReady, info) {
     }, 3000);
   };
   const start = (kind) => { post('/ai/login', { kind }).catch(() => {}); status.textContent = 'Откроется окно входа: завершите вход в браузере — приложение подхватит его само.'; poll(60); };
-  return h('div', null, toolbar(), gate('ic_ai', 'Подключите Claude',
+  return h('div', null, gate('ic_ai', 'Подключите Claude',
     'Помощник работает на Claude от Anthropic.\nВойдите в свой аккаунт Claude (подписка Pro или Max) — откроется окно входа.',
     [h('button', { class: 'btn btn-primary lg', onclick: () => start('claudeai') }, 'Войти в Claude'),
       h('button', { class: 'btn btn-text', onclick: () => start('console') }, 'Войти через Anthropic Console (оплата по API)'),
@@ -467,17 +468,17 @@ registerScreen('tab:ai', (_p, ctx) => {
     const my = ++seq;
     chat?.dispose?.(); chat = null;
     if (!auth.loggedIn) {
-      root.replaceChildren(toolbar(), gate('ic_ai', 'Сначала войдите в Anixart',
+      root.replaceChildren(gate('ic_ai', 'Сначала войдите в Anixart',
         'Помощник подбирает аниме по вашим спискам, истории просмотров и оценкам и может менять закладки — для этого нужен аккаунт Anixart.',
         [h('button', { class: 'btn btn-primary lg', onclick: () => navigate('auth') }, 'Войти в Anixart')]));
       return;
     }
-    if (!quiet) root.replaceChildren(toolbar(), h('div', { class: 'empty load-reveal' }, h('div', { class: 'ai-typing' }, h('span'), h('span'), h('span')), h('div', { class: 'muted' }, 'Проверяем подключение к Claude…')));
+    if (!quiet) root.replaceChildren(h('div', { class: 'empty load-reveal center-gate' }, h('div', { class: 'ai-typing' }, h('span'), h('span'), h('span')), h('div', { class: 'muted' }, 'Проверяем подключение к Claude…')));
     const st = await post('/ai/status').catch((e) => ({ error: e.message }));
     await skeletonSettled(root);
     if (my !== seq) return;
     if (st.error || !st.available) {
-      root.replaceChildren(toolbar(), gate('ic_error', 'Помощник недоступен', st.error ? `Не удалось связаться с сервером приложения: ${st.error}` : 'В этой сборке нет компонентов Claude.', [h('button', { class: 'btn btn-tonal', onclick: show }, 'Повторить')]));
+      root.replaceChildren(gate('ic_error', 'Помощник недоступен', st.error ? `Не удалось связаться с сервером приложения: ${st.error}` : 'В этой сборке нет компонентов Claude.', [h('button', { class: 'btn btn-tonal', onclick: show }, 'Повторить')]));
       return;
     }
     if (!st.claude?.loggedIn) { root.replaceChildren(claudeGate(show)); return; }

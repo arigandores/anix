@@ -271,16 +271,21 @@ app.whenReady().then(async () => {
   await settingsItem('Проверить обновления');
   const s8 = await until(async () => { const s = await sub('Проверить обновления'); return /последняя/.test(s) && s; }, 5000);
   check('«Установлена последняя версия»', !!s8 && !(await dlg()), s8);
+  const t8 = await js(`document.getElementById('toast')?.classList.contains('show') && document.getElementById('toast').textContent`);
+  check('«Установлена последняя версия» — и тостом (подпись под пунктом незаметна)', /^Установлена последняя версия/.test(t8 || ''), t8);
 
   // 9. Сервер обновлений недоступен: при запуске — молча; в настройках — «нет связи»
   feedDown = true;
   const hits = latestHits;
   await reload();
   await sleep(2500); // проверка при запуске — через 2 с после загрузки; дальше ждём её неудачи
+  await sleep(1000);
+  check('при запуске без связи — ни окна, ни тоста', !(await dlg()) && !(await js(`document.getElementById('toast')?.classList.contains('show') || false`)));
   await settingsItem('Проверить обновления');
   const s9 = await until(async () => { const s = await sub('Проверить обновления'); return /Не удалось/.test(s) && s; }, 8000);
-  check('при запуске без связи — ни окна, ни тоста', !(await dlg()) && !(await js(`document.getElementById('toast')?.classList.contains('show') || false`)));
   check('проверка из настроек без связи — «Не удалось проверить»', !!s9, s9 || await sub('Проверить обновления'));
+  const t9 = await js(`document.getElementById('toast')?.classList.contains('show') && document.getElementById('toast').textContent`);
+  check('из настроек без связи — и тостом', /^Не удалось проверить/.test(t9 || ''), t9);
   check('до сервера ответы не доходили', latestHits === hits);
   feedDown = false;
 

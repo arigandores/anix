@@ -235,9 +235,11 @@ function updateItems() {
     sub.textContent = 'Проверяем…';
     const r = await checkUpdate().catch(() => null);
     busy = false;
-    if (!r) { sub.textContent = 'Не удалось проверить — нет связи с GitHub'; return; }
-    if (!r.supported) { sub.textContent = 'Обновляется только установленное приложение'; return; }
-    if (!r.version) { sub.textContent = `Установлена последняя версия — ${r.current}`; return; }
+    // итог — и тостом: подпись под пунктом меняется незаметно, нажатие выглядело как «ничего не произошло»
+    const say = (text, o) => { sub.textContent = text; toast(text, o); };
+    if (!r) { say('Не удалось проверить — нет связи с GitHub'); return; }
+    if (!r.supported) { say('Обновляется только установленное приложение'); return; }
+    if (!r.version) { say(`Установлена последняя версия — ${r.current}`, { ok: true }); return; }
     sub.textContent = `Вышла версия ${r.version} — нажмите, чтобы обновить`;
     updateDialog(r);
   });

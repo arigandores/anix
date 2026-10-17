@@ -325,7 +325,7 @@ app.whenReady().then(async () => {
   for (let i = 0; i < 60 && !/106 серия/.test(await epLbl()); i++) await sleep(250);
   check('филлеры выключены: «предыдущая» со 107-й — 106-я', /106 серия/.test(await epLbl()), await epLbl());
   await js(`window.__p?.close(); 1`);
-  await nav('settings', '{}'); await sleep(800);
+  await nav('settings', `{ section: 'playback' }`); await sleep(800); // настройки по разделам: филлеры — в «Воспроизведении»
   check('филлеры: переключатель в настройках', await js(`[...document.querySelectorAll('.menu-item')].some((e) => e.textContent.includes('Пропускать филлеры'))`));
 
   // 16. Веб-плеер: кнопка «во весь экран» включает и выключает полноэкранный режим (раньше — только включала)

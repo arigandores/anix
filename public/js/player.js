@@ -161,6 +161,8 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
 
   const video = h('video', { playsinline: true, preload: 'auto' });
   video.playbackRate = SPEEDS[speedIdx] || 1;
+  const pipOk = !!(document.pictureInPictureEnabled && video.requestPictureInPicture);
+  const inPip = () => document.pictureInPictureElement === video;
   const msg = h('div', { class: 'player-msg' });
   const ttlB = h('b'); const ttlS = h('span');
   const timeEl = h('span', { class: 'time' }, '0:00 / 0:00');
@@ -207,7 +209,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
       timeEl,
       volume,
       gearBtn,
-      h('button', { class: 'icon-btn', title: 'Картинка в картинке', onclick: () => togglePip() }, icon('ic_player_pip')),
+      pipOk ? h('button', { class: 'icon-btn pip-btn', title: 'Картинка в картинке (I) — серия в маленьком окне поверх всех окон', onclick: () => togglePip() }, icon('ic_player_pip')) : null,
       fsBtn));
   const stage = h('div', { class: 'player-stage' }, video, msg);
   const ov = h('div', { class: 'player-overlay', tabindex: '-1' }, top, stage, skipRow, controls);
@@ -249,7 +251,8 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   };
   function partyBind() {
     if (!party.room || !typeId) return;
-    pc = bindPlayer({ video, content: () => (cur ? contentOf(cur.ep) : null), isLoading: () => loading, loadPosition, close: () => close(), minimize: () => setMini(true) });
+    pc = bindPlayer({ video, content: () => (cur ? contentOf(cur.ep) : null), isLoading: () => loading, loadPosition, close: () => close(), minimize: () => setMini(true),
+      inPip, nearPip: () => inPip() || Date.now() - pipLeftAt < 600 });
     if (pc && cur && !loading) playerEpisode(contentOf(cur.ep), { pos: video.currentTime, paused: video.paused });
   }
   const offParty = party.on((type) => { if (type === 'joined') partyBind(); else if (type === 'left') pc = null; paintPChips(); }); // права в комнате могли смениться
@@ -267,6 +270,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   ov.append(miniBar);
   const isMini = () => ov.classList.contains('mini');
   function setMini(on) {
+    if (!on && inPip()) exitPip('full'); // «Развернуть» (комната, другое аниме) — плеер обратно в приложение
     if (on === isMini()) return;
     if (on) { closeMenu(); pop?.close(); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); }
     ov.classList.toggle('mini', on);
@@ -399,6 +403,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   function showMsg(text, spinner = false) {
     msg.replaceChildren(...[spinner ? h('div', { class: 'spinner' }) : null, text ? h('div', { style: { marginTop: '12px', whiteSpace: 'pre-line' } }, text) : null].filter(Boolean));
     msg.style.display = text || spinner ? 'grid' : 'none';
+    if (text) exitPip('full'); // ошибку в окне PiP не показать — плеер обратно в приложение
   }
 
   // Серию начали заново («⏭», «Смотреть N серию», «Начать с начала»): прежняя позиция больше не верна. Позиция
@@ -455,7 +460,17 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     const nextI = sort === 2 ? idx - 1 : idx + 1; const prevI = sort === 2 ? idx + 1 : idx - 1;
     nextBtn.disabled = !episodes[nextI]; nextBtn.style.opacity = episodes[nextI] ? 1 : 0.35;
     prevBtn.disabled = !episodes[prevI]; prevBtn.style.opacity = episodes[prevI] ? 1 : 0.35;
+    // кнопки окна PiP и клавиши мультимедиа: серии — только если есть куда; название и постер — в окне PiP
+    // и системной плашке Windows
+    if (!session) return;
+    try { session.metadata = new MediaMetadata({ title: ttlS.textContent, artist: ttlB.textContent, artwork: release.image ? [{ src: release.image }] : [] }); } catch { /* без плашки */ }
+    setAction('nexttrack', episodes[nextI] ? () => switchEpisode(1) : null);
+    setAction('previoustrack', episodes[prevI] ? () => switchEpisode(-1) : null);
   }
+  const session = navigator.mediaSession;
+  const setAction = (a, f) => { try { session?.setActionHandler(a, f); } catch { /* действие не поддерживается */ } };
+  setAction('seekbackward', () => seekBy(-10));
+  setAction('seekforward', () => seekBy(10));
 
   async function load(i, res, startAt) {
     const ep = episodes[i];
@@ -501,7 +516,9 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
       showMsg('');
       // в комнате место и пуск задаёт комната; своя смена серии с места (startAt: «Продолжить», смена озвучки) — у всех с него
       if (pc) { loading = false; playerEpisode(contentOf(ep), startAt > 0 ? { pos: startAt / 1000, wait: true } : null, loadWhy); loadWhy = null; return; }
-      if (saved > 0 && startAt == null) {
+      // в PiP вопрос «Продолжить?» не увидеть (плеер спрятан) — продолжаем с места
+      if (saved > 0 && startAt == null && inPip()) video.currentTime = saved / 1000;
+      else if (saved > 0 && startAt == null) {
         const choice = await askResume();
         if (choice) video.currentTime = saved / 1000; else restartPosition(ep);
       } else if (saved > 0) video.currentTime = saved / 1000;
@@ -573,7 +590,37 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   function toggleFs() { if (document.fullscreenElement) document.exitFullscreen(); else ov.requestFullscreen?.(); }
   // и кнопкой, и F, и Esc браузера: иконка — по факту режима
   ov.addEventListener('fullscreenchange', () => fsIcon.set(document.fullscreenElement === ov));
-  function togglePip() { if (document.pictureInPictureElement) document.exitPictureInPicture(); else video.requestPictureInPicture?.().catch(() => {}); }
+
+  // --- Картинка в картинке (PiP): серия — в системном окне поверх всех окон, плеер из приложения уходит целиком
+  // (каталог свободен; спрятанный слой апскейла не считает). Обратно: «Назад во вкладку» в окне PiP — плеер во весь
+  // размер и окно приложения впереди; ✕ — то же самое (убрать ✕ из системного окна нельзя, а пауза и мини-плеер
+  // после него выглядели странно): паузу, которую ставит браузер, снимаем. Закрыли плеер — окно PiP закрывается
+  // вместе с ним (иначе оставалось висеть пустым) ---
+  let pipLeave = null; // выходим из PiP сами: 'full' — плеер развернуть, 'close' — плеер закрывается
+  let pauseAt = 0; let pipLeftAt = 0;
+  function togglePip() {
+    if (inPip()) { exitPip('full'); return; }
+    if (pipOk) video.requestPictureInPicture().catch(() => toast('Картинка в картинке сейчас недоступна — дождитесь загрузки серии'));
+  }
+  function exitPip(how) { if (!inPip()) return; pipLeave = how; document.exitPictureInPicture().catch(() => {}); }
+  video.addEventListener('pause', () => { pauseAt = Date.now(); });
+  video.addEventListener('enterpictureinpicture', () => { closeMenu(); pop?.close(); ov.classList.add('pip'); });
+  video.addEventListener('leavepictureinpicture', () => {
+    const how = pipLeave; pipLeave = null;
+    pipLeftAt = Date.now();
+    if (how === 'close') return;
+    // пауза от ✕ приходит рядом с выходом — до или сразу после него. В комнате её не отправляли (room.js, nearPip) —
+    // плеер просто возвращается к общему состоянию
+    const left = Date.now();
+    setTimeout(() => {
+      if (!ov.isConnected || inPip()) return;
+      ov.classList.remove('pip');
+      if (how !== 'full' && video.paused && Math.abs(pauseAt - left) < 600) { if (pc) pc.sync(true); else video.play().catch(() => {}); }
+      setMini(false);
+      ov.focus();
+      window.anixartNative?.focusWindow?.(); // окно приложения могло быть свёрнуто
+    }, 250);
+  });
 
   // --- Шестерёнка: качество, скорость, пропуск опенинга и эндинга ---
   // Главная страница меню — строки со значениями; качество и скорость открываются списком внутри меню
@@ -1049,7 +1096,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   ov.addEventListener('mousemove', (e) => { const pt = `${e.clientX},${e.clientY}`; if (pt !== lastPt) { lastPt = pt; poke(); } });
 
   function onKey(e) {
-    if (isMini()) return; // свёрнутый плеер клавиши у приложения не забирает
+    if (isMini() || inPip()) return; // свёрнутый (и ушедший в PiP) плеер клавиши у приложения не забирает
     if (e.target && /input|textarea/i.test(e.target.tagName) && e.target !== volume) return;
     if (document.querySelector('.backdrop:not(.closing)')) return; // открыт диалог (например, «Продолжить?») — клавиши его
     const k = e.key.toLowerCase();
@@ -1059,6 +1106,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     else if (k === 'arrowup') { fx.setVolume(fx.volume + 0.05); volume.value = fx.volume; e.preventDefault(); }
     else if (k === 'arrowdown') { fx.setVolume(fx.volume - 0.05); volume.value = fx.volume; e.preventDefault(); }
     else if (k === 'f') toggleFs();
+    else if (k === 'i') togglePip();
     else if (k === 'm') fx.setMuted(!fx.muted);
     else if (k === 'n') switchEpisode(1);
     else if (k === 'p') switchEpisode(-1);
@@ -1081,6 +1129,9 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   function close() {
     if (active === me) active = null;
     savePosition();
+    exitPip('close');
+    for (const a of ['nexttrack', 'previoustrack', 'seekbackward', 'seekforward']) setAction(a, null);
+    if (session) session.metadata = null;
     document.removeEventListener('keydown', onKey);
     document.removeEventListener('keyup', onKeyUp);
     window.removeEventListener('blur', onBlur);

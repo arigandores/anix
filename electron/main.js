@@ -81,6 +81,15 @@ const AUTH_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (K
 trt.register(ipcMain);
 updater.register(ipcMain);
 
+// «Назад во вкладку» в окне «Картинка в картинке»: окно приложения — развернуть из панели задач и вперёд
+ipcMain.handle('focus-window', (e) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  if (!w) return false;
+  if (w.isMinimized()) w.restore();
+  w.show(); w.focus();
+  return true;
+});
+
 ipcMain.handle('open-external', (_e, url) => {
   if (!/^https?:\/\//.test(String(url))) return false;
   shell.openExternal(url);

@@ -360,7 +360,8 @@ function leaderDuties() {
 
 // --- плеер ---
 // Плеер (player.js) при открытии в комнате вызывает bindPlayer(ctl):
-//   ctl = { video, content(): текущее содержимое или null, isLoading(), loadPosition(pos) → bool (та же озвучка), close() }
+//   ctl = { video, content(): текущее содержимое или null, isLoading(), loadPosition(pos) → bool (та же озвучка), close(),
+//           inPip(), nearPip(): в окне «Картинка в картинке» или только что из него вышли }
 // и сообщает о загруженной серии — playerEpisode(content).
 export function bindPlayer(ctl) {
   if (!room) return null;
@@ -372,7 +373,7 @@ export function bindPlayer(ctl) {
   const p = {
     ctl,
     isReady: () => !ctl.isLoading() && v.readyState >= 3,
-    unbind() { for (const [e, f] of evs) v.removeEventListener(e, f); clearTimeout(nudgeTimer); clearTimeout(playTimer); if (room && room.player === p) room.player = null; },
+    unbind() { for (const [e, f] of evs) v.removeEventListener(e, f); clearTimeout(nudgeTimer); clearTimeout(playTimer); clearTimeout(pipTimer); if (room && room.player === p) room.player = null; },
     seek(t) { progSeek = t; v.currentTime = t; cooldown = Date.now() + COOLDOWN_MS; seekAt = Date.now(); },
     // перемотка на ходу: туда, где серия будет, когда догрузится
     seekLive(s) { p.seek(expected(s) + lead * s.rate); },
@@ -396,9 +397,18 @@ export function bindPlayer(ctl) {
     if (!canControl()) { info('Управляет только хост'); syncPlayer(true); return; }
     commit({ ...patch, why: takeWhy() });
   };
+  // Пауза рядом с окном «Картинка в картинке» (ctl.nearPip): ✕ этого окна ставит видео на паузу сам (браузер), плеер
+  // её снимает — комнате она не нужна (у гостя ещё и «Управляет только хост»). Ждём: окно закрылось — пропускаем,
+  // осталось открытым — это пауза кнопкой в окне PiP, отправляем
+  let pipTimer = 0;
+  const pauseCmd = userAct((s) => { if (!s.paused && !v.ended && !s.wait && Date.now() - selfPause > 500) act({ paused: true, pos: v.currentTime }); });
   const evs = [
     ['play', userAct((s) => { if (s.paused || s.wait) act({ paused: false, wait: null, pos: v.currentTime }); })],
-    ['pause', userAct((s) => { if (!s.paused && !v.ended && !s.wait && Date.now() - selfPause > 500) act({ paused: true, pos: v.currentTime }); })],
+    ['pause', () => {
+      clearTimeout(pipTimer);
+      if (!ctl.nearPip?.()) { pauseCmd(); return; }
+      pipTimer = setTimeout(() => { if (ctl.inPip?.() && v.paused) pauseCmd(); }, 400);
+    }],
     ['seeked', userAct((s) => {
       if (progSeek != null && Math.abs(v.currentTime - progSeek) < 0.6) { progSeek = null; return; }
       if (Math.abs(v.currentTime - expected(s)) > 1) act({ pos: v.currentTime });

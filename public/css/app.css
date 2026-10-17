@@ -953,6 +953,8 @@ html:not(.in-party) .party-btn.only-in-room { display: none; }
 .mini-bar .icon-btn:hover { background: rgba(255,255,255,.14); }
 .mini-bar .mini-ttl { flex: 1; min-width: 0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 720px) { .player-overlay.mini { bottom: 76px; } }
+/* Картинка в картинке (player.js, togglePip): серия в системном окне, плеер в приложении не виден вовсе */
+.player-overlay.pip { display: none !important; }
 .watch-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .party-item { display: flex; align-items: center; gap: 10px; padding: 6px 4px 6px 6px; border-radius: 12px; background: var(--block); }
 .party-item img { width: 34px; height: 48px; border-radius: 6px; object-fit: cover; flex: none; }

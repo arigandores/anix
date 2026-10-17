@@ -1,6 +1,6 @@
 // Уведомления: единый список с фильтром (без вкладок)
-import { h, icon, iconButton, img, pagedList, emptyView, sheet, toast, confirmDialog, esc, skeleton } from '../ui.js';
-import { api } from '../api.js';
+import { h, icon, actionIcon, iconButton, img, pagedList, emptyView, sheet, toast, confirmDialog, esc, skeleton } from '../ui.js';
+import { api, prefetchRead } from '../api.js';
 import { t } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
 import { backToolbar, relTime } from './common.js';
@@ -145,6 +145,18 @@ function notificationRow(n, onChanged) {
   return row;
 }
 
+// Страница уведомлений по фильтру: несколько источников, свежие сверху
+async function loadNotifs(filter, page) {
+  const def = FILTERS.find((f) => f[0] === filter);
+  const parts = await Promise.all(def[2].map((p) => api.get(`${p}/${page}`).catch(() => ({ content: [] }))));
+  const items = [].concat(...parts.map((r) => r.content || []));
+  items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  // has-more: хотя бы один источник отдал полную страницу
+  return { content: items, hasMore: parts.some((r) => (r.content || []).length >= 25) };
+}
+// первая страница — в памяти и с нажатия колокольчика (common.js notifButton): открывается без мелькания скелетона
+export function prefetchNotifications() { return prefetchRead('notifications:1', () => loadNotifs(1, 0)); }
+
 registerScreen('notifications', () => {
   let filter = 1;
   let markedRead = false;
@@ -154,18 +166,14 @@ registerScreen('notifications', () => {
   function build() {
     const def = FILTERS.find((f) => f[0] === filter);
     const list = pagedList({
-      skeleton: 'notifications',
-      load: async (page) => {
-        const parts = await Promise.all(def[2].map((p) => api.get(`${p}/${page}`).catch(() => ({ content: [] }))));
-        const items = [].concat(...parts.map((r) => r.content || []));
-        items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-        // Если есть новые — через 1 с notification/read
-        if (!markedRead && items.some((x) => x.is_new)) {
+      skeleton: 'notifications', remember: `notifications:${filter}`,
+      load: (page) => loadNotifs(filter, page),
+      onFirst: (r) => {
+        // есть новые — через 1 с notification/read
+        if (!markedRead && (r.content || []).some((x) => x.is_new)) {
           markedRead = true;
           setTimeout(() => { api.get('notification/read').then(badgeChanged).catch(() => {}); }, 1000);
         }
-        // has-more: хотя бы один источник отдал полную страницу
-        return { content: items, hasMore: parts.some((r) => (r.content || []).length >= 25) };
       },
       render: (n) => notificationRow(n, badgeChanged),
       empty: () => emptyView('Уведомлений нет', null, 'ic_bell'),
@@ -176,7 +184,7 @@ registerScreen('notifications', () => {
         h('button', {
           class: 'chip',
           onclick: () => sheet('Фильтр', FILTERS.map(([v, l]) => ({ label: l, checked: v === filter, onClick: () => { filter = v; build(); } }))),
-        }, icon('ic_tune', 'sm'), def[1])),
+        }, actionIcon('ic_tune', 'sm'), def[1])),
       list);
   }
 

@@ -1,5 +1,6 @@
 // Плееры: встроенный, веб-плеер и сторонний.
-import { h, icon, toast, dialog, popover } from './ui.js';
+import { h, icon, toast, dialog, popover, nudge } from './ui.js';
+import { playPauseIcon, fullscreenIcon } from './lottie.js';
 import { A, auth } from './api.js';
 import { prefs, db, t } from './store.js';
 import { createUpscale, TIER_LABEL, TIERS, SHARPNESS, SHARP_LABEL, benchPrompt, benchRunDialog } from './upscale/index.js';
@@ -128,14 +129,16 @@ export function openWebPlayer(ep, release, dub) {
   const close = () => { if (active === me) active = null; rp.stop(); ov.remove(); document.removeEventListener('keydown', onKey); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); };
   const me = { close }; active = me;
   const onKey = (e) => { if (e.key === 'Escape' && !document.fullscreenElement) close(); };
+  const webFsIcon = fullscreenIcon(); // уголки разворачиваются внутрь в полноэкранном режиме и обратно
   const ov = h('div', { class: 'player-overlay' },
     h('div', { class: 'player-top', style: { position: 'relative', background: '#000' } },
       h('button', { class: 'icon-btn', title: 'Назад', onclick: close }, icon('ic_back')),
       h('div', { class: 'ttl' }, h('b', null, release?.title_ru || ''), h('span', null, ep.name || `${ep.position} серия`)),
       // во весь экран и обратно — как у встроенного (раньше кнопка только включала полноэкранный режим)
-      h('button', { class: 'icon-btn', title: 'Во весь экран / выйти', onclick: () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else ov.requestFullscreen?.(); } }, icon('ic_player_fill'))),
+      h('button', { class: 'icon-btn', title: 'Во весь экран / выйти', onclick: () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else ov.requestFullscreen?.(); } }, webFsIcon)),
     h('div', { class: 'player-stage' },
       h('iframe', { src, allow: 'autoplay; fullscreen; encrypted-media; picture-in-picture', allowfullscreen: true, referrerpolicy: 'no-referrer-when-downgrade' })));
+  ov.addEventListener('fullscreenchange', () => webFsIcon.set(document.fullscreenElement === ov));
   document.addEventListener('keydown', onKey);
   document.body.append(ov);
 }
@@ -165,7 +168,8 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   const knob = h('div', { class: 'knob' });
   const tip = h('div', { class: 'seek-tip' });
   const seek = h('div', { class: 'seek', role: 'slider', 'aria-label': 'Позиция воспроизведения' }, segsEl, knob, tip);
-  const playBtn = h('button', { class: 'icon-btn', title: 'Пауза (Пробел)' }, icon('ic_player_pause'));
+  const playIcon = playPauseIcon(true); // плей ⇄ пауза перетекают друг в друга (lottie.js)
+  const playBtn = h('button', { class: 'icon-btn', title: 'Пауза (Пробел)' }, playIcon);
   const prevBtn = h('button', { class: 'icon-btn', title: 'Предыдущая серия (P)' }, icon('ic_player_previous'));
   const nextBtn = h('button', { class: 'icon-btn', title: 'Следующая серия (N)' }, icon('ic_player_next'));
   const gearBtn = h('button', { class: 'icon-btn gear', title: 'Настройки: качество, скорость, улучшение картинки и звука, пропуск опенинга и эндинга' }, icon('ic_settings'));
@@ -186,20 +190,24 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   const top = h('div', { class: 'player-top p-top3' },
     h('div', { class: 'p-left' }, h('button', { class: 'icon-btn', title: 'Закрыть (Esc)', onclick: () => close() }, icon('ic_back')), h('div', { class: 'ttl' }, ttlB, ttlS)),
     pchips, topRight);
+  const rewBtn = h('button', { class: 'icon-btn', title: '−10 с (←)', onclick: () => seekBy(-10) }, icon('ic_player_rewind_10'));
+  const fwdBtn = h('button', { class: 'icon-btn', title: '+10 с (→)', onclick: () => seekBy(10) }, icon('ic_player_forward_10'));
+  const fsIcon = fullscreenIcon(); // уголки разворачиваются внутрь в полноэкранном режиме и обратно (lottie.js)
+  const fsBtn = h('button', { class: 'icon-btn', title: 'Во весь экран (F)', onclick: () => toggleFs() }, fsIcon);
   const controls = h('div', { class: 'player-controls' },
     seek,
     h('div', { class: 'row' },
       prevBtn,
-      h('button', { class: 'icon-btn', title: '−10 с (←)', onclick: () => seekBy(-10) }, icon('ic_player_rewind_10')),
+      rewBtn,
       playBtn,
-      h('button', { class: 'icon-btn', title: '+10 с (→)', onclick: () => seekBy(10) }, icon('ic_player_forward_10')),
+      fwdBtn,
       nextBtn,
       h('div', { class: 'grow' }),
       timeEl,
       volume,
       gearBtn,
       h('button', { class: 'icon-btn', title: 'Картинка в картинке', onclick: () => togglePip() }, icon('ic_player_pip')),
-      h('button', { class: 'icon-btn', title: 'Во весь экран (F)', onclick: () => toggleFs() }, icon('ic_player_fill'))));
+      fsBtn));
   const stage = h('div', { class: 'player-stage' }, video, msg);
   const ov = h('div', { class: 'player-overlay', tabindex: '-1' }, top, stage, skipRow, controls);
 
@@ -247,7 +255,8 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   topRight.append(partyPlayerButton(ov, { canWatch: !!typeId }));
 
   // --- Мини-плеер: свернуть в угол и листать каталог, пока серия идёт (и комната синхронизируется) ---
-  const miniPlay = h('button', { class: 'icon-btn', title: 'Пауза' }, icon('ic_player_pause'));
+  const miniPlayIcon = playPauseIcon(true);
+  const miniPlay = h('button', { class: 'icon-btn', title: 'Пауза' }, miniPlayIcon);
   const miniTitle = h('span', { class: 'mini-ttl' });
   const miniBar = h('div', { class: 'mini-bar', onclick: (e) => e.stopPropagation() },
     miniPlay, miniTitle,
@@ -407,7 +416,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     // длительность и начало эндинга (если он в конце серии) — чтобы понять, досмотрена ли серия (db.progress)
     const end = marksNow()?.ending;
     const endingStart = end && endingAtEpisodeEnd(end, video.duration) ? Math.floor(end.start * 1000) : 0;
-    db.putEpisode(cur.ep.releaseId, cur.ep.sourceId, cur.ep.position, { playbackPosition: val, isWatched: true, duration: dur, endingStart });
+    db.putEpisode(cur.ep.releaseId, cur.ep.sourceId, cur.ep.position, { playbackPosition: val, isWatched: true, duration: dur, endingStart, savedAt: Date.now() });
   }
 
   function attach(src) {
@@ -485,7 +494,8 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     up.setSourceKey(`${ep.releaseId}:${ep.sourceId}:${quality}`); // запомненная оценка разрешения этой озвучки
     attach(streamSrc(res.qualities[quality], res.referer, res.cookie));
     const local = db.getEpisode(ep.releaseId, ep.sourceId, ep.position);
-    const saved = startAt ?? (local && local.playbackPosition > 0 ? local.playbackPosition : 0);
+    // в этой озвучке серию не начинали — место из другой озвучки той же серии («Продолжить?» — с него)
+    const saved = startAt ?? (local && local.playbackPosition > 0 ? local.playbackPosition : db.positionAnySource(ep.releaseId, ep.position));
     video.addEventListener('loadedmetadata', async () => {
       showMsg('');
       // в комнате место и пуск задаёт комната; своя смена серии с места (startAt: «Продолжить», смена озвучки) — у всех с него
@@ -553,11 +563,15 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
 
   function seekBy(sec) {
     if (!video.duration) return;
+    // стрелка ±10 проворачивается в сторону перемотки (и с клавиатуры)
+    nudge((sec < 0 ? rewBtn : fwdBtn).firstChild, [{ transform: 'none' }, { transform: `rotate(${sec < 0 ? -50 : 50}deg)`, offset: 0.45 }, { transform: 'none' }], 420);
     video.currentTime = Math.max(0, Math.min(video.duration - 1, video.currentTime + sec));
     poke();
   }
   function togglePlay() { if (video.paused) video.play().catch(() => {}); else video.pause(); }
   function toggleFs() { if (document.fullscreenElement) document.exitFullscreen(); else ov.requestFullscreen?.(); }
+  // и кнопкой, и F, и Esc браузера: иконка — по факту режима
+  ov.addEventListener('fullscreenchange', () => fsIcon.set(document.fullscreenElement === ov));
   function togglePip() { if (document.pictureInPictureElement) document.exitPictureInPicture(); else video.requestPictureInPicture?.().catch(() => {}); }
 
   // --- Шестерёнка: качество, скорость, пропуск опенинга и эндинга ---
@@ -796,15 +810,17 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   ov.addEventListener('click', (e) => { if (menu && !menu.contains(e.target) && !gearBtn.contains(e.target)) closeMenu(); });
 
   playBtn.onclick = togglePlay;
-  prevBtn.onclick = () => switchEpisode(-1);
-  nextBtn.onclick = () => switchEpisode(1);
+  // «предыдущая / следующая серия» — иконка подаётся в свою сторону
+  const shove = (btn, dx) => nudge(btn.firstChild, [{ transform: 'none' }, { transform: `translateX(${dx}px)`, offset: 0.4 }, { transform: 'none' }], 300);
+  prevBtn.onclick = () => { shove(prevBtn, -5); switchEpisode(-1); };
+  nextBtn.onclick = () => { shove(nextBtn, 5); switchEpisode(1); };
   volume.oninput = () => fx.setVolume(Number(volume.value));
   const paintVolume = () => volume.style.setProperty('--v', `${(fx.muted ? 0 : fx.volume) * 100}%`);
   paintVolume();
 
   // После нажатия «плей» или автозапуска интерфейс прячется быстрее: смотреть, а не на кнопки
-  video.addEventListener('play', () => { playBtn.replaceChildren(icon('ic_player_pause')); miniPlay.replaceChildren(icon('ic_player_pause')); poke(PLAY_HIDE_MS); });
-  video.addEventListener('pause', () => { playBtn.replaceChildren(icon('ic_player_play')); miniPlay.replaceChildren(icon('ic_player_play')); savePosition(); poke(); });
+  video.addEventListener('play', () => { playIcon.set(true); miniPlayIcon.set(true); poke(PLAY_HIDE_MS); });
+  video.addEventListener('pause', () => { playIcon.set(false); miniPlayIcon.set(false); savePosition(); poke(); });
   video.addEventListener('waiting', () => showMsg('', true));
   video.addEventListener('playing', () => showMsg(''));
   video.addEventListener('error', () => { if (!hls) onFatal(); });

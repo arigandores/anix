@@ -436,8 +436,9 @@ app.whenReady().then(async () => {
   // 22. Шапка аниме со светлым постером (тёмная тема): кнопки и бейджи на плотной подложке — скриншот для глаз
   await js(`localStorage.setItem('anixart.theme', 'dark'); import('/js/store.js').then((m) => m.applyTheme())`); await sleep(400);
   fs.writeFileSync(path.join(outDir, 'watch-13-hero-light-poster.png'), (await win.webContents.capturePage()).toPNG());
-  const heroBg = await js(`(() => { const b = ${scr}.querySelector('.rel-hero .list-btn:not(.tag)'); return b && getComputedStyle(b).backdropFilter; })()`);
-  check('шапка: кнопки на подложке с размытием', /blur/.test(heroBg || ''), heroBg);
+  // подложка плотная, без размытия: backdrop-filter под экраном с въездом после анимации менял цвет (CLAUDE.md)
+  const heroBg = await js(`(() => { const b = ${scr}.querySelector('.rel-hero .list-btn:not(.tag)'); if (!b) return null; const cs = getComputedStyle(b); const c = cs.backgroundColor; const alpha = c.includes('/') ? parseFloat(c.split('/')[1]) : c.startsWith('rgba') ? parseFloat(c.split(',')[3]) : 1; return { blur: cs.backdropFilter, alpha, c }; })()`);
+  check('шапка: кнопки на плотной подложке, без размытия', !!heroBg && heroBg.blur === 'none' && heroBg.alpha >= 0.5, JSON.stringify(heroBg));
 
   // 23. Написать комментарий — над комментариями: на странице аниме и на экране «Комментарии»
   const above = (sel) => js(`(() => { const s = ${scr}; const c = s.querySelector('${sel} .comment-input'); const first = s.querySelector('${sel} .comment'); return !!c && (!first || !!(c.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING)); })()`);
@@ -478,7 +479,8 @@ app.whenReady().then(async () => {
   };
   for (const tabName of ['bookmarks', 'ai']) {
     const g = await gateMid(tabName);
-    check(`«${tabName}» без входа: блок посередине по вертикали`, !!g && Math.abs(g.mid - g.vpMid) < g.vh * 0.02, JSON.stringify(g));
+    // оптический центр — чуть выше середины (centerEmpties в ui.js, CLAUDE.md)
+    check(`«${tabName}» без входа: блок посередине по вертикали (чуть выше)`, !!g && g.vpMid - g.mid >= 0 && g.vpMid - g.mid < g.vh * 0.08, JSON.stringify(g));
     if (tabName === 'bookmarks') {
       const lc = await js(`(() => { const i = document.querySelector('#viewport .screen:last-child .center-gate .ic.brand'); const t = document.createElement('div'); t.style.color = 'var(--carmine)'; document.body.append(t); const want = getComputedStyle(t).color; t.remove(); return { got: i && getComputedStyle(i).color, want }; })()`);
       check('«Вы не вошли»: логотип фирменного цвета, не серый', lc.got && lc.got === lc.want, JSON.stringify(lc));

@@ -1,0 +1,12 @@
+{
+  "controls": [
+    {
+      "sid": "tickColor",
+      "label": "Галочка"
+    },
+    {
+      "sid": "discColor",
+      "label": "Круг"
+    }
+  ]
+}

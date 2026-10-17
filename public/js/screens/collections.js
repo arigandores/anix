@@ -1,8 +1,9 @@
 // Коллекции: список, коллекция, коллекции профиля
-import { h, icon, iconButton, img, pagedList, emptyView, sheet, toast, confirmDialog, skeleton, skParts, guardClick } from '../ui.js';
-import { A, auth } from '../api.js';
+import { h, icon, actionIcon, iconButton, growBars, img, pagedList, emptyView, sheet, toast, confirmDialog, skeleton, skParts, guardClick, markAppeared, morph } from '../ui.js';
+import { A, auth, remembered } from '../api.js';
 import { t } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
+import { heartIcon } from '../lottie.js';
 import { backToolbar, collectionCard, releaseRow, relTime, requireAuth, avatarEl, profileName, imageViewer, report, digits } from './common.js';
 
 const SORTS = [[1, 'Лидеры рейтинга'], [2, 'Популярные за год'], [3, 'Популярные за сезон'], [4, 'Популярные за неделю'], [5, 'Недавно добавленные'], [6, 'Случайные']];
@@ -16,7 +17,7 @@ registerScreen('collections', ({ sort: initSort }) => {
     const sortRow = h('div', { class: 'row', style: { padding: '8px 20px', gap: '10px' } },
       auth.loggedIn ? h('button', { class: 'chip', onclick: () => navigate('my-collections') }, icon('ic_collection', 'sm'), 'Мои коллекции') : null,
       h('div', { class: 'grow' }),
-      h('button', { class: 'chip', onclick: () => sheet('Сортировка', SORTS.map(([v, l]) => ({ label: l, checked: v === sort, onClick: () => { sort = v; build(); } }))) }, icon('ic_sort', 'sm'), SORTS.find((s) => s[0] === sort)[1]));
+      h('button', { class: 'chip', onclick: () => sheet('Сортировка', SORTS.map(([v, l]) => ({ label: l, checked: v === sort, onClick: () => { sort = v; build(); } }))) }, actionIcon('ic_sort', 'sm'), SORTS.find((s) => s[0] === sort)[1]));
     const list = pagedList({
       skeleton: 'collections',
       grid: true,
@@ -46,36 +47,58 @@ registerScreen('profile-collections', ({ profileId }) => h('div', null, backTool
 
 registerScreen('collection', async ({ id }) => {
   const root = h('div');
-  const r = await A.collection(id);
+  // повторный заход — сразу из памяти; свежие данные фоном: изменились — экран пересобирается (api.js remembered)
+  // изменилось — правим на месте и плавно (ui.js morph): то же данные-объект, новое дерево вливается в показанное
+  const r = await remembered(`collection:${id}`, () => A.collection(id), (fresh) => {
+    if (!root.isConnected) return;
+    if (r.collection && fresh.collection) Object.assign(r.collection, fresh.collection); else Object.assign(r, fresh);
+    const next = h('div'); paint(r, next); morph(root, markAppeared(next));
+  });
+  paint(r);
+  return root;
+
+  // target — куда собрать: при фоновом обновлении — в отдельное дерево для morph
+  function paint(r, target = root) {
+  target.replaceChildren();
   if (r.code === 3 || r.code === 4) {
-    root.append(backToolbar(''), emptyView(r.code === 3 ? 'Данная коллекция недоступна для просмотра, поскольку автор сделал её приватной' : 'Данная коллекция была удалена и больше недоступна для просмотра', null, 'ic_lock'));
-    return root;
+    target.append(backToolbar(''), emptyView(r.code === 3 ? 'Данная коллекция недоступна для просмотра, поскольку автор сделал её приватной' : 'Данная коллекция была удалена и больше недоступна для просмотра', null, 'ic_lock'));
+    return;
   }
   const c = r.collection;
-  if (!c) { root.append(backToolbar(''), emptyView('Коллекция не найдена')); return root; }
+  if (!c) { target.append(backToolbar(''), emptyView('Коллекция не найдена')); return; }
   const mine = auth.profileId && c.creator?.id === auth.profileId;
   const favBtn = h('button', { class: 'btn list-btn' });
-  const paintFav = () => favBtn.replaceChildren(icon(c.is_favorite ? 'ic_favorite' : 'ic_favorite_border', `sm ${c.is_favorite ? 'heart' : ''}`), c.is_favorite ? 'Удалить из закладок' : 'Добавить в закладки', ` ${digits(c.favorites_count)}`);
+  const heart = heartIcon(!!c.is_favorite);
+  const favLabel = h('span');
+  favBtn.append(heart, favLabel);
+  const paintFav = (on, animate) => {
+    heart.set(on, animate); heart.classList.toggle('heart', on); // set — до смены цвета (lottie.js, heartIcon)
+    favLabel.textContent = `${on ? 'Удалить из закладок' : 'Добавить в закладки'} ${digits(c.favorites_count)}`;
+  };
+  // сердце переключается сразу по нажатию; сервер отказал — обратно
   favBtn.onclick = guardClick(favBtn, async () => {
     if (!requireAuth()) return;
+    const was = !!c.is_favorite;
+    paintFav(!was, true);
     try {
-      const res = c.is_favorite ? await A.collectionFavDelete(c.id) : await A.collectionFavAdd(c.id);
-      if (res.code === 0 || res.code === 3) { c.is_favorite = !c.is_favorite; c.favorites_count += c.is_favorite ? 1 : -1; paintFav(); }
+      const res = was ? await A.collectionFavDelete(c.id) : await A.collectionFavAdd(c.id);
+      if (res.code === 0 || res.code === 3) { c.is_favorite = !was; c.favorites_count += c.is_favorite ? 1 : -1; }
     } catch { toast(t('error_load')); }
+    paintFav(!!c.is_favorite, false);
   });
-  paintFav();
+  paintFav(!!c.is_favorite, false);
   const base = (window.__toggles && window.__toggles.baseUrl) || 'https://anixart-app.com/';
   const toolbar = h('div', { class: 'appbar' },
     iconButton('ic_back', 'Назад', () => history.back()),
     avatarEl(c.creator, 'avatar'),
     h('div', { class: 'grow' }, h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Автор коллекции'), profileName(c.creator)),
     iconButton('ic_more', 'Ещё', () => sheet(null, [
-      { label: 'Поделиться', icon: 'ic_export_variant', onClick: () => { navigator.clipboard?.writeText(`Рекомендую ознакомиться с коллекцией: «${c.title}»\n${base}collection/${c.id}`); toast('Скопировано'); } },
-      { label: 'Скопировать ссылку', icon: 'ic_link', onClick: () => { navigator.clipboard?.writeText(`${base}collection/${c.id}`); toast('Скопировано'); } },
+      { label: 'Поделиться', icon: 'ic_export_variant', onClick: () => { navigator.clipboard?.writeText(`Рекомендую ознакомиться с коллекцией: «${c.title}»\n${base}collection/${c.id}`); toast('Скопировано', { ok: true }); } },
+      { label: 'Скопировать ссылку', icon: 'ic_link', onClick: () => { navigator.clipboard?.writeText(`${base}collection/${c.id}`); toast('Скопировано', { ok: true }); } },
       mine ? { label: 'Удалить', icon: 'ic_trash_outline', danger: true, onClick: async () => { if (await confirmDialog('Удалить коллекцию?', 'Вы уверены, что хотите удалить коллекцию?', 'Удалить')) { const { api } = await import('../api.js'); const d = await api.get(`collectionMy/delete/${c.id}`).catch(() => null); toast(d && d.code === 0 ? 'Коллекция удалена' : 'Не удалось удалить коллекцию'); if (d && d.code === 0) history.back(); } } } : null,
       !mine ? { label: 'Пожаловаться', icon: 'ic_alert', onClick: () => report('collection', c.id) } : null,
     ])));
-  const statsHolder = h('div');
+  const statsHolder = h('div', { 'data-keep': '' }); // заполняет список (onFirst) — при фоновом обновлении не трогаем
   const header = h('div', { class: 'container', style: { padding: '0 20px' } },
     h('div', { class: 'poster', style: { width: '100%', aspectRatio: '16/7', borderRadius: '16px', cursor: 'zoom-in' }, onclick: () => imageViewer(c.image) }, img(c.image)),
     h('h1', { class: 'rel-title', style: { margin: '14px 0 4px' } }, c.title),
@@ -86,8 +109,9 @@ registerScreen('collection', async ({ id }) => {
       h('button', { class: 'btn list-btn', onclick: () => navigate('comments', { kind: 'collection', id: c.id }) }, icon('ic_comment_outline', 'sm'), `Оставить комментарий… ${c.comment_count}`)),
     statsHolder);
   let total = 0;
-  const list = pagedList({
-    load: (page) => A.collectionReleases(c.id, page),
+  // в дереве для morph — заглушка: список релизов обновляется сам (remember)
+  const list = target !== root ? h('div', { class: 'paged' }) : pagedList({
+    load: (page) => A.collectionReleases(c.id, page), remember: `collection-releases:${c.id}`,
     onFirst: (res) => {
       total = res.total_count || (res.content || []).length;
       if (!total) return;
@@ -95,14 +119,14 @@ registerScreen('collection', async ({ id }) => {
       const sum = counts.reduce((a, x) => a + (x[0] || 0), 0);
       statsHolder.replaceChildren(h('div', { class: 'card', style: { marginTop: '16px' } },
         h('div', { class: 'card-title' }, `${digits(total)} релизов в коллекции`),
-        h('div', { class: 'progress-multi' }, counts.map(([n, col]) => h('div', { style: { width: `${((n || 0) * 100) / Math.max(total, sum || 1)}%`, background: `var(--${col})` } }))),
+        growBars(h('div', { class: 'progress-multi' }, counts.map(([n, col]) => h('div', { style: { width: `${((n || 0) * 100) / Math.max(total, sum || 1)}%`, background: `var(--${col})` } })))),
         auth.loggedIn ? h('div', { class: 'chips' }, counts.map(([n, col, l]) => h('span', { class: 'badge' }, h('span', { style: { width: '8px', height: '8px', borderRadius: '50%', background: `var(--${col})` } }), `${l}: ${n || 0}`))) : null,
-        total > 1 ? h('button', { class: 'btn btn-tonal', style: { marginTop: '12px' }, onclick: () => navigate('release', { random: 4, collectionId: c.id }) }, icon('ic_shuffle', 'sm'), 'Открыть случайный') : null));
+        total > 1 ? h('button', { class: 'btn btn-tonal', style: { marginTop: '12px' }, onclick: () => navigate('release', { random: 4, collectionId: c.id }) }, actionIcon('ic_shuffle', 'sm'), 'Открыть случайный') : null));
     },
     render: (rel) => releaseRow(rel),
   });
-  root.append(toolbar, header, h('div', { style: { height: '10px' } }), list);
-  return root;
+  target.append(toolbar, header, h('div', { style: { height: '10px' } }), list);
+  }
 }, ({ preload: c }) => {
   // шапка коллекции: автор в панели, обложка 16:7, название, дата, кнопки; затем релизы
   const { line, circle, pill, block, col } = skParts;

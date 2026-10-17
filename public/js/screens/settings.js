@@ -82,7 +82,7 @@ registerScreen('settings', () => {
     toggle('ic_voice', t('remember_type_source'), t('remember_type_source_summary'), 'IS_REMEMBERING_TYPE_SOURCE'),
     item('ic_open_link', t('pref_external_player'), prefs.get('THIRD_PARTY_PLAYER_PATH') || 'mpv / VLC (автоопределение)', async () => {
       const v = await prompt('Путь к плееру (mpv.exe или vlc.exe)', { value: prefs.get('THIRD_PARTY_PLAYER_PATH') });
-      if (v != null) { prefs.set('THIRD_PARTY_PLAYER_PATH', v.trim()); toast('Сохранено'); }
+      if (v != null) { prefs.set('THIRD_PARTY_PLAYER_PATH', v.trim()); toast('Сохранено', { ok: true }); }
     }));
 
   list.append(h('div', { class: 'menu-cat' }, 'AI-помощник'),

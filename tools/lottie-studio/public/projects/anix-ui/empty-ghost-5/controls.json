@@ -1,0 +1,12 @@
+{
+  "controls": [
+    {
+      "sid": "eyeColor",
+      "label": "Глаза (цвет фона экрана)"
+    },
+    {
+      "sid": "iconColor",
+      "label": "Привидение"
+    }
+  ]
+}

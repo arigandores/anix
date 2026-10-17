@@ -1,5 +1,5 @@
 // Закладки: вкладки списков
-import { h, icon, tabs, pagedList, emptyView, sheet } from '../ui.js';
+import { h, icon, actionIcon, tabs, pagedList, emptyView, sheet } from '../ui.js';
 import { A, auth } from '../api.js';
 import { t, prefs } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
@@ -44,12 +44,13 @@ export function bookmarkReleaseTab(def, { profileId = null } = {}) {
       !profileId ? h('button', {
         class: 'icon-btn sm', title: t('label_random'),
         onclick: () => navigate('release', def.status ? { random: 2, profileId: auth.profileId, status: def.status } : { random: 3 }),
-      }, icon('ic_shuffle')) : null);
+      }, actionIcon('ic_shuffle')) : null);
     const load = (page) => (def.status
       ? (profileId ? A.profileListBy(profileId, def.status, page, sort, filterAnnounce) : A.profileList(def.status, page, sort, filterAnnounce))
       : A.favorites(page, sort, filterAnnounce));
+    // первая страница — из памяти (повторное переключение на вкладку — сразу, без скелетона), свежая — фоном
     const list = pagedList({
-      load, grid,
+      load, grid, remember: `bookmarks:${def.key}:${profileId || 'me'}:${sort}:${filterAnnounce}`,
       onFirst: (r) => { totalEl.textContent = t('total_count', digits(r.total_count ?? 0)); },
       render: (r) => (grid ? releaseCard(r) : releaseRow(r)),
       empty: () => emptyView(t(def.empty)),
@@ -62,10 +63,12 @@ export function bookmarkReleaseTab(def, { profileId = null } = {}) {
 
 function tabContent(def) {
   if (def.key === 'collections') {
-    return pagedList({ skeleton: 'collections', load: (page) => A.collectionFavorites(page), render: collectionCard, grid: true, empty: () => emptyView(t(def.empty)) });
+    return pagedList({ skeleton: 'collections', load: (page) => A.collectionFavorites(page), remember: 'bookmarks:collections', render: collectionCard, grid: true, empty: () => emptyView(t(def.empty)) });
   }
   if (def.key === 'history') {
-    return pagedList({ load: (page) => A.history(page), render: (r) => releaseRow(r, { history: true }), empty: () => emptyView(t(def.empty)) });
+    // как и остальные вкладки — первая страница из памяти: раз в 5–10 переключений ответ шёл дольше 250 мс и
+    // мелькал скелетон (вкладка пересобирается при каждом выборе: cache: false)
+    return pagedList({ load: (page) => A.history(page), remember: 'bookmarks:history', render: (r) => releaseRow(r, { history: true }), empty: () => emptyView(t(def.empty)) });
   }
   return bookmarkReleaseTab(def);
 }

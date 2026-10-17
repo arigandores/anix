@@ -7,10 +7,10 @@
   <link rel="icon" href="/icon.png">
   <link rel="stylesheet" href="/css/app.css">
   <script>
-    // Тема до отрисовки, чтобы не мигало (Prefs: системная/светлая/тёмная)
+    // Тема до отрисовки, чтобы не мигало (Prefs: системная/светлая/тёмная; по умолчанию — тёмная, как store.js DEFAULT_THEME)
     (function () {
-      var t = 'system';
-      try { t = localStorage.getItem('anixart.theme') || 'system'; } catch (e) {}
+      var t = 'dark';
+      try { t = localStorage.getItem('anixart.theme') || 'dark'; } catch (e) {}
       var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
       document.documentElement.dataset.theme = dark ? 'dark' : 'light';
     })();

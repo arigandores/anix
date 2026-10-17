@@ -1,6 +1,7 @@
 // Интерфейс совместного просмотра: кнопка «Смотреть вместе» (тулбар и плеер), вход по коду, панель комнаты —
 // код с копированием, участники, кто управляет, чат. Логика — party/room.js.
-import { h, icon, dialog, confirmDialog } from '../ui.js';
+import { h, icon, dialog, confirmDialog, containScroll, flySend, nudge } from '../ui.js';
+import { copyIcon } from '../lottie.js';
 import { normCode } from './net.js';
 import { navigate, switchTab } from '../router.js';
 
@@ -77,18 +78,20 @@ const badge = (btn) => btn.append(h('span', { class: 'party-count' }));
 // Поле чата и список сообщений создаются один раз: перерисовка не стирает недописанное сообщение.
 export function roomView({ inPlayer = false, onClose } = {}) {
   const el = h('div', { class: 'party-view' });
-  const chatList = h('div', { class: 'party-chat' });
+  const chatList = containScroll(h('div', { class: 'party-chat' }));
   const input = h('input', { class: 'input', placeholder: 'Сообщение…', maxlength: 500, onkeydown: (e) => { e.stopPropagation(); if (e.key === 'Enter') send(); } });
-  const send = () => { sendChat(input.value); input.value = ''; };
-  const chatRow = h('div', { class: 'party-send' }, input, h('button', { class: 'icon-btn', title: 'Отправить', onclick: send }, icon('ic_send')));
+  const sendBtn = h('button', { class: 'icon-btn', title: 'Отправить', onclick: () => send() }, icon('ic_send'));
+  const send = () => { if (input.value.trim()) flySend(sendBtn); sendChat(input.value); input.value = ''; };
+  const chatRow = h('div', { class: 'party-send' }, input, sendBtn);
   let chatRoom = null;
+  let knownPeople = null; // кто уже был в списке: новый участник въезжает (при первом показе комнаты — без анимации)
   let sorting = false; let pendingRender = false; let dragEndAt = 0; // после перетаскивания клик не открывает страницу
   function render() {
     if (sorting) { pendingRender = true; return; }
     const r = party.room;
     el.classList.toggle('lobby', !r); // вне комнаты панель — по содержимому, без пустого места под чат
-    if (!r) { chatRoom = null; el.replaceChildren(...lobby()); return; }
-    if (chatRoom !== r) { chatRoom = r; chatList.replaceChildren(...r.chat.map(chatLine)); chatList.scrollTop = chatList.scrollHeight; }
+    if (!r) { chatRoom = null; knownPeople = null; el.replaceChildren(...lobby()); return; }
+    if (chatRoom !== r) { chatRoom = r; knownPeople = null; chatList.replaceChildren(...r.chat.map(chatLine)); chatList.scrollTop = chatList.scrollHeight; chatList.refreshScroll(); }
     const s = r.state;
     const host = s && s.host;
     const amHost = isHost();
@@ -96,7 +99,7 @@ export function roomView({ inPlayer = false, onClose } = {}) {
     const copy = (text, msg) => navigator.clipboard?.writeText(text).then(() => partyInfo(msg), () => partyInfo(code));
     // https-ссылка: anixdesktop:// мессенджеры не делают кликабельной — страница-переходник (docs/watch) откроет приложение
     const invite = () => copy(`Смотрим аниме вместе в Anix Desktop: ${INVITE_URL}#${r.code}\nКод комнаты: ${code}`, 'Приглашение скопировано — отправьте его друзьям');
-    const people = present().map((p) => h('div', { class: 'party-member' },
+    const people = present().map((p) => h('div', { class: 'party-member', dataset: { id: p.id } },
       p.avatar ? h('img', { src: p.avatar, referrerpolicy: 'no-referrer', alt: '' }) : h('span', { class: 'ava' }, (p.name || '?').slice(0, 1).toUpperCase()),
       h('span', { class: 'grow' }, p.me ? `${p.name} (вы)` : p.name),
       p.id === host ? h('span', { class: 'tag' }, 'хост') : null,
@@ -117,7 +120,7 @@ export function roomView({ inPlayer = false, onClose } = {}) {
     el.replaceChildren(...[
       h('div', { class: 'party-code' },
         h('div', { class: 'grow' }, h('small', null, 'Код комнаты'), h('b', null, code)),
-        h('button', { class: 'icon-btn', title: 'Скопировать код', onclick: () => copy(code, 'Код скопирован') }, icon('ic_copy'))),
+        h('button', { class: 'icon-btn', title: 'Скопировать код', onclick: (e) => { e.currentTarget.querySelector('.lt')?.done(); copy(code, 'Код скопирован'); } }, copyIcon())),
       h('button', { class: 'btn btn-primary', onclick: invite }, icon('ic_person_add', 'sm'), 'Пригласить'),
       h('div', { class: 'party-sub' }, 'Сейчас'), now,
       h('div', { class: 'party-sub' }, `Дальше${q.length ? ` · ${q.length}` : ''}`),
@@ -137,6 +140,12 @@ export function roomView({ inPlayer = false, onClose } = {}) {
         h('button', { class: 'btn btn-tonal', onclick: () => { party.leave(); partyInfo('Вы вышли из комнаты'); } }, 'Выйти из комнаты')),
     ].filter(Boolean)); // null — пропуски (пустая очередь, не хост): replaceChildren вывел бы их текстом «null»
     chatList.scrollTop = chatBottom ? chatList.scrollHeight : chatTop;
+    const ids = new Set();
+    for (const row of el.querySelectorAll('.party-member')) {
+      ids.add(row.dataset.id);
+      if (knownPeople && !knownPeople.has(row.dataset.id)) nudge(row, [{ opacity: 0, transform: 'translateX(-14px)' }, { opacity: 1, transform: 'none' }], 380);
+    }
+    knownPeople = ids;
   }
   // элемент очереди: включить — кто может управлять; убрать — хост или автор; перетаскивать — хост
   function queueRow(it, amHost, me) {
@@ -223,7 +232,10 @@ export function roomView({ inPlayer = false, onClose } = {}) {
   const off = party.on((type, m) => {
     if (type === 'chat') { // листаете старые — не дёргаем вниз; внизу или пишете сами — показываем новое
       const atBottom = chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 40;
-      chatList.append(chatLine(m));
+      const line = chatLine(m);
+      chatList.append(line);
+      nudge(line, [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], 240); // новое сообщение проявляется
+      chatList.refreshScroll();
       if (atBottom || m.me) chatList.scrollTop = chatList.scrollHeight;
       return;
     }

@@ -1,6 +1,6 @@
 // Профиль и подэкраны (друзья, списки, оценки, комментарии)
-import { h, icon, iconButton, img, toast, tabs, pagedList, emptyView, sheet, confirmDialog, skeleton, markAppeared } from '../ui.js';
-import { A, api, auth } from '../api.js';
+import { h, icon, actionIcon, iconButton, growBars, img, toast, tabs, pagedList, emptyView, sheet, confirmDialog, skeleton, markAppeared, morph } from '../ui.js';
+import { A, api, auth, remembered } from '../api.js';
 import { t, tp } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
 import { mainToolbar, backToolbar, relTime, digits, needAuthView, releaseRow, commentItem, collectionCard, avatarEl, profileName, report, openRelease } from './common.js';
@@ -46,27 +46,36 @@ function friendButtons(p, rebuild) {
 // чтобы не грузить его заново со скелетоном
 async function profileView(id, { fromMain = false, blog = null } = {}) {
   const root = h('div');
-  const r = await A.profile(id);
+  // повторный заход — сразу из памяти; свежие данные фоном: изменились — профиль пересобирается (api.js remembered)
+  const r = await remembered(`profile:${id}`, () => A.profile(id), (fresh) => {
+    if (!fresh?.profile || !root.isConnected) return;
+    Object.assign(p, fresh.profile); p.is_my_profile = fresh.is_my_profile || p.id === auth.profileId;
+    // изменилось только то, что изменилось: правим на месте и плавно (ui.js morph), без пересборки экрана
+    const next = h('div'); build(next); morph(root, markAppeared(next));
+  });
   const p = r.profile;
   if (!p) { root.append(fromMain ? mainToolbar() : backToolbar(t('profile')), emptyView('Профиль не найден')); return root; }
   p.is_my_profile = r.is_my_profile || p.id === auth.profileId;
   let blogHolder = blog;
   const blogSection = () => {
-    if (blogHolder) return blogHolder;
-    blogHolder = h('div');
+    if (blogHolder) return blogHolder.isConnected && building ? h('div', { 'data-keep': '' }) : blogHolder; // в дереве для morph — заглушка
+    blogHolder = h('div', { 'data-keep': '' }); // подгружается сам — при фоновом обновлении не трогаем (morph)
     const holder = blogHolder;
-    A.blog(p.id).then((b) => {
+    remembered(`blog:${p.id}`, () => A.blog(p.id)).then((b) => { // блог и первая страница записей — тоже из памяти
       if (!b.channel) return;
       holder.append(h('div', { class: 'section-head', style: { padding: '18px 0 6px' } }, h('div', { class: 'section-title' }, 'Записи')),
-        pagedList({ skeleton: 'articles', load: (page) => A.channelArticles(b.channel.id, page), render: (a) => articleCard(a), empty: () => emptyView('Похоже, нет ни одной записи') }));
+        pagedList({ skeleton: 'articles', load: (page) => A.channelArticles(b.channel.id, page), remember: `channel-articles:${b.channel.id}`, render: (a) => articleCard(a), empty: () => emptyView('Похоже, нет ни одной записи') }));
     }).catch(() => {});
     return holder;
   };
-  const build = () => {
-    root.replaceChildren();
-    root.append(fromMain ? mainToolbar({ hint: 'Поиск пользователей', onSearch: () => navigate('search', { scope: 'profiles' }) })
+  // target — куда собрать: при фоновом обновлении — в отдельное дерево, которое вливается в показанное (morph)
+  let building = false;
+  const build = (target = root) => {
+    building = target !== root;
+    target.replaceChildren();
+    target.append(fromMain ? mainToolbar({ hint: 'Поиск пользователей', onSearch: () => navigate('search', { scope: 'profiles' }) })
       : backToolbar(t('profile'), [iconButton('ic_more', 'Ещё', () => moreSheet(p))]));
-    if (p.is_deleted) { root.append(emptyView('Профиль удалён')); return; }
+    if (p.is_deleted) { target.append(emptyView('Профиль удалён')); return; }
     const head = h('div', { class: 'profile-head' },
       h('div', { style: { position: 'relative' } }, img(p.avatar, 'avatar lg'), p.is_online ? h('span', { style: { position: 'absolute', right: '6px', bottom: '6px', width: '16px', height: '16px', borderRadius: '50%', background: 'var(--green)', border: '3px solid var(--bg)' } }) : null),
       h('div', { class: 'grow' },
@@ -81,12 +90,12 @@ async function profileView(id, { fromMain = false, blog = null } = {}) {
           p.vk_page ? iconButton('ic_vk', 'ВКонтакте', () => window.open(`https://vk.com/${p.vk_page}`, '_blank'), 'sm') : null,
           p.tg_page ? iconButton('ic_telegram', 'Telegram', () => window.open(`https://t.me/${p.tg_page}`, '_blank'), 'sm') : null,
           p.tt_page ? iconButton('ic_tiktok', 'TikTok', () => window.open(`https://tiktok.com/@${p.tt_page}`, '_blank'), 'sm') : null,
-          p.discord_page ? iconButton('ic_discord', `Discord: ${p.discord_page}`, () => { navigator.clipboard?.writeText(p.discord_page); toast('Скопировано'); }, 'sm') : null) : null,
+          p.discord_page ? iconButton('ic_discord', `Discord: ${p.discord_page}`, () => { navigator.clipboard?.writeText(p.discord_page); toast('Скопировано', { ok: true }); }, 'sm') : null) : null,
         h('div', { class: 'row', style: { marginTop: '12px', flexWrap: 'wrap' } }, friendButtons(p, build))));
-    root.append(head);
-    if (p.is_banned) root.append(h('div', { class: 'rel-note', style: { margin: '0 24px 10px' } }, p.is_perm_banned ? 'Пользователь был заблокирован за нарушение правил навсегда' : `Пользователь был заблокирован за нарушение правил до ${new Date(p.ban_expires * 1000).toLocaleDateString('ru-RU')}`));
-    if (p.is_me_blocked) { root.append(h('div', { class: 'rel-note', style: { margin: '0 24px' } }, 'Пользователь внес Вас в свой блоклист. Вы не можете просматривать информацию этого профиля.')); return; }
-    if (p.is_private && !p.is_my_profile) root.append(h('div', { class: 'rel-note', style: { margin: '0 24px 10px' } }, 'У пользователя установлены настройки приватности. Некоторая информация для Вас может быть недоступна.'));
+    target.append(head);
+    if (p.is_banned) target.append(h('div', { class: 'rel-note', style: { margin: '0 24px 10px' } }, p.is_perm_banned ? 'Пользователь был заблокирован за нарушение правил навсегда' : `Пользователь был заблокирован за нарушение правил до ${new Date(p.ban_expires * 1000).toLocaleDateString('ru-RU')}`));
+    if (p.is_me_blocked) { target.append(h('div', { class: 'rel-note', style: { margin: '0 24px' } }, 'Пользователь внес Вас в свой блоклист. Вы не можете просматривать информацию этого профиля.')); return; }
+    if (p.is_private && !p.is_my_profile) target.append(h('div', { class: 'rel-note', style: { margin: '0 24px 10px' } }, 'У пользователя установлены настройки приватности. Некоторая информация для Вас может быть недоступна.'));
 
     const body = h('div', { class: 'container', style: { padding: '0 24px 40px' } });
     // Друзья
@@ -99,7 +108,7 @@ async function profileView(id, { fromMain = false, blog = null } = {}) {
       const total = rows.reduce((a, x) => a + (x[1] || 0), 0) || 1;
       const pref = (arr) => (arr || []).slice().sort((a, b) => b.percentage - a.percentage).map((x) => `${x.name} ${x.percentage}%`).join(', ');
       body.append(h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Статистика'),
-        h('div', { class: 'progress-multi' }, rows.map(([, n, c]) => h('div', { style: { width: `${((n || 0) * 100) / total}%`, background: `var(--${c})` } }))),
+        growBars(h('div', { class: 'progress-multi' }, rows.map(([, n, c]) => h('div', { style: { width: `${((n || 0) * 100) / total}%`, background: `var(--${c})` } })))),
         h('div', { class: 'stat-grid' }, rows.map(([l, n, c, st]) => h('div', { class: 'stat clickable', onclick: () => (p.is_my_profile ? null : navigate('profile-lists', { profile: p, status: st })) },
           h('b', { style: { color: `var(--${c})` } }, digits(n)), h('span', null, l)))),
         h('div', { class: 'info-rows', style: { marginTop: '12px' } },
@@ -132,7 +141,7 @@ async function profileView(id, { fromMain = false, blog = null } = {}) {
     }
     // Блог
     body.append(blogSection());
-    root.append(body);
+    target.append(body);
   };
   build();
   root.blog = blogHolder;
@@ -143,7 +152,7 @@ function moreSheet(p) {
   const base = (window.__toggles && window.__toggles.baseUrl) || 'https://anixart-app.com/';
   sheet(p.login, [
     { label: 'История никнейма', icon: 'ic_history', onClick: () => navigate('login-history', { profile: p }) },
-    { label: 'Скопировать ссылку', icon: 'ic_link', onClick: () => { navigator.clipboard?.writeText(`${base}profile/${p.id}`); toast('Скопировано'); } },
+    { label: 'Скопировать ссылку', icon: 'ic_link', onClick: () => { navigator.clipboard?.writeText(`${base}profile/${p.id}`); toast('Скопировано', { ok: true }); } },
     !p.is_my_profile ? { label: 'Пожаловаться', icon: 'ic_alert', onClick: () => report('profile', p.id) } : null,
     !p.is_my_profile && auth.loggedIn ? (p.is_blocked
       ? { label: 'Разблокировать', icon: 'ic_lock', onClick: async () => { await A.blockRemove(p.id); p.is_blocked = false; toast('Пользователь убран из Вашего блоклиста'); } }
@@ -208,7 +217,7 @@ registerScreen('profile-votes', ({ profile }) => {
   let sort = 1; const holder = h('div');
   const build = () => holder.replaceChildren(
     h('div', { class: 'row', style: { padding: '8px 20px' } }, h('div', { class: 'grow' }),
-      h('button', { class: 'chip', onclick: () => sheet('Сортировка', VOTE_SORTS.map(([v, l]) => ({ label: l, checked: v === sort, onClick: () => { sort = v; build(); } }))) }, icon('ic_sort', 'sm'), VOTE_SORTS.find((x) => x[0] === sort)[1])),
+      h('button', { class: 'chip', onclick: () => sheet('Сортировка', VOTE_SORTS.map(([v, l]) => ({ label: l, checked: v === sort, onClick: () => { sort = v; build(); } }))) }, actionIcon('ic_sort', 'sm'), VOTE_SORTS.find((x) => x[0] === sort)[1])),
     pagedList({ load: (page) => A.votedReleases(profile.id, page, sort), render: (r) => { const row = releaseRow(r); row.querySelector('.info').append(h('div', { style: { color: 'var(--orange)' } }, '★'.repeat(r.my_vote || 0), r.voted_at ? h('span', { class: 'muted', style: { marginLeft: '8px', fontSize: '12px' } }, relTime(r.voted_at)) : null)); return row; }, empty: () => emptyView('Оценённых релизов нет') }));
   build();
   return h('div', null, backToolbar('Оценки'), holder);

@@ -1,9 +1,10 @@
-import { h, icon } from './ui.js';
+import { h, icon, centerEmpties } from './ui.js';
 import { A, auth } from './api.js';
 import { loadStrings, t, prefs, applyTheme } from './store.js';
 import { initRouter, switchTab, TABS, resetAllTabs } from './router.js';
 import './screens/index.js';
 import { initDragScroll } from './dragscroll.js';
+import { preloadLottie, navIcon } from './lottie.js';
 
 const NAV = [
   { tab: 'home', title: 'home', icon: 'ic_home', iconOn: 'ic_home_filled' },
@@ -19,7 +20,7 @@ function buildNav(container, withLogo) {
   if (withLogo) container.append(h('div', { class: 'logo' }, icon('logo', 'logo')));
   for (const n of NAV) {
     const btn = h('button', { class: 'nav-item', dataset: { tab: n.tab }, onclick: () => switchTab(n.tab) },
-      h('span', { class: 'pill' }, icon(n.icon, 'off'), icon(n.iconOn, 'on')),
+      h('span', { class: 'pill' }, icon(n.icon, 'off'), navIcon(n.tab, n.iconOn, 'on')), // залитая — с жестом «выбрано» (lottie.js)
       h('span', null, n.label || t(n.title)));
     container.append(btn);
   }
@@ -28,6 +29,9 @@ function buildNav(container, withLogo) {
 function onTabChange(tab) {
   document.querySelectorAll('.nav-item').forEach((b) => {
     const on = b.dataset.tab === tab;
+    // жест «выбрано» — только при переходе на вкладку (не при запуске и не при повторном выборе той же)
+    if (on && !b.classList.contains('active') && b.dataset.seen) b.querySelector('.lt.on')?.select();
+    b.dataset.seen = '1';
     b.classList.toggle('active', on); // иконки переключает CSS (.nav-item.active .ic.on)
   });
 }
@@ -58,19 +62,34 @@ async function main() {
   // Анимация появления — один раз на элемент (см. .appeared в app.css). Сам .screen не трогаем:
   // его затухание при смене вкладки задаёт роутер.
   document.addEventListener('animationend', (e) => {
-    if ((e.animationName === 'content-in' || e.animationName === 'screen-fade') && !e.target.classList.contains('screen')) e.target.classList.add('appeared');
+    // и въезд экрана (screen-forward/back — у контента под шапкой): после него класс въезда снимается (router.js)
+    if (/^(content-in|screen-fade|screen-forward|screen-back)$/.test(e.animationName) && !e.target.classList.contains('screen')) e.target.classList.add('appeared');
   }, true);
   await loadStrings();
   buildNav(document.getElementById('rail'), true);
   buildNav(document.getElementById('bottomnav'), false);
   initRouter(document.getElementById('viewport'), onTabChange);
+  centerEmpties(document.getElementById('viewport')); // пустые экраны — по центру окна (ui.js)
   // config/toggles при старте
   A.toggles().then((tg) => { prefs.applyToggles(tg); window.__toggles = tg; }).catch(() => {});
   switchTab(TABS[0]);
   refreshNotifBadge();
+  preloadLottie(); // анимации интерфейса — заранее, в простое
+  preloadIcons(); // иконки страницы аниме и шапок — заранее: иначе маска подгружалась при первом показе и иконка появлялась на кадр позже текста
   setInterval(refreshNotifBadge, 120000);
   window.addEventListener('auth-changed', () => { resetAllTabs(); refreshNotifBadge(); });
   window.addEventListener('notifications-read', refreshNotifBadge);
+}
+
+// Иконки, которые видны при первом открытии страницы аниме и в шапках: в кэш заранее (картинки держим, чтобы не выгрузились)
+const PRELOAD_ICONS = ['ic_back', 'ic_bell', 'ic_more', 'ic_shuffle', 'ic_group', 'ic_arrow_drop_down', 'ic_favorite', 'ic_favorite_border',
+  'ic_comment_outline', 'ic_play', 'ic_player_next', 'ic_info_outline', 'ic_flag_japan', 'ic_flag_chinese', 'ic_flag_unknown', 'ic_episodes',
+  'ic_schedule', 'ic_studio', 'ic_source', 'ic_tune_variant', 'ic_voice', 'ic_calendar', 'ic_collection', 'ic_collection_add', 'ic_star_rate',
+  'ic_chevron_end', 'ic_arrow_downward', 'ic_arrow_upward', 'ic_eye_off_outline', 'ic_send', 'ic_copy', 'ic_check'];
+const preloaded = [];
+function preloadIcons() {
+  const go = () => { for (const n of PRELOAD_ICONS) { const im = new Image(); im.src = `/icons/${n}.svg`; preloaded.push(im); } };
+  if (window.requestIdleCallback) requestIdleCallback(go, { timeout: 2000 }); else setTimeout(go, 1000);
 }
 
 main();

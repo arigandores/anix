@@ -1,5 +1,5 @@
 // Обзор: популярное, смотрят сейчас, рекомендации, расписание
-import { h, icon, img, tabs, skeleton, skParts, errorView, dialog, emptyView, skeletonSettled, markAppeared } from '../ui.js';
+import { h, icon, actionIcon, img, tabs, skeleton, skParts, errorView, dialog, emptyView, skeletonSettled, markAppeared } from '../ui.js';
 import { A, auth } from '../api.js';
 import { t } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
@@ -13,7 +13,7 @@ const TILE_COLORS = {
 function tile(key, label, ic, onClick) {
   const [bg, fg] = TILE_COLORS[key];
   return h('button', { class: 'tile', onclick: onClick, style: { '--tile-bg': bg, '--tile-fg': fg } },
-    h('span', { class: 'tile-ic', style: { background: bg, color: fg, width: '40px', height: '40px', borderRadius: '12px', display: 'grid', placeItems: 'center' } }, icon(ic)),
+    h('span', { class: 'tile-ic', style: { background: bg, color: fg, width: '40px', height: '40px', borderRadius: '12px', display: 'grid', placeItems: 'center' } }, actionIcon(ic)),
     h('span', null, label));
 }
 
@@ -120,7 +120,7 @@ registerScreen('tab:discover', async (_p, ctx) => {
 
 // Популярное: 4 вкладки, только страница 0, sort 3
 registerScreen('top', () => {
-  const tab = (patch) => () => releaseList(async (page) => (page === 0 ? A.filter(0, { ...emptyFilter(), ...patch, sort: 3 }, true) : { content: [] }), { rank: true });
+  const tab = (patch) => () => releaseList(async (page) => (page === 0 ? A.filter(0, { ...emptyFilter(), ...patch, sort: 3 }, true) : { content: [] }), { rank: true, remember: `top:${JSON.stringify(patch)}` });
   return h('div', null, backToolbar(t('title_popular')),
     tabs([
       { title: t('tab_title_ongoing'), render: tab({ status_id: 2, episodes_from: 1, episodes_to: 48 }) },

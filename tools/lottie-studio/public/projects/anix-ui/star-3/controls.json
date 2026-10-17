@@ -1,0 +1,12 @@
+{
+  "controls": [
+    {
+      "sid": "starColor",
+      "label": "Цвет звезды"
+    },
+    {
+      "sid": "baseColor",
+      "label": "Пустая звезда"
+    }
+  ]
+}

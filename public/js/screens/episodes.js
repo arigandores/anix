@@ -1,12 +1,13 @@
 // Серии аниме — один экран: над списком чипы озвучки, источника и плеера (выпадающие списки, смена на месте),
 // а пока озвучка не выбрана — выбор озвучки прямо здесь. Кнопка «Продолжить» на странице аниме (watchBlock)
 // запускает серию сразу, минуя этот экран.
-import { h, icon, iconButton, img, dialog, sheet, popover, errorView, emptyView, skeleton, skParts, skeletonSettled, markAppeared } from '../ui.js';
+import { h, icon, iconButton, img, dialog, sheet, popover, errorView, emptyView, skeleton, skParts, skeletonSettled, markAppeared, nudge } from '../ui.js';
 import { A, auth } from '../api.js';
 import { t, prefs, db } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
 import { backToolbar, digits } from './common.js';
 import { resolveEpisode, prefetchEpisode, openBuiltinPlayer, openWebPlayer, openThirdParty } from '../player.js';
+import { eyeIcon } from '../lottie.js';
 import { party, canControl, fillersText, roomSkip } from '../party/room.js';
 import { partyPick, queueAdd, suggestMode, partyInfo } from '../party/ui.js';
 
@@ -551,6 +552,13 @@ registerScreen('episodes', async (params, ctx) => {
       if (auth.loggedIn) for (const sid of srcs) A.episodeUnwatch(rid, sid, ep.position).catch(() => {});
     }
     paint(); notify(rid);
+    // список перерисован целиком — откликается только отмеченная строка: плашка выпрыгивает, галочка прорисовывается
+    const num = listEl.querySelector(`.ep-row[data-pos="${ep.position}"] .num`);
+    nudge(num, [{ transform: 'scale(.8)' }, { transform: 'scale(1.1)', offset: 0.55 }, { transform: 'none' }], 360);
+    if (v) nudge(num?.querySelector('.ic'), [{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0 0 0)' }], 380);
+    // глаз на кнопке строки — из прежнего состояния в новое (перечёркивание прорисовывается или убирается)
+    const btn = listEl.querySelector(`.ep-row[data-pos="${ep.position}"] > .icon-btn`);
+    if (btn?.firstChild) { const eye = eyeIcon(!v); btn.firstChild.replaceWith(eye); eye.set(v); }
   }
 
   async function markAll(v) {

@@ -21,6 +21,22 @@ const SUITE = [
   ['ui-audit', 'ui-audit.js', 'electron'],
   ['layout-audit', 'layout-audit.js', 'electron'],
   ['contrast', 'contrast.js', 'electron'],
+  ['screen-memory', 'screen-memory.js', 'electron'], // профиль, коллекция, «Популярное»: повторный заход без скелетона
+  ['release-skeleton', 'release-skeleton.js', 'electron'], // скелетон страницы аниме совпадает с настоящей страницей
+  ['prefetch-spam', 'prefetch-spam.js', 'electron'], // предзагрузка: наведение и нажатие без лишних запросов (перетаскивание — 0)
+  ['nav-skeleton', 'nav-skeleton.js', 'electron'], // переход: без голого экрана, контент проявляется поверх скелетона
+  ['press-prefetch', 'press-prefetch.js', 'electron'], // «Комментарии», уведомления — с нажатия, «История» — из памяти: без мелькания скелетона
+  ['transitions-audit', 'transitions-audit.js', 'electron'], // все экраны: шапка и вкладки не мигают, одна анимация на переход
+  ['release-reopen', 'release-reopen.js', 'electron'], // повторный заход на аниме — без скелетона, свежие данные фоном, смена аккаунта чистит память
+  ['comments-thread', 'comments-thread.js', 'electron'], // ветки ответов, поле комментария, статус на постере, тёмная тема по умолчанию
+  ['motion', 'motion.js', 'electron'], // навигация, вкладки, полосы, перекат чисел, плей/пауза, копирование
+  ['empty-center', 'empty-center.js', 'electron'], // пустые экраны и «не найдено» — посередине свободного места
+  ['hero-backdrop', 'hero-backdrop.js', 'electron'], // шапка релиза: кнопки не темнеют после въезда экрана
+  ['release-toolbar', 'release-toolbar.js', 'electron'], // шапка релиза: кнопки с первого кадра, без сдвига при загрузке
+  ['chat-scroll', 'chat-scroll.js', 'electron'], // колесо над чатом комнаты: короткий чат не глушит прокрутку панели
+  ['release-notif', 'release-notif.js', 'electron'], // колокольчик релиза: только его озвучки, а не весь справочник
+  ['lottie', 'lottie.js', 'electron'], // Lottie-анимации: файлы, сердце, жизненный цикл, режим экономии
+  ['lottie-icons', 'lottie-icons.js', 'electron'], // жесты при наведении, глаз, полный экран, замок и часы: покой = статичная иконка
   ['e2e', 'e2e.js', 'electron'],
   ['watch-flow', 'watch-flow.js', 'electron'],
   ['web-quality', 'web-quality.js', 'electron'], // веб-плеер: качество AniLibria по «Приоритету качества», а не 720p сайта // путь до серии: «Продолжить», чипы озвучки/источника/плеера, переключатели в плеере
@@ -31,14 +47,16 @@ const SUITE = [
   ['party', 'party.js', 'electron'], // совместный просмотр: два окна через публичные MQTT-брокеры
   ['party-edge', 'party-edge.js', 'electron'], // совместный просмотр: граничные случаи (~2 мин, тайминги протокола укорочены)
   ['party-watch', 'party-watch.js', 'electron'], // переключатели плеера в комнате: права хоста и гостя, смена озвучки у всех с места
+  ['party-dub-resume', 'party-dub-resume.js', 'electron'], // та же серия в другой озвучке (после выхода из плеера) — с того же места, в комнате и без
 
   ['smoke', 'smoke.js', 'node'],
   // после остальных и один: два видеотеста одновременно делили бы видеокарту
   ['upscale-trt', 'upscale-trt.js', 'electron', true],
   ['upscale-trt-install', 'upscale-trt-install.js', 'electron', true], // установка кнопкой: скачивает 93 МБ
 ];
-// провал — ненулевой код или явные признаки в выводе тестов
-const FAILED = /\bFAIL\b|ERRORS: (?!none)|ISSUES: (?!none)|UnhandledPromiseRejection|^Error:/m;
+// провал — ненулевой код или явные признаки в выводе тестов (LOW-CONTRAST — contrast.js: без него находки
+// контраста не роняли общий прогон)
+const FAILED = /\bFAIL\b|ERRORS: (?!none)|ISSUES: (?!none)|LOW-CONTRAST: (?!none)|UnhandledPromiseRejection|^Error:/m;
 
 const args = process.argv.slice(2);
 const jIdx = args.indexOf('-j');

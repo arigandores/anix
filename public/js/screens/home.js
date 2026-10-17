@@ -7,10 +7,10 @@ import { mainToolbar, releaseRow, releaseCard, emptyFilter, backToolbar } from '
 
 export function viewType() { return prefs.get('VIEW_TYPE') || 0; }
 
-export function releaseList(load, { empty, rank = false } = {}) {
+export function releaseList(load, { empty, rank = false, remember = null } = {}) {
   const grid = viewType() === 1;
   return pagedList({
-    load, grid,
+    load, grid, remember,
     render: (r, i) => (grid ? releaseCard(r) : releaseRow(r, { rank: rank ? i + 1 : undefined })),
     empty: empty || (() => emptyView(t('empty') !== 'empty' ? t('empty') : 'Ой, а тут ничего нет!')),
   });
@@ -96,7 +96,7 @@ registerScreen('tab:home', () => {
   bar.prepend(iconButton('ic_tune', t('change_default_tab'), () => sheet(null, [
     { label: t('change_default_tab'), icon: 'ic_home', onClick: () => sheet(t('change_default_tab'), defs.map((d, i) => ({ label: d.title, checked: (prefs.get('HOME_DEFAULT_PAGE') ?? 1) === i, onClick: () => { prefs.set('HOME_DEFAULT_PAGE', i); toast(t('change_default_tab_description')); } }))) },
     { label: t('customize_my_tab'), icon: 'ic_custom_filter_tune', onClick: () => navigate('filter', { customTab: true }) },
-    { label: t('menu_rename'), icon: 'ic_custom_filter_pencil', onClick: async () => { const n = await prompt(t('menu_rename'), { value: customName }); if (n != null) { prefs.set('HOME_CUSTOM_FILTER_TAB_NAME', n.trim()); toast('Сохранено'); } } },
+    { label: t('menu_rename'), icon: 'ic_custom_filter_pencil', onClick: async () => { const n = await prompt(t('menu_rename'), { value: customName }); if (n != null) { prefs.set('HOME_CUSTOM_FILTER_TAB_NAME', n.trim()); toast('Сохранено', { ok: true }); } } },
   ]), 'sm'));
   // Долгое нажатие (ПКМ) на вкладку → «Назначить по умолчанию»
   [...bar.querySelectorAll('.tab')].forEach((b, i) => b.addEventListener('contextmenu', (e) => {
@@ -123,7 +123,7 @@ registerScreen('filtered', ({ form }) => {
     backToolbar(t('filter'), [
       h('button', { class: 'btn btn-text', onclick: () => history.back() }, t('edit') !== 'edit' ? t('edit') : 'Изменить'),
       iconButton('ic_more', 'Ещё', () => sheet(null, [
-        { label: 'Установить для «Моя вкладка»', icon: 'ic_pin', onClick: () => { setCustomFilter(form); toast('Сохранено'); } },
+        { label: 'Установить для «Моя вкладка»', icon: 'ic_pin', onClick: () => { setCustomFilter(form); toast('Сохранено', { ok: true }); } },
       ])),
     ]),
     releaseList((page) => A.filter(page, body, true)));

@@ -1,6 +1,7 @@
-'use strict';
+require('./_failfast');
 // Предзагрузка при наведении не спамит: быстрый проход курсором по списку и прокрутка колесом — 0 запросов,
-// остановка курсора на карточке — 1 запрос, повторное наведение на неё же — 0.
+// остановка курсора на карточке — 1 запрос, повторное наведение на неё же — 0. Нажатие кнопки мыши: держат на
+// месте (клик) — 1 запрос сразу, не дожидаясь отпускания; потянули (прокрутка перетаскиванием) — 0.
 // Скрытое окно склеивает sendInputEvent-движения мыши, поэтому курсор эмулируется в странице
 // (mousemove/mouseleave по elementFromPoint, :hover — по текущему элементу под «курсором»).
 // Запуск: npx electron test/prefetch-spam.js
@@ -24,6 +25,14 @@ const SETUP = `(() => {
     el && el.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: y }));
   };
   window.__wheel = () => window.dispatchEvent(new WheelEvent('wheel', { deltaY: 120 }));
+  window.__press = async (x, y, dy, hold) => {
+    const el = document.elementFromPoint(x, y);
+    const ev = (t, yy) => el.dispatchEvent(new PointerEvent(t, { bubbles: true, button: 0, clientX: x, clientY: yy, pointerType: 'mouse' }));
+    ev('pointerdown', y);
+    if (dy) for (let i = 1; i <= 5; i++) { ev('pointermove', y + (dy * i) / 5); await new Promise((r) => setTimeout(r, 8)); }
+    await new Promise((r) => setTimeout(r, hold));
+    ev('pointerup', y + dy);
+  };
 })()`;
 
 app.whenReady().then(async () => {
@@ -53,8 +62,25 @@ app.whenReady().then(async () => {
   await move(600, 300); await sleep(500); await away(); await sleep(300);
   const again = (await count()) - sweep - wheel - dwell;
 
-  console.log(JSON.stringify({ sweep, wheel, dwell, again }));
-  console.log(sweep === 0 && wheel === 0 && dwell === 1 && again === 0 ? 'ALL OK' : 'FAILED');
+  // карточки по их положению: не та, что уже предзагружена при наведении (под y = 300)
+  const spots = await js(`(() => { const used = document.elementFromPoint(600, 300)?.closest('.release-row, .release-card');
+    return [...document.querySelectorAll('#viewport .screen:last-child .release-row, #viewport .screen:last-child .release-card')]
+      .filter((c) => c !== used && !c.closest('.skeleton')).map((c) => c.getBoundingClientRect()).filter((b) => b.top > 120 && b.bottom < 840)
+      .map((b) => [Math.round(b.left + b.width / 2), Math.round(b.top + b.height / 2)]); })()`);
+  if (spots.length < 2) { console.log('FAIL: нет двух карточек для проверки нажатия'); app.exit(1); return; }
+  // 5. нажали и держат на месте (клик) — грузим, не дожидаясь отпускания
+  let c0 = await count();
+  await js(`window.__press(${spots[0][0]}, ${spots[0][1]}, 0, 90)`); await sleep(300);
+  const press = (await count()) - c0;
+  // 6. нажали и потянули (прокрутка перетаскиванием) — не грузим
+  c0 = await count();
+  await js(`window.__press(${spots[1][0]}, ${spots[1][1]}, 40, 120)`); await sleep(300);
+  const drag = (await count()) - c0;
+
+  const r = { sweep, wheel, dwell, again, drag, press };
+  console.log(JSON.stringify(r));
+  const ok = sweep === 0 && wheel === 0 && dwell === 1 && again === 0 && drag === 0 && press === 1;
+  console.log(ok ? 'ALL OK' : 'FAIL: предзагрузка — лишние или недостающие запросы');
   srv.server.close();
-  app.exit(0);
+  app.exit(ok ? 0 : 1);
 });

@@ -1,4 +1,6 @@
 // Мини-набор UI-примитивов (аналог Material-компонентов приложения).
+import { lottieIcon, bellIcon, emptyIcon, errorIcon, hoverIcon } from './lottie.js';
+import { remembered } from './api.js';
 
 export function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -48,8 +50,66 @@ export function icon(name, cls = '') {
   return h('span', { class: `ic ${cls}`, style: { '--ic': `url(/icons/${name}.svg)` }, 'aria-hidden': 'true' });
 }
 
+// Иконка кнопки действия: если для неё есть жест при наведении (шестерёнка, фильтр, сортировка, «Случайный»,
+// «История», корзина — lottie.js hoverIcon), то анимированная, иначе обычная
+export function actionIcon(name, cls = '') { return hoverIcon(name, cls) || icon(name, cls); }
+
 export function iconButton(name, title, onClick, cls = '') {
-  return h('button', { class: `icon-btn ${cls}`, title, 'aria-label': title, onclick: onClick }, icon(name));
+  // колокольчик звенит при наведении, остальные — свой жест, если он есть (lottie.js)
+  return h('button', { class: `icon-btn ${cls}`, title, 'aria-label': title, onclick: onClick }, name === 'ic_bell' ? bellIcon() : actionIcon(name));
+}
+
+// Короткий отклик на действие: Web Animations (не CSS: CSS-анимация перезапускалась бы при каждой вставке в DOM),
+// поэтому режим экономии проверяем сами. nudge(el, кадры, мс) — общий; bump — голос «плюс»/«минус»: иконка
+// подскакивает вверх (dir = -1) или вниз (1)
+export function nudge(el, frames, duration = 320) {
+  if (!el || document.documentElement.classList.contains('economy')) return null;
+  return el.animate(frames, { duration, easing: 'cubic-bezier(.2,.8,.2,1)' });
+}
+// Полосы (рейтинг, «в списках у людей», статистика) вырастают от нуля до своей ширины — один раз, когда впервые
+// видны (возврат на экран не повторяет). sel — какие элементы растут (по умолчанию дети контейнера)
+export function growBars(el, sel = ':scope > *', step = 0) {
+  if (document.documentElement.classList.contains('economy')) return el;
+  const io = new IntersectionObserver((es) => {
+    if (!es.some((e) => e.isIntersecting)) return;
+    io.disconnect();
+    el.querySelectorAll(sel).forEach((b, i) => {
+      const w = b.style.width; if (!w) return;
+      b.animate([{ width: '0%' }, { width: w }], { duration: 750, delay: i * step, easing: 'cubic-bezier(0,.65,.51,.99)', fill: 'backwards' });
+    });
+  });
+  io.observe(el);
+  return el;
+}
+// Число сменилось (♡ 7 137 → 7 138, счёт голосов): новое въезжает снизу, если выросло, сверху — если упало
+export function rollTo(el, text, up = true) {
+  if (el.textContent === String(text)) return;
+  el.textContent = text;
+  if (!el.style.display) el.style.display = 'inline-block';
+  nudge(el, [{ transform: `translateY(${up ? 0.55 : -0.55}em)`, opacity: 0 }, { transform: 'none', opacity: 1 }], 260);
+}
+// Отправлено (комментарий, сообщение в чат): значок «отправить» улетает вправо-вверх и возвращается слева
+export function flySend(btn) {
+  nudge(btn?.querySelector('.ic'), [
+    { transform: 'none', opacity: 1 },
+    { transform: 'translate(16px,-8px) scale(.6)', opacity: 0, offset: 0.4 },
+    { transform: 'translate(-12px,6px) scale(.6)', opacity: 0, offset: 0.41 },
+    { transform: 'none', opacity: 1 },
+  ], 520);
+}
+export function bump(el, dir = -1) {
+  nudge(el, [{ transform: 'none' }, { transform: `translateY(${dir * 4}px) scale(1.2)`, offset: 0.4 }, { transform: 'none' }]);
+}
+
+// Своя прокрутка у вложенного списка (чат): колесо не уходит родителю, только пока списку есть что листать.
+// overscroll-behavior: contain на элементе без переполнения в Chromium всё равно глушит колесо — поэтому
+// класс .scrollable ставится по факту переполнения (размер меняется — ResizeObserver, содержимое — refresh())
+export function containScroll(el) {
+  el.classList.add('scrollable-contain');
+  const refresh = () => el.classList.toggle('scrollable', el.scrollHeight > el.clientHeight + 1);
+  new ResizeObserver(refresh).observe(el);
+  el.refreshScroll = refresh;
+  return el;
 }
 
 export function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); return el; }
@@ -60,11 +120,17 @@ export function esc(s) {
 
 // --- Toast ---
 let toastTimer;
-export function toast(msg, ms = 2600) {
+// toast(текст, { ok }) — ok: действие удалось, слева прорисовывается галочка в круге
+export function toast(msg, { ms = 2600, ok = false } = {}) {
   let el = document.getElementById('toast');
   if (!el) el = h('div', { id: 'toast', role: 'status' });
   if (el.parentNode !== overlayHost()) overlayHost().append(el);
-  el.textContent = msg;
+  if (ok) {
+    const check = lottieIcon('check', { fallback: 'ic_check_circle_outline', cls: 'toast-ic', rest: 'draw', blank: true });
+    el.replaceChildren(check, h('span', null, msg));
+    check.play('draw');
+  } else el.textContent = msg;
+  el.classList.toggle('ok', ok);
   el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), ms);
@@ -114,7 +180,7 @@ export function sheet(title, items) {
       onclick: () => { d.close(); it.onClick && it.onClick(); },
     },
     it.dot ? h('span', { class: 'dot', style: { background: it.dot } }) : null,
-    it.icon ? icon(it.icon) : null,
+    it.icon ? actionIcon(it.icon) : null,
     h('span', null, it.label),
     it.checked ? icon('ic_check', 'end') : null);
     if (it.color) btn.style.color = it.color;
@@ -324,16 +390,157 @@ export function screenSkeleton(kind, { back = true } = {}) {
 }
 
 export function errorView(err, retry) {
-  return h('div', { class: 'empty' },
-    icon('ic_error', 'big'),
+  return softAppear(h('div', { class: 'empty' },
+    errorIcon(),
     h('div', { class: 'empty-title' }, 'Не удалось загрузить данные'),
     h('div', { class: 'empty-sub' }, 'Проверьте подключение к интернету'),
     retry ? h('button', { class: 'btn btn-tonal', onclick: retry }, 'Повторить') : null,
-    err ? h('div', { class: 'empty-err' }, String(err.message || err)) : null);
+    err ? h('div', { class: 'empty-err' }, String(err.message || err)) : null));
+}
+
+// Заглушки (.empty: пусто, ошибка, «войдите») — по центру всей области экрана (#viewport) и чуть выше
+// середины (оптический центр), при любой высоте шапки и заголовков над ними. Растягивает заглушку до низа
+// экрана CSS (app.css), здесь — нижний отступ: всё, что над заглушкой, плюс подъём; не больше, чем позволяет место.
+export function centerEmpties(viewport) {
+  let raf = 0;
+  const fit = () => {
+    raf = 0;
+    const lift = Math.max(16, Math.min(40, viewport.clientHeight * 0.04));
+    for (const e of viewport.querySelectorAll('.empty:not(.inline)')) {
+      const scr = e.closest('.screen');
+      if (!scr || !e.offsetParent) continue;
+      const kids = [...e.children].map((k) => k.getBoundingClientRect()).filter((b) => b.height);
+      if (!kids.length) continue;
+      const content = Math.max(...kids.map((b) => b.bottom)) - Math.min(...kids.map((b) => b.top));
+      const above = e.getBoundingClientRect().top - scr.getBoundingClientRect().top;
+      // верхний отступ заглушки 24 px — уравновешиваем снизу, иначе середина ниже на 12 px
+      const pb = Math.round(Math.max(0, Math.min(above + 24 + 2 * lift, e.clientHeight - content - 24)));
+      if (e.style.getPropertyValue('--empty-pb') !== `${pb}px`) e.style.setProperty('--empty-pb', `${pb}px`);
+    }
+  };
+  const later = () => { raf ||= requestAnimationFrame(fit); };
+  new MutationObserver(later).observe(viewport, { childList: true, subtree: true });
+  new ResizeObserver(later).observe(viewport);
+  later();
 }
 
 export function emptyView(title, sub, ic = 'ic_info_outline') {
-  return h('div', { class: 'empty' }, icon(ic, 'big'), h('div', { class: 'empty-title' }, title), sub ? h('div', { class: 'empty-sub' }, sub) : null);
+  return softAppear(h('div', { class: 'empty' }, emptyIcon(ic) || icon(ic, 'big'), h('div', { class: 'empty-title' }, title), sub ? h('div', { class: 'empty-sub' }, sub) : null));
+}
+// Заглушка, вставленная в уже показанный экран (список загрузился пустым, ошибка), проявляется мягко и чуть
+// поднимается — вставала рывком (текст сразу, привидение выскакивало из пустоты). Экран ещё въезжает или вкладка
+// проявляется — едет вместе с ними (своей анимации нет, одна анимация на переход)
+function softAppear(el) {
+  queueMicrotask(() => requestAnimationFrame(() => {
+    const scr = el.isConnected && el.closest('.screen');
+    if (!scr) return;
+    // что-то над ней уже проявляется (въезд экрана, переключение вкладки) — едет вместе, без второй анимации
+    for (let n = el.parentElement; n && n !== scr.parentElement; n = n.parentElement) if (n.getAnimations().some((a) => !(a instanceof CSSTransition) && a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity)) return;
+    if (joinEnter(el)) return;
+    nudge(el, [{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }], 420);
+  }));
+  return el;
+}
+
+// Въезд экрана — одна анимация (router.js render): двигается и проявляется контент под шапкой, шапка — на месте.
+// Web Animations по уже вставленным блокам — однократно (CSS-класс цеплялся и к блокам, вставленным позже:
+// контент, пришедший во время въезда, «въезжал» второй раз). enterScreen запоминает анимацию на экране, а
+// joinEnter — блоку, сменившему скелетон: пока въезд идёт, блок подхватывает его с того же места (одно движение,
+// скелетон незаметно становится контентом); въезд кончился — блок встаёт сразу, без своей анимации
+const ENTER = {
+  forward: [{ opacity: 0.35, transform: 'translateX(28px)' }, { opacity: 1, transform: 'none' }],
+  back: [{ opacity: 0.35, transform: 'translateX(-28px)' }, { opacity: 1, transform: 'none' }],
+  fade: [{ opacity: 0 }, { opacity: 1 }],
+};
+export function enterScreen(screen, direction) {
+  // экономия или окно не видно (свёрнуто, скрытое окно тестов): анимировать некому — в скрытом окне она к тому же
+  // замирала бы в первом кадре со сдвигом
+  if (document.documentElement.classList.contains('economy') || document.visibilityState !== 'visible') { screen.__enter = null; return; }
+  const frames = ENTER[direction] || ENTER.fade;
+  const timing = { duration: direction === 'fade' ? 220 : 280, easing: direction === 'fade' ? 'cubic-bezier(.4,0,.2,1)' : 'cubic-bezier(.2,.8,.2,1)', id: `screen-${direction}` };
+  const anims = enterParts(screen.firstElementChild).map((el) => stopLate(el.animate(frames, timing), timing.duration));
+  screen.__enter = { frames, timing, start: performance.now(), anims };
+}
+// что двигает въезд: всё под шапкой, кроме самой шапки и прилипающей к ней полосы вкладок (.tabbar — часть шапки:
+// въезжая из полупрозрачного, она мигала, «Профиль → Комментарии», «Списки просмотра») — у вкладок едет содержимое
+function enterParts(node) {
+  if (!node || node.matches('.appbar, .tabbar:not(.static)')) return [];
+  const bar = node.querySelector(':scope > .appbar, :scope > .tabbar:not(.static)');
+  if (!bar) return [node];
+  return [...node.children].flatMap((el) => (el.matches('.appbar, .tabbar:not(.static)') ? []
+    : el.querySelector(':scope > .tabbar:not(.static)') ? enterParts(el) : [el]));
+}
+// страховка: окно не рисует кадры (скрыто, свёрнуто посреди въезда) — анимация стоит в первом кадре со сдвигом и
+// полупрозрачностью; таймер идёт и без кадров — по нему въезд снимается, контент встаёт на место
+function stopLate(a, ms) { setTimeout(() => a.cancel(), ms + 200); return a; }
+// joinEnter(узел) → true, если подхватил идущий въезд
+export function joinEnter(node) {
+  const scr = node?.closest?.('.screen'); const en = scr && scr.__enter;
+  if (!en || !node.animate) return false;
+  const elapsed = performance.now() - en.start;
+  if (elapsed >= en.timing.duration) return false;
+  // начало — то же, что у въезда (startTime ведущей анимации): currentTime у новой анимации фиксируется только к
+  // следующему кадру, и подхвативший блок отставал от остальных на 1–3 кадра (дёргался назад)
+  const lead = en.anims.find((a) => a.startTime !== null && a.playState !== 'idle');
+  enterParts(node).forEach((el) => {
+    if (el.getAnimations().some((a) => a.id === en.timing.id && a.playState === 'running')) return; // уже въезжает
+    const a = el.animate(en.frames, en.timing);
+    if (lead) a.startTime = lead.startTime; else a.currentTime = elapsed;
+    en.anims.push(stopLate(a, en.timing.duration - elapsed));
+  });
+  return true;
+}
+
+// Контент сменил видимый скелетон: проявляется из полупрозрачного (а не подменяет его рывком — это и читалось
+// как мелькание). Web Animations — разово, при возврате на экран не повторяется
+// Шапка (.appbar) не проявляется: она и так была видна над скелетоном — её мигание читалось как блик
+export function swapIn(node) {
+  if (!node?.animate || document.documentElement.classList.contains('economy')) return node;
+  const fade = (el) => el.animate([{ opacity: 0.35 }, { opacity: 1 }], { duration: 200, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  if (node.matches?.('.appbar')) return node;
+  if (node.querySelector?.(':scope > .appbar')) [...node.children].forEach((el) => { if (!el.matches('.appbar')) fade(el); });
+  else fade(node);
+  return node;
+}
+
+// Тихое обновление экрана свежими данными (профиль, коллекция): новое дерево сравнивается с показанным, правятся
+// только изменившиеся тексты и атрибуты; где поменялась структура — заменяется только этот узел. Узлы со своим
+// состоянием не трогаются: Lottie (.lt), подгружаемые списки (.paged — обновляются сами), [data-keep]. Класс
+// .appeared сохраняется (иначе анимация появления проиграла бы заново). Обработчики остаются прежние — экран
+// должен собирать новое дерево из того же объекта данных (Object.assign свежих полей), а не из нового.
+// Изменения — плавные: число перекатывается, текст проявляется, полоса доезжает до новой ширины, новый узел
+// проявляется (а не выскакивает)
+const numOf = (s) => { const d = String(s).replace(/[^0-9.,-]/g, '').replace(',', '.'); return d && !Number.isNaN(Number(d)) ? Number(d) : null; };
+function smoothText(el, from, to) {
+  if (!el) return;
+  const a = numOf(from); const b = numOf(to);
+  if (a != null && b != null && a !== b && getComputedStyle(el).display !== 'inline') {
+    nudge(el, [{ transform: `translateY(${b > a ? 0.5 : -0.5}em)`, opacity: 0 }, { transform: 'none', opacity: 1 }], 280);
+  } else nudge(el, [{ opacity: 0.25 }, { opacity: 1 }], 300);
+}
+export function morph(a, b) {
+  // пункты списка с ключом (data-key — id): другой пункт на этом месте — не правим чужой, а заменяем
+  const keyDiff = a.nodeType === 1 && b.nodeType === 1 && (a.dataset.key || b.dataset.key) && a.dataset.key !== b.dataset.key;
+  if (keyDiff || a.nodeType !== b.nodeType || a.nodeName !== b.nodeName) { a.replaceWith(b); if (b.nodeType === 1) swapIn(b); return; }
+  if (a.nodeType === 3) { if (a.nodeValue !== b.nodeValue) { const was = a.nodeValue; a.nodeValue = b.nodeValue; smoothText(a.parentElement, was, b.nodeValue); } return; }
+  if (a.nodeType !== 1 || a.matches('.lt, .paged, [data-keep]')) return;
+  const oldW = a.style.width;
+  for (const { name, value } of [...b.attributes]) {
+    const v = name === 'class' && a.classList.contains('appeared') && !b.classList.contains('appeared') ? `${value} appeared` : value;
+    if (a.getAttribute(name) !== v) a.setAttribute(name, v);
+  }
+  for (const { name } of [...a.attributes]) if (!b.hasAttribute(name)) a.removeAttribute(name);
+  if (oldW && a.style.width && oldW !== a.style.width) nudge(a, [{ width: oldW }, { width: a.style.width }], 600);
+  const ac = [...a.childNodes]; const bc = [...b.childNodes];
+  // дети с ключами (список): сопоставляем по ключу — оставшиеся правятся на месте, новые проявляются, ушедшие убираются
+  if (bc.length && bc.every((n) => n.nodeType === 1 && n.dataset.key) && ac.every((n) => n.nodeType !== 1 || n.dataset.key)) {
+    const old = new Map(ac.filter((n) => n.nodeType === 1).map((n) => [n.dataset.key, n]));
+    const out = bc.map((n) => { const o = old.get(n.dataset.key); if (o) { old.delete(n.dataset.key); morph(o, n); return o; } swapIn(n); return n; });
+    a.replaceChildren(...out);
+    return;
+  }
+  if (ac.length !== bc.length) { a.replaceChildren(...bc); swapIn(a); return; }
+  ac.forEach((n, i) => morph(n, bc[i]));
 }
 
 // Подменённый тихим обновлением контент показываем сразу, без анимации появления (.appeared в app.css)
@@ -345,7 +552,11 @@ export function markAppeared(node) {
 }
 
 // --- Бесконечный список (ответ: {code, content, total_count, total_page_count, current_page}) ---
-export function pagedList({ load, render, container, empty, startPage = 0, grid = false, onFirst, pageSize = 25, skeleton: skKind }) {
+// ключ пункта списка (id) — для плавного тихого обновления (morph сопоставляет пункты по нему)
+const keyed = (node, it) => { if (node?.nodeType === 1 && it && it.id != null && !node.dataset.key) node.dataset.key = String(it.id); return node; };
+// remember — ключ памяти первой страницы (api.js remembered): повторный заход — сразу из памяти, свежая — фоном
+export function pagedList({ load: loadPage, render, container, empty, startPage = 0, grid = false, onFirst, pageSize = 25, skeleton: skKind, remember = null }) {
+  const load = remember ? (pg) => (pg === startPage ? remembered(remember, () => loadPage(pg), () => host.refresh()) : loadPage(pg)) : loadPage;
   const list = container || h('div', { class: grid ? 'grid' : 'list' });
   const sentinel = h('div', { class: 'sentinel' });
   let page = startPage; let loading = false; let ended = false; let count = 0;
@@ -369,7 +580,9 @@ export function pagedList({ load, render, container, empty, startPage = 0, grid 
       const items = Array.isArray(r) ? r : (r.content || []);
       if (page === startPage && onFirst) onFirst(r);
       list.style.display = '';
-      for (const it of items) { const node = render(it, count++); if (node) list.append(instant ? markAppeared(node) : node); }
+      // первая страница во время въезда экрана — подхватывает въезд, строки без своего проявления (одна анимация)
+      const joined = page === startPage && joinEnter(list);
+      for (const it of items) { const node = keyed(render(it, count++), it); if (node) list.append(instant || joined ? markAppeared(node) : node); }
       page += 1;
       // Следующая страница есть, только если пришло >= 25 элементов
       if (isEnd(r, items)) ended = true;
@@ -404,11 +617,12 @@ export function pagedList({ load, render, container, empty, startPage = 0, grid 
       for (const r of rs) {
         const items = Array.isArray(r) ? r : (r.content || []);
         if (loaded === 0 && onFirst) onFirst(r);
-        for (const it of items) { const node = render(it, n++); if (node) nodes.push(markAppeared(node)); }
+        for (const it of items) { const node = keyed(render(it, n++), it); if (node) nodes.push(markAppeared(node)); }
         loaded += 1;
         if (isEnd(r, items)) { end = true; break; }
       }
-      list.replaceChildren(...nodes);
+      // плавно: оставшиеся пункты правятся на месте, новые проявляются (morph по ключам)
+      if (list.children.length && nodes.length) morph(list, h(list.tagName.toLowerCase(), { class: list.className }, nodes)); else list.replaceChildren(...nodes);
       list.style.display = '';
       count = n; page = startPage + loaded; ended = end;
       sentinel.replaceChildren();
@@ -436,16 +650,35 @@ export function tabs(defs, { initial = 0, onChange, scrollable = true, cache: us
   const cache = new Map();
   let current = -1;
   const tabEls = () => [...bar.querySelectorAll('.tab')]; // в полосе могут быть и другие элементы (иконки)
+  // Полоска под выбранной вкладкой — одна на всю полосу и переезжает к новой вкладке (а не перепрыгивает).
+  // Первый раз (и при смене размеров) встаёт на место без перехода
+  const ink = h('span', { class: 'tab-ink', 'aria-hidden': 'true' });
+  bar.classList.add('has-ink');
+  const placeInk = (animate) => {
+    const t = tabEls()[current];
+    if (!t || !t.offsetWidth) return;
+    ink.classList.toggle('ready', !!animate && ink.dataset.placed === '1');
+    ink.style.width = `${t.offsetWidth}px`;
+    ink.style.transform = `translateX(${t.offsetLeft}px)`;
+    ink.dataset.placed = '1';
+  };
+  new ResizeObserver(() => placeInk(false)).observe(bar);
   function select(i) {
     if (i === current) return;
+    const first = current === -1;
     current = i;
     tabEls().forEach((b, j) => b.classList.toggle('active', j === i));
+    placeInk(true);
     if (!useCache || !cache.has(i)) cache.set(i, defs[i].render());
     body.replaceChildren(cache.get(i));
+    // переключили вкладку — содержимое проявляется (разово); при первом показе экрана — нет: там уже идёт въезд
+    // экрана, и своё проявление с нуля поверх него давало блик (экран «Списки просмотра»)
+    if (!first) nudge(cache.get(i), [{ opacity: 0 }, { opacity: 1 }], 200);
     tabEls()[i]?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
     onChange && onChange(i);
   }
   defs.forEach((d, i) => bar.append(h('button', { class: 'tab', role: 'tab', onclick: () => select(i) }, d.title)));
+  bar.append(ink);
   const root = h('div', { class: 'tabs' }, bar, body);
   root.select = select;
   root.refresh = (i = current) => { cache.delete(i); const c = current; current = -1; select(c); };

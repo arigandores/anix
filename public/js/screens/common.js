@@ -1,6 +1,7 @@
 // Общие элементы интерфейса: релизы, карточки, комментарии и т. п.
-import { h, icon, iconButton, img, toast, dialog, sheet, prompt, confirmDialog } from '../ui.js';
-import { A, auth, prefetchRelease, dropPrefetchedRelease } from '../api.js';
+import { h, icon, bump, rollTo, flySend, nudge, iconButton, img, toast, dialog, sheet, prompt, confirmDialog } from '../ui.js';
+import { bellIcon, eyeIcon } from '../lottie.js';
+import { A, auth, prefetchRelease, dropPrefetchedRelease, patchCachedRelease } from '../api.js';
 import { t, tp } from '../store.js';
 import { navigate } from '../router.js';
 import { partyEntryButton } from '../party/ui.js';
@@ -47,10 +48,34 @@ export function dateFull(sec) { const d = new Date(sec * 1000); return `${d.getD
 const LIST_BADGE = ['', 'status_watching', 'status_plan', 'status_completed', 'status_hold_on', 'status_dropped'];
 export const LIST_NAMES = ['list_no_watching', 'list_watching', 'list_plan', 'list_completed', 'list_hold_on', 'list_dropped'];
 
+// Где показан релиз (постер со статусом, строка с сердцем) — по id. Статус и избранное меняются на странице
+// релиза, а у списка (коллекция, поиск, главная…) свой объект релиза: releaseChanged() перерисовывает все виды,
+// в том числе на экранах, оставленных в истории (вернулись — статус уже на постере)
+const relViews = new Map(); // id → Set<WeakRef<элемент>>
+const relViewsGone = new FinalizationRegistry(({ id, ref }) => { const s = relViews.get(id); if (s) { s.delete(ref); if (!s.size) relViews.delete(id); } });
+function trackRelease(rel, el, paint) {
+  if (rel.id == null) return;
+  el.__relPaint = (changed) => { Object.assign(rel, changed); paint(); }; // свой объект релиза у вида — тоже свежий
+  const ref = new WeakRef(el);
+  if (!relViews.has(rel.id)) relViews.set(rel.id, new Set());
+  relViews.get(rel.id).add(ref);
+  relViewsGone.register(el, { id: rel.id, ref });
+}
+export function releaseChanged(rel) {
+  const changed = { profile_list_status: rel.profile_list_status, is_favorite: rel.is_favorite, favorites_count: rel.favorites_count };
+  patchCachedRelease(rel.id, changed); // и в памяти недавно открытых (api.js)
+  for (const ref of relViews.get(rel.id) || []) ref.deref()?.__relPaint(changed);
+}
+
 function posterEl(rel, cls = 'poster') {
   const p = h('div', { class: cls }, img(rel.image, '', rel.title_ru || ''));
-  const s = rel.profile_list_status;
-  if (s && s > 0 && s < 6) p.append(h('div', { class: `status-bubble s${s}` }, t(LIST_BADGE[s])));
+  const paint = () => {
+    p.querySelector(':scope > .status-bubble')?.remove();
+    const s = rel.profile_list_status;
+    if (s && s > 0 && s < 6) p.append(h('div', { class: `status-bubble s${s}` }, t(LIST_BADGE[s])));
+  };
+  paint();
+  trackRelease(rel, p, paint);
   return p;
 }
 
@@ -66,7 +91,11 @@ function metaRow(rel, { small = false } = {}) {
     if (parts.length) out.append(h('span', null, '•'));
     out.append(h('span', { class: 'row', style: { gap: '2px' } }, gradeText(rel.grade), icon('ic_star_rate', 'xs')));
   }
-  if (rel.is_favorite) out.append(icon('ic_favorite', 'sm heart'));
+  const fav = h('span', { style: { display: 'contents' } }); // пустой — не добавляет отступ в строке
+  const paint = () => fav.replaceChildren(...(rel.is_favorite ? [icon('ic_favorite', 'sm heart')] : []));
+  paint();
+  out.append(fav);
+  trackRelease(rel, fav, paint);
   return out;
 }
 
@@ -97,6 +126,16 @@ function hoverPrefetch(el, rel) {
     }, 200);
   });
   el.addEventListener('mouseleave', () => clearTimeout(tm));
+  // нажали кнопку мыши и держат на месте 40 мс — это клик, а не прокрутка перетаскиванием (dragscroll, порог 6 px):
+  // грузим, не дожидаясь отпускания (~60 мс выигрыша — чаще успевает к переходу). Сдвинули — это прокрутка, не грузим
+  let pressTm = 0; let px = 0; let py = 0;
+  el.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    px = e.clientX; py = e.clientY; clearTimeout(pressTm);
+    pressTm = setTimeout(() => { if (!document.querySelector('.dragging')) prefetchRelease(rel.id, { now: true }); }, 40);
+  });
+  el.addEventListener('pointermove', (e) => { if (pressTm && (Math.abs(e.clientX - px) > 5 || Math.abs(e.clientY - py) > 5)) { clearTimeout(pressTm); pressTm = 0; } });
+  el.addEventListener('pointerup', () => { clearTimeout(pressTm); pressTm = 0; });
   return el;
 }
 
@@ -171,9 +210,10 @@ export async function chooseListStatus(rel, onChanged) {
           toast(t('format_removed_from_list', t(LIST_NAMES[cur])));
         } else {
           await A.listAdd(i, rel.id);
-          toast(t('format_added_to_list', t(LIST_NAMES[i])));
+          toast(t('format_added_to_list', t(LIST_NAMES[i])), { ok: true });
         }
         rel.profile_list_status = i;
+        releaseChanged(rel); // статус на постерах в списках (и на экранах в истории)
         dropPrefetchedRelease(rel.id);
         onChanged && onChanged(i);
       } catch (e) { toast(t('error_load')); }
@@ -181,8 +221,11 @@ export async function chooseListStatus(rel, onChanged) {
   })));
 }
 
-export async function toggleFavorite(rel, onChanged) {
+// onTry(новое состояние) — до запроса: кнопка сразу переключается (с анимацией); не удалось — onChanged
+// со старым состоянием возвращает её обратно
+export async function toggleFavorite(rel, onChanged, onTry) {
   if (!requireAuth()) return;
+  onTry && onTry(!rel.is_favorite);
   try {
     if (rel.is_favorite) {
       await A.favDelete(rel.id);
@@ -191,11 +234,12 @@ export async function toggleFavorite(rel, onChanged) {
     } else {
       await A.favAdd(rel.id);
       rel.is_favorite = true; rel.favorites_count = (rel.favorites_count || 0) + 1;
-      toast(t('toast_added_to_favorites') !== 'toast_added_to_favorites' ? t('toast_added_to_favorites') : 'Добавлено в Избранное');
+      toast(t('toast_added_to_favorites') !== 'toast_added_to_favorites' ? t('toast_added_to_favorites') : 'Добавлено в Избранное', { ok: true });
     }
     dropPrefetchedRelease(rel.id);
+    releaseChanged(rel); // сердце в строках списков
     onChanged && onChanged(rel.is_favorite);
-  } catch { toast(t('error_load')); }
+  } catch { toast(t('error_load')); onChanged && onChanged(rel.is_favorite); }
 }
 
 // Быстрое меню релиза
@@ -215,16 +259,26 @@ export function releaseSheet(rel) {
   ]);
 }
 
-// Колокольчик с бейджем notification/count (тулбары Главной, Обзора, Закладок, Ленты, Профиля)
+// Колокольчик с бейджем notification/count (тулбары Главной, Обзора, Закладок, Ленты, Профиля).
+// Звенит и бейдж выпрыгивает, только когда непрочитанных стало больше, чем видели в прошлый раз, — не при
+// каждой сборке шапки (у каждой вкладки своя) и не при возврате на вкладку
+let notifSeen = 0;
 function notifButton() {
-  const btn = h('button', { class: 'icon-btn', title: 'Уведомления', style: { position: 'relative' }, onclick: () => { if (requireAuth()) navigate('notifications'); } }, icon('ic_bell'));
+  const bell = bellIcon(); // звенит при наведении и когда есть непрочитанные
+  // первая страница уведомлений — с нажатия кнопки мыши (успевает за ожидание перехода, без мелькания скелетона)
+  const btn = h('button', { class: 'icon-btn', title: 'Уведомления', style: { position: 'relative' }, onclick: () => { if (requireAuth()) navigate('notifications'); },
+    onpointerdown: (e) => { if (e.button === 0 && auth.loggedIn) import('./notifications.js').then((m) => m.prefetchNotifications()).catch(() => {}); } }, bell);
   if (auth.loggedIn) {
     A.notifCount().then((r) => {
       if (r.count > 0) {
-        btn.append(h('span', {
-          style: { position: 'absolute', top: '4px', right: '4px', minWidth: '16px', height: '16px', borderRadius: '8px', background: 'var(--carmine)', color: '#fff', fontSize: '10px', lineHeight: '16px', textAlign: 'center', padding: '0 4px' },
-        }, r.count > 99 ? '99+' : String(r.count)));
+        const badge = h('span', { class: 'notif-badge' }, r.count > 99 ? '99+' : String(r.count));
+        btn.append(badge);
+        if (r.count > notifSeen && !document.documentElement.classList.contains('economy')) {
+          bell.ring();
+          badge.animate([{ transform: 'scale(0)' }, { transform: 'scale(1.25)', offset: 0.6 }, { transform: 'none' }], { duration: 400, easing: 'cubic-bezier(.2,.8,.2,1)' });
+        }
       }
+      notifSeen = r.count || 0;
     }).catch(() => {});
   }
   return btn;
@@ -273,7 +327,19 @@ export function profileName(profile) {
 // ---------- Комментарии (CommentModel) ----------
 const COMMENT_PREFIX = { release: 'release', collection: 'collection', article: 'article' };
 
-export function commentItem(c, { kind = 'release', release, onReply, onChanged, showTarget = false, compact = false } = {}) {
+// Ответы в ветке (под комментарием, а не на отдельном экране): загрузка и отправка по видам комментариев
+const THREAD_API = {
+  release: { replies: A.releaseCommentReplies, add: A.releaseCommentAdd },
+  collection: { replies: A.collectionCommentReplies, add: A.collectionCommentAdd },
+  article: { replies: A.articleCommentReplies, add: A.articleCommentAdd },
+};
+// id того, к чему комментарий (релиз, коллекция, запись) — нужен, чтобы отправить ответ
+const ownerIdOf = (c) => { const e = c.release || c.collection || c.article; return (e && typeof e === 'object' ? e.id : null) ?? c.release_id ?? c.collection_id ?? c.article_id ?? null; };
+const repliesLabel = (n) => (tp('replies', n) !== String(n) ? `Показать ${tp('replies', n)}` : `Показать ${n} ответов`);
+
+// c — комментарий; reply — ответ в ветке (меньше, без своей ветки; «Ответить» открывает поле в ветке родителя);
+// ownerId — id релиза/коллекции/записи (для ответов; без него — ищется в самом комментарии); expand — ветка сразу открыта
+export function commentItem(c, { kind = 'release', release, onReply, onChanged, onRemoved, showTarget = false, compact = false, reply = false, ownerId = null, expand = false } = {}) {
   const prefix = COMMENT_PREFIX[kind];
   const msg = h('div', { class: 'msg' });
   const hidden = !c.is_deleted && (c.is_spoiler || c.vote_count <= -5);
@@ -299,11 +365,13 @@ export function commentItem(c, { kind = 'release', release, onReply, onChanged, 
       if (r.code === 3) return toast('Похоже, вы зарегистрировались совсем недавно — Anixart разрешает ставить оценки чуть позже.');
       if (r.code === 402) return toast('Вы не можете голосовать, поскольку ваш аккаунт заблокирован');
       const delta = { '0>2': 1, '0>1': -1, '2>2': -1, '1>1': 1, '1>2': 2, '2>1': -2 }[`${old}>${v}`] || 0;
+      const old0 = c.vote_count || 0;
       c.vote_count = (c.vote_count || 0) + delta;
       c.vote = old === v ? 0 : v;
-      score.textContent = String(c.vote_count).replace('-', '–');
+      rollTo(score, String(c.vote_count).replace('-', '–'), c.vote_count > old0); // число въезжает снизу/сверху
       score.className = c.vote_count > 0 ? 'vote-pos' : c.vote_count < 0 ? 'vote-neg' : 'muted3';
       minus.classList.toggle('on', c.vote === 1); plus.classList.toggle('on', c.vote === 2);
+    if (c.vote) bump((c.vote === 2 ? plus : minus).firstChild, c.vote === 2 ? -1 : 1);
     } catch { toast(t('error_load')); }
   }
   minus.onclick = (e) => { e.stopPropagation(); vote(1); };
@@ -315,28 +383,127 @@ export function commentItem(c, { kind = 'release', release, onReply, onChanged, 
     else if (c.posted_at_episode > 0 && ((release.status?.id ?? release.status_id) === 2 || c.posted_at_episode !== release.episodes_total)) episodeCtx = `На момент выхода ${c.posted_at_episode} серии`;
   }
 
-  const tools = h('div', { class: 'tools' }, minus, score, plus,
-    onReply ? h('button', { onclick: (e) => { e.stopPropagation(); onReply(c); } }, 'Ответить') : null,
-    c.reply_count > 0 && !c.is_reply ? h('button', { onclick: (e) => { e.stopPropagation(); navigate('replies', { kind, id: c.id, release }); } }, tp('replies', c.reply_count) !== String(c.reply_count) ? `Показать ${tp('replies', c.reply_count)}` : `Показать ${c.reply_count} ответов`) : null);
+  // --- ветка ответов (только у комментария верхнего уровня) ---
+  const api = THREAD_API[kind];
+  const owner = ownerId ?? ownerIdOf(c);
+  const canThread = !reply && !c.is_reply && !compact && !showTarget && !!api;
+  const canReply = !compact && !showTarget && !c.is_deleted && (reply ? !!onReply : canThread && owner != null);
+  let thread = null; let threadOpen = false; let loaded = false; let page = 0; let composerEl = null;
+  const toggleBtn = canThread ? h('button', { class: 'thread-toggle', onclick: (e) => { e.stopPropagation(); if (threadOpen) closeThread(); else openThread(); } }) : null;
+  const paintToggle = () => {
+    if (!toggleBtn) return;
+    toggleBtn.style.display = c.reply_count > 0 ? '' : 'none';
+    toggleBtn.textContent = threadOpen ? 'Скрыть ответы' : repliesLabel(c.reply_count);
+  };
+  const replyEl = (r) => commentItem(r, {
+    kind, release, reply: true, onReply: (rc) => openComposer(rc),
+    // ответ удалён — в ветке на один меньше
+    onRemoved: () => { c.reply_count = Math.max(0, (c.reply_count || 1) - 1); paintToggle(); if (!c.reply_count) closeThread(); },
+  });
+  async function loadReplies(more = false) {
+    if (!more) { page = 0; thread.list.replaceChildren(h('div', { class: 'sk sk-line', style: { width: '40%', margin: '10px 0' } })); }
+    let r;
+    try { r = await api.replies(c.id, page, 2); } catch { thread.list.replaceChildren(h('div', { class: 'muted' }, t('error_load'))); return []; }
+    const items = r.content || [];
+    if (!more) thread.list.replaceChildren();
+    items.forEach((x) => thread.list.append(replyEl(x)));
+    loaded = true;
+    const hasMore = items.length >= 25 && (r.total_page_count == null || page + 1 < r.total_page_count);
+    thread.more.style.display = hasMore ? '' : 'none';
+    return items;
+  }
+  function ensureThread() {
+    if (thread) return;
+    const list = h('div', { class: 'thread-list' });
+    const more = h('button', { class: 'thread-more', style: { display: 'none' }, onclick: (e) => { e.stopPropagation(); page += 1; loadReplies(true); } }, 'Ещё ответы');
+    thread = h('div', { class: 'comment-thread' }, list, more);
+    thread.list = list; thread.more = more;
+    body.append(thread);
+  }
+  async function openThread() {
+    ensureThread(); threadOpen = true; thread.hidden = false; paintToggle();
+    if (!loaded) await loadReplies();
+  }
+  function closeComposer() { composerEl?.remove(); composerEl = null; }
+  function closeThread() { threadOpen = false; if (thread) thread.hidden = true; closeComposer(); paintToggle(); }
+  // поле ответа — в конце ветки; ответ на ответ — «ник, » в начале текста, как в приложении Anixart
+  async function openComposer(to) {
+    if (!requireAuth()) return;
+    ensureThread(); threadOpen = true; thread.hidden = false; paintToggle();
+    if (!loaded && c.reply_count > 0) loadReplies();
+    const prefixText = to?.profile?.login ? `${to.profile.login}, ` : '';
+    closeComposer();
+    composerEl = commentComposer({
+      inline: true, placeholder: to ? `Ответ для ${to.profile?.login || 'участника'}` : 'Ваш ответ', prefix: prefixText,
+      onCancel: closeComposer,
+      onSend: async (b) => {
+        const req = { ...b, parentCommentId: c.id, replyToProfileId: to?.profile?.id ?? null };
+        if (to && prefixText && req.message.startsWith(prefixText)) req.message = prefixText + req.message.slice(prefixText.length).replace(/^./, (x) => x.toLowerCase());
+        const res = await api.add(owner, req).catch(() => ({ code: -1 }));
+        if (res.code !== 0) { toast((await import('./release.js')).commentAddError(res.code)); return false; }
+        c.reply_count = (c.reply_count || 0) + 1;
+        closeComposer();
+        // ответ сразу виден в ветке: перезагружаем её (новый — последним) и подсвечиваем
+        await loadReplies();
+        while (thread.more.style.display !== 'none' && page < 20) { page += 1; await loadReplies(true); }
+        paintToggle();
+        const last = thread.list.lastElementChild;
+        if (last) {
+          last.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          nudge(last, [{ backgroundColor: 'color-mix(in srgb, var(--carmine) 16%, transparent)' }, { backgroundColor: 'transparent' }], 1600);
+        }
+        return true;
+      },
+    });
+    thread.append(composerEl);
+    composerEl.focus();
+  }
+  const replyBtn = canReply ? h('button', { onclick: (e) => { e.stopPropagation(); if (reply) onReply(c); else openComposer(null); } }, 'Ответить') : null;
+  const tools = h('div', { class: 'tools' }, minus, score, plus, replyBtn, toggleBtn);
+  paintToggle();
 
-  const el = h('div', { class: 'comment', oncontextmenu: (e) => { e.preventDefault(); commentMenu(c, kind, prefix, onChanged); } },
-    avatarEl(c.profile),
-    h('div', { class: 'body' },
-      h('div', { class: 'who' }, profileName(c.profile), h('span', { class: 'when' }, relTime(c.timestamp)), c.is_edited ? icon('ic_pencil', 'xs muted3') : null,
+  const body = h('div', { class: 'body' },
+      h('div', { class: 'who' }, profileName(c.profile), h('span', { class: 'when' }, relTime(c.timestamp)), c.is_edited ? icon('ic_pencil', 'xs muted3 edited') : null,
         h('div', { class: 'grow' }),
-        iconButton('ic_more', 'Ещё', (e) => { e.stopPropagation(); commentMenu(c, kind, prefix, onChanged); }, 'sm')),
+        iconButton('ic_more', 'Ещё', (e) => { e.stopPropagation(); commentMenu(c, kind, prefix, menuHooks); }, 'sm')),
       showTarget && c.release ? h('div', { class: 'linkish', style: { fontSize: '13px' }, onclick: () => openRelease(c.release) }, c.release.title_ru) : null,
       episodeCtx ? h('div', { class: 'muted3', style: { fontSize: '12px' } }, episodeCtx) : null,
       msg,
-      compact ? null : tools));
+      compact ? null : tools);
+  // Изменили или удалили — карточка обновляет себя сама (раньше текст оставался прежним, а удалённый — на странице).
+  // Удалённый без ответов сворачивается и исчезает; с ответами — «Комментарий удалён», ветка остаётся.
+  const menuHooks = {
+    onEdited: () => {
+      msg.replaceChildren(linkify(c.message));
+      if (!body.querySelector('.who .edited')) body.querySelector('.who .when')?.after(icon('ic_pencil', 'xs muted3 edited'));
+      onChanged && onChanged();
+    },
+    onDeleted: () => {
+      onChanged && onChanged();
+      if (!reply && c.reply_count > 0) {
+        msg.replaceChildren(h('i', { class: 'muted' }, t('comment_deleted') !== 'comment_deleted' ? t('comment_deleted') : 'Комментарий удалён'));
+        [minus, score, plus, replyBtn].forEach((x) => x?.remove());
+        return;
+      }
+      onRemoved && onRemoved();
+      el.dispatchEvent(new CustomEvent('comment-removed', { bubbles: true, detail: { reply } })); // экран комментариев: счётчик
+      const done = () => el.remove();
+      const a = nudge(el, [{ opacity: 1, height: `${el.offsetHeight}px` }, { opacity: 0, height: '0px', paddingTop: '0px', paddingBottom: '0px' }], 280);
+      if (a) { el.style.overflow = 'hidden'; a.onfinish = done; } else done();
+    },
+  };
+  const el = h('div', { class: `comment ${reply ? 'reply' : ''}`, oncontextmenu: (e) => { e.preventDefault(); e.stopPropagation(); commentMenu(c, kind, prefix, menuHooks); } },
+    avatarEl(c.profile, reply ? 'avatar sm' : 'avatar'),
+    body);
+  if (expand && canThread) openThread();
   return el;
 }
 
-function commentMenu(c, kind, prefix, onChanged) {
+function commentMenu(c, kind, prefix, { onEdited, onDeleted } = {}) {
   if (c.is_deleted) return;
   const mine = auth.profileId && c.profile?.id === auth.profileId;
   sheet('Комментарий', [
-    { label: 'Скопировать', icon: 'ic_copy', onClick: () => { navigator.clipboard?.writeText(c.message || ''); toast('Скопировано'); } },
+    { label: 'Скопировать', icon: 'ic_copy', onClick: () => { navigator.clipboard?.writeText(c.message || ''); toast('Скопировано', { ok: true }); } },
     mine ? {
       label: 'Редактировать', icon: 'ic_edit_outline',
       onClick: async () => {
@@ -347,7 +514,7 @@ function commentMenu(c, kind, prefix, onChanged) {
           const path = `${prefix}/comment/edit/${c.id}`;
           const { api } = await import('../api.js');
           const r = await api.post(path, { message: text, spoiler: !!c.is_spoiler });
-          if (r.code === 0) { c.message = text; c.is_edited = true; onChanged && onChanged(); toast('Сохранено'); } else toast(t('error_load'));
+          if (r.code === 0) { c.message = text; c.is_edited = true; onEdited && onEdited(); toast('Сохранено', { ok: true }); } else toast(t('error_load'));
           void fn;
         } catch { toast(t('error_load')); }
       },
@@ -357,7 +524,7 @@ function commentMenu(c, kind, prefix, onChanged) {
       onClick: async () => {
         if (!(await confirmDialog('Удалить комментарий?', 'Это действие нельзя отменить.', 'Удалить'))) return;
         const fn = kind === 'collection' ? A.collectionCommentDelete : kind === 'article' ? A.articleCommentDelete : A.releaseCommentDelete;
-        try { const r = await fn(c.id); if (r.code === 0) { c.is_deleted = true; onChanged && onChanged(); toast('Комментарий удалён'); } else toast(t('error_load')); } catch { toast(t('error_load')); }
+        try { const r = await fn(c.id); if (r.code === 0) { c.is_deleted = true; onDeleted && onDeleted(); toast('Комментарий удалён', { ok: true }); } else toast(t('error_load')); } catch { toast(t('error_load')); }
       },
     } : null,
     !mine ? { label: 'Пожаловаться', icon: 'ic_alert', onClick: () => report(`comment/${prefix}`, c.id) } : null,
@@ -406,14 +573,25 @@ export function linkify(text) {
 
 // Комментарий-композер (5..720 символов)
 // top — над списком (страница аниме, «Комментарии»): без прилипания к низу экрана, разделитель снизу
-export function commentComposer({ onSend, placeholder = 'Ваш комментарий', top = false }) {
-  const ta = h('textarea', { class: 'input', rows: 1, placeholder, maxlength: 720 });
-  const spoiler = h('button', { class: 'chip', type: 'button' }, 'Спойлер');
+// Поле комментария: одна плашка — текст (сам подрастает), справа «Спойлер» (переключатель-значок) и «Отправить».
+// top — над списком (на экране комментариев ещё и закреплено под шапкой: sticky); inline — ответ в ветке
+// (без рамки снизу, Esc — закрыть). Отправка — Ctrl+Enter или кнопкой
+export function commentComposer({ onSend, placeholder = 'Ваш комментарий', top = false, sticky = false, inline = false, prefix = '', onCancel } = {}) {
+  const ta = h('textarea', { class: 'composer-ta', rows: 1, placeholder, maxlength: 720, 'aria-label': placeholder });
   let isSpoiler = false;
-  spoiler.onclick = () => { isSpoiler = !isSpoiler; spoiler.classList.toggle('on', isSpoiler); };
-  let reply = null;
-  const replyBar = h('div', { class: 'muted', style: { display: 'none', fontSize: '13px', padding: '0 20px' } });
-  const send = h('button', { class: 'icon-btn accent', title: 'Отправить' }, icon('ic_send'));
+  // значок — глаз: спойлер включён — перечёркивается (прорисовка), выключен — открывается (lottie.js eyeIcon)
+  const eye = eyeIcon(false);
+  const spoiler = h('button', { class: 'icon-btn sm composer-spoiler', type: 'button', 'aria-pressed': 'false' }, eye);
+  const setSpoiler = (v) => {
+    isSpoiler = v; eye.set(v);
+    spoiler.classList.toggle('on', v); spoiler.setAttribute('aria-pressed', String(v));
+    spoiler.title = v ? 'Спойлер: текст будет скрыт до нажатия (нажмите, чтобы выключить)' : 'Спойлер: скрыть текст до нажатия';
+    ta.placeholder = v ? 'Комментарий со спойлером' : placeholder;
+  };
+  setSpoiler(false);
+  spoiler.onclick = () => setSpoiler(!isSpoiler);
+  const send = h('button', { class: 'icon-btn sm accent composer-send', title: 'Отправить (Ctrl+Enter)' }, icon('ic_send'));
+  const fit = () => { ta.style.height = 'auto'; ta.style.height = `${Math.min(160, ta.scrollHeight)}px`; };
   async function doSend() {
     if (!requireAuth()) return;
     const text = ta.value.trim();
@@ -421,22 +599,20 @@ export function commentComposer({ onSend, placeholder = 'Ваш коммента
     if (text.length > 720) return toast('Ваш комментарий слишком длинный. Краткость – сестра таланта!');
     send.disabled = true;
     try {
-      const ok = await onSend({ message: text, spoiler: isSpoiler, parentCommentId: reply?.parentCommentId ?? null, replyToProfileId: reply?.replyToProfileId ?? null });
-      if (ok) { ta.value = ''; isSpoiler = false; spoiler.classList.remove('on'); setReply(null); }
+      const ok = await onSend({ message: text, spoiler: isSpoiler, parentCommentId: null, replyToProfileId: null });
+      if (ok) { flySend(send); ta.value = ''; fit(); setSpoiler(false); }
     } finally { send.disabled = false; }
   }
   send.onclick = doSend;
-  ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) doSend(); });
-  ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = `${Math.min(160, ta.scrollHeight)}px`; });
-  function setReply(r, prefixText) {
-    reply = r;
-    replyBar.style.display = r ? 'block' : 'none';
-    replyBar.replaceChildren(r ? h('span', null, `Ответ: ${r.login || ''} `, h('button', { class: 'linkish', onclick: () => setReply(null) }, '✕')) : '');
-    if (r && prefixText && !ta.value.startsWith(prefixText)) ta.value = prefixText + ta.value;
-    if (r) ta.focus();
-  }
-  const root = h('div', null, replyBar, h('div', { class: `comment-input ${top ? 'top' : ''}` }, ta, spoiler, send));
-  root.setReply = setReply;
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); doSend(); }
+    else if (e.key === 'Escape' && onCancel) { e.stopPropagation(); onCancel(); }
+  });
+  ta.addEventListener('input', fit);
+  if (prefix) ta.value = prefix;
+  const root = h('div', { class: `comment-input ${top ? 'top' : ''} ${sticky ? 'sticky' : ''} ${inline ? 'inline' : ''}` },
+    h('div', { class: 'composer-box' }, ta, spoiler, send));
+  root.focus = () => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); };
   return root;
 }
 

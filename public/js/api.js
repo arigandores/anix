@@ -293,11 +293,13 @@ export const A = {
 // ответ живёт 30 с и отдаётся экрану релиза один раз.
 const relPrefetch = new Map();
 let prefetchTimes = [];
-export function prefetchRelease(id) {
-  if (!id || relPrefetch.has(id)) return;
+// { now } — нажатие (не наведение): не ждёт другой предзагрузки, но тоже в пределах лимита (30 в минуту)
+export function prefetchRelease(id, { now: pressed = false } = {}) {
+  if (!id || relPrefetch.has(id) || recentRelease(id)) return;
   const now = Date.now();
   prefetchTimes = prefetchTimes.filter((x) => now - x < 60000);
-  if (prefetchTimes.length >= 15 || [...relPrefetch.values()].some((x) => x.pending)) return;
+  if (prefetchTimes.length >= (pressed ? 30 : 15)) return;
+  if (!pressed && [...relPrefetch.values()].some((x) => x.pending)) return;
   prefetchTimes.push(now);
   const e = { at: now, pending: true };
   e.p = A.release(id, true);
@@ -311,5 +313,57 @@ export function takePrefetchedRelease(id) {
   return e && Date.now() - e.at < 30000 ? e.p : null;
 }
 export function dropPrefetchedRelease(id) { relPrefetch.delete(id); }
+
+// Недавно открытые релизы (5 минут, до 30 штук): повторный заход — сразу из памяти, без скелетона, а свежие
+// данные приходят фоном к следующему разу. Раньше скелетон появлялся «через раз»: успеют ли данные за ожидание
+// перехода, зависело от предзагрузки при наведении и скорости сети
+const recent = new Map();
+const RECENT_MS = 5 * 60000;
+let cacheGen = 0;
+export const releaseGen = () => cacheGen;
+export function recentRelease(id) {
+  const e = recent.get(id);
+  if (!e || Date.now() - e.at > RECENT_MS) { recent.delete(id); return null; }
+  return e.r;
+}
+// gen — поколение памяти на момент запроса (releaseGen()): ответ, запрошенный до смены аккаунта, не кладётся
+export function rememberRelease(r, gen = cacheGen) {
+  const id = r?.release?.id;
+  if (!id || r.code !== 0 || gen !== cacheGen) return;
+  recent.delete(id); recent.set(id, { r, at: Date.now() });
+  if (recent.size > 30) recent.delete(recent.keys().next().value);
+}
+// статус, избранное и т. п. сменились (common.js releaseChanged) — и в памяти тоже
+export function patchCachedRelease(id, fields) { const e = recent.get(id); if (e) Object.assign(e.r.release, fields); }
+// Память недавно показанных экранов (профиль, коллекция и её релизы, «Популярное»): remembered(ключ, загрузка,
+// onFresh) — повторный заход сразу из памяти (без скелетона), свежие данные фоном; изменились — onFresh(свежие),
+// экран тихо обновляется. Первый заход — обычная загрузка. Те же правила, что у недавно открытых релизов
+const reads = new Map();
+// Предзагрузка первой страницы экрана с нажатия кнопки мыши (до отпускания и перехода ~100 мс — иначе ответ не
+// успевал за ожидание перехода и мелькал скелетон: «Комментарии», уведомления). remembered() с тем же ключом
+// подхватывает уже идущий запрос, а не шлёт второй
+const inflight = new Map();
+const INFLIGHT_MS = 15000;
+export function prefetchRead(key, load) {
+  const e = inflight.get(key);
+  if (e && e.gen === cacheGen && Date.now() - e.at < INFLIGHT_MS) return e.p;
+  const p = load(); p.catch(() => {});
+  inflight.set(key, { p, at: Date.now(), gen: cacheGen });
+  return p;
+}
+export function remembered(key, load, onFresh) {
+  const gen = cacheGen; const e = reads.get(key);
+  const pre = inflight.get(key); inflight.delete(key);
+  const p = (pre && pre.gen === cacheGen && Date.now() - pre.at < INFLIGHT_MS ? pre.p : load()).then((d) => {
+    if (gen === cacheGen) { reads.delete(key); reads.set(key, { d, at: Date.now(), json: JSON.stringify(d) }); if (reads.size > 40) reads.delete(reads.keys().next().value); }
+    return d;
+  });
+  if (!e || Date.now() - e.at > RECENT_MS) return p;
+  p.then((d) => { if (gen === cacheGen && onFresh && JSON.stringify(d) !== e.json) onFresh(d); }, () => {});
+  return Promise.resolve(e.d);
+}
+
+// в памяти — и личные поля (статус, избранное, оценка): другой аккаунт их видеть не должен
+window.addEventListener('auth-changed', () => { cacheGen += 1; recent.clear(); relPrefetch.clear(); reads.clear(); inflight.clear(); });
 
 export default api;

@@ -1,6 +1,6 @@
 // Навигация как в мобильном приложении: у каждой вкладки нижнего меню свой стек экранов,
 // предыдущие экраны сохраняются вместе с прокруткой. Кнопка «Назад» браузера/мыши = pop.
-import { h, screenSkeleton, errorView, skeletonSettled, skRevealDelay, markAppeared } from './ui.js';
+import { h, screenSkeleton, errorView, skeletonSettled, skRevealDelay, markAppeared, enterScreen, joinEnter } from './ui.js';
 
 const screens = new Map();
 export const TABS = ['home', 'discover', 'bookmarks', 'feed', 'profile', 'ai'];
@@ -53,7 +53,13 @@ function makeEntry(name, params) {
   entry.refreshPlaceholder = () => { if (wrap.firstChild === ph) { ph = placeholder(name, params); wrap.replaceChildren(ph); } };
   // Контент, готовый до показа экрана, появляется вместе с ним (въезд экрана), без своей анимации появления
   // Контент, сменивший видимый скелетон, — тоже сразу, без проявления (skeletonSettled в ui.js)
-  const put = (node, instant) => { if (instant || !wrap.isConnected) markAppeared(node).classList.add('appeared'); wrap.replaceChildren(node); };
+  // контент сменил заготовку: пока экран въезжает — подхватывает въезд с того же места (одна анимация), после —
+  // встаёт сразу; без своего проявления (оно было второй анимацией)
+  const put = (node, instant) => {
+    if (instant || !wrap.isConnected) markAppeared(node).classList.add('appeared');
+    wrap.replaceChildren(node);
+    if (joinEnter(node)) markAppeared(node).classList.add('appeared');
+  };
   entry.ready = Promise.resolve().then(() => factory(params || {}, ctx)).then(async (node) => {
     put(node, await skeletonSettled(wrap));
   }).catch(async (e) => {
@@ -85,8 +91,9 @@ function showWhenReady(entry, direction) {
     done = true;
     if (pending === entry) { pending = null; viewport.inert = false; }
     if (topEntry() !== entry) return; // ушли назад или на другую вкладку, пока грузилось
-    // −600 мс: проявление и минимальный показ скелетона уже «прошли» — он въезжает вместе с экраном
-    // и уступает контенту сразу, как тот придёт (skeletonSettled не ждёт)
+    // не успели — скелетон въезжает вместе с экраном (−600 мс: проявление и минимальный показ «уже прошли»):
+    // без голого экрана. Пришедший контент подхватывает въезд экрана (ui.js joinEnter) — одна анимация.
+    // (Скелетон с обычной задержкой 250 мс давал пустой экран на 100–250 мс, а потом — весь контент разом.)
     if (timedOut) {
       entry.refreshPlaceholder();
       entry.node.querySelectorAll('.sk-root, .sk, .spinner-wrap, .load-reveal').forEach((el) => el.style.setProperty('--sk-delay', '-600ms'));
@@ -110,10 +117,8 @@ function saveScroll() { const e = topEntry(); if (e) e.scroll = viewport.scrollT
 function render(direction = 'fade') {
   const e = topEntry();
   if (!e) return;
-  e.node.classList.remove('enter-forward', 'enter-back', 'enter-fade');
-  void e.node.offsetWidth; // перезапуск анимации
-  e.node.classList.add(`enter-${direction}`);
   viewport.replaceChildren(e.node);
+  enterScreen(e.node, direction); // одна анимация въезда — контент под шапкой (ui.js)
   viewport.scrollTop = e.scroll || 0;
   requestAnimationFrame(() => { viewport.scrollTop = e.scroll || 0; });
   // onShow({returning}) — экран показан повторно (вернулись назад или на вкладку): можно обновить данные

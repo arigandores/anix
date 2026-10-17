@@ -120,7 +120,7 @@ registerScreen('filter', ({ customTab = false, form: initial }) => {
       onclick: () => {
         if (customTab) {
           setCustomFilter(isEmpty() ? null : { ...f });
-          toast('Сохранено');
+          toast('Сохранено', { ok: true });
           window.dispatchEvent(new CustomEvent('custom-filter-changed'));
           history.back();
         } else navigate('filtered', { form: { ...f } });

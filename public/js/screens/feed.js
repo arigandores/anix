@@ -1,5 +1,5 @@
 // Лента, запись, канал
-import { h, icon, iconButton, img, toast, tabs, pagedList, emptyView, errorView, skeleton, skParts, skeletonSettled, markAppeared, guardClick } from '../ui.js';
+import { h, icon, bump, rollTo, nudge, iconButton, img, toast, tabs, pagedList, emptyView, errorView, skeleton, skParts, skeletonSettled, markAppeared, guardClick } from '../ui.js';
 import { A, auth } from '../api.js';
 import { t, tp } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
@@ -90,11 +90,13 @@ export function articleCard(a, { full = false } = {}) {
     const err = { 2: 'Вы превысили дневной лимит на отрицательные оценки', 4: 'Создатель или администратор канала внёс Вас в блоклист. Вы не можете ставить оценки записям.', 5: 'Кажется, Вы зарегистрированы совсем недавно. Побудьте с нами немного дольше, чтобы получить возможность ставить оценки.', 402: 'Вы не можете голосовать, поскольку ваш аккаунт заблокирован' }[r.code];
     if (err) return toast(err);
     if (r.code !== 0) return toast(t('error_load'));
+    const old0 = a.vote_count || 0;
     a.vote_count += { '0>2': 1, '0>1': -1, '2>2': -1, '1>1': 1, '1>2': 2, '2>1': -2 }[`${old}>${v}`] || 0;
     a.vote = old === v ? 0 : v;
-    score.textContent = String(a.vote_count).replace('-', '–');
+    rollTo(score, String(a.vote_count).replace('-', '–'), a.vote_count > old0); // число въезжает снизу/сверху
     score.className = a.vote_count > 0 ? 'vote-pos' : a.vote_count < 0 ? 'vote-neg' : '';
     minus.classList.toggle('on', a.vote === 1); plus.classList.toggle('on', a.vote === 2);
+    if (a.vote) bump((a.vote === 2 ? plus : minus).firstChild, a.vote === 2 ? -1 : 1);
   }
   minus.onclick = (e) => { e.stopPropagation(); vote(1); };
   plus.onclick = (e) => { e.stopPropagation(); vote(2); };
@@ -124,7 +126,7 @@ function myFeed() {
     const cnt = await (await import('../api.js')).api.get('channel/subscription/count').catch(() => ({}));
     if (!(cnt.subscription_count > 0)) {
       await skeletonSettled(holder);
-      holder.replaceChildren(h('div', { class: 'empty', style: { paddingBottom: '10px' } }, h('div', { class: 'empty-title' }, 'Ой, а подписок-то нет!'), h('div', { class: 'empty-sub' }, 'Но ничего страшного, Вы можете подписаться на популярные каналы из списка ниже')),
+      holder.replaceChildren(h('div', { class: 'empty inline', style: { paddingBottom: '10px' } }, h('div', { class: 'empty-title' }, 'Ой, а подписок-то нет!'), h('div', { class: 'empty-sub' }, 'Но ничего страшного, Вы можете подписаться на популярные каналы из списка ниже')),
         pagedList({ skeleton: 'channels', load: (page) => A.channelRecommendations(page), render: channelRow, empty: () => emptyView('Похоже, нет ни одного канала') }));
       return;
     }
@@ -151,6 +153,8 @@ function channelRow(ch) {
     if (r.code === 3) return toast('Вы подписались на максимально возможное число каналов.');
     ch.is_subscribed = !ch.is_subscribed;
     btn.textContent = ch.is_subscribed ? 'Отписаться' : 'Подписаться'; btn.className = `btn ${ch.is_subscribed ? 'btn-tonal' : 'btn-primary'}`;
+    // подписка сменилась — кнопка коротко откликается (подписались — с отскоком)
+    nudge(btn, ch.is_subscribed ? [{ transform: 'scale(.92)' }, { transform: 'scale(1.06)', offset: 0.5 }, { transform: 'none' }] : [{ transform: 'scale(.96)' }, { transform: 'none' }], 320);
   });
   return h('div', { class: 'type-row', onclick: () => navigate('channel', { id: ch.id, preload: ch }) }, img(ch.avatar),
     h('div', { class: 'grow' }, h('div', { class: 'row', style: { gap: '4px', fontWeight: 500 } }, ch.title, ch.is_verified ? icon('ic_verified', 'xs verified') : null),
@@ -189,7 +193,7 @@ registerScreen('article', async ({ id, comments }) => {
   import('../api.js').then(({ api }) => api.post('article/event', { type: 'read', entry_point: 'article', articles: [id] }).catch(() => {}));
   // на полной странице записи текст выделяемый, как в мобильном приложении
   const body = h('div', { class: 'container selectable', style: { maxWidth: '820px', padding: 0, flex: 1 } }, articleCard(r.article, { full: true }));
-  const list = pagedList({ skeleton: 'comments', load: (page) => A.articleComments(id, page, 1), render: (c) => commentItem(c, { kind: 'article' }), empty: () => emptyView('Еще никто не оставлял комментарии. Будьте первыми!') });
+  const list = pagedList({ skeleton: 'comments', load: (page) => A.articleComments(id, page, 1), render: (c) => commentItem(c, { kind: 'article', ownerId: id }), empty: () => emptyView('Еще никто не оставлял комментарии. Будьте первыми!') });
   body.append(h('div', { class: 'section-head' }, h('div', { class: 'section-title' }, `Комментарии ${digits(r.article.comment_count)}`)), list);
   const composer = r.article.channel?.is_commenting_enabled !== false ? commentComposer({
     onSend: async (b) => {

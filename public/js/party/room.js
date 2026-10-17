@@ -18,7 +18,7 @@
 // Настройки картинки и звука (апскейл, улучшение звука, качество) у каждого свои — их комната не трогает.
 import { connectRoom, newCode, normCode, fmtCode, randomId } from './net.js';
 import { A, auth } from '../api.js';
-import { prefs } from '../store.js';
+import { prefs, db } from '../store.js';
 
 // Тайминги протокола, мс. Тесты подменяют их короткими (window.__anixPartyTiming) — логика та же, ждать меньше
 const TIMING = {
@@ -456,7 +456,15 @@ export function playerEpisode(content, at = null, why = null) {
   if (!canControl() && s && s.content) { info('Серию выбирает хост'); applyToPlayer(null); return; }
   if (at && at.wait) commit({ content, paused: true, pos: at.pos, wait: randomId(4), why });
   else if (at) commit({ content, paused: at.paused, pos: at.pos, wait: null, why });
-  else commit({ content, paused: true, pos: 0, wait: randomId(4), why });
+  else if (s && s.content && s.content.releaseId === content.releaseId && s.content.position === content.position) {
+    // та же серия в другой озвучке — с того же места, а не с начала (озвучка входит в ключ серии): один в комнате —
+    // где остановился сам (сохранённое место прежней озвучки; закрытый плеер комнату не ставит на паузу, и её отсчёт
+    // успевал уйти вперёд), с другими — где сейчас комната
+    const alone = [...room.members.keys()].every((id) => id === room.peerId);
+    const mine = db.getEpisode(s.content.releaseId, s.content.sourceId, s.content.position)?.playbackPosition;
+    const pos = alone && mine > 0 ? mine / 1000 : expected(s);
+    commit({ content, paused: true, pos, wait: randomId(4), why });
+  } else commit({ content, paused: true, pos: 0, wait: randomId(4), why });
 }
 // вошли в комнату с открытым плеером: в пустой комнате показываем свою серию, иначе — переходим на серию комнаты
 function flushPending() {

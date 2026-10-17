@@ -1,14 +1,15 @@
 // Релиз, связанные, коллекции релиза, видео
-import { h, icon, iconButton, img, toast, dialog, sheet, pagedList, emptyView, spinner, skeleton, skLine, errorView, skeletonSettled, markAppeared } from '../ui.js';
-import { A, api, auth, takePrefetchedRelease } from '../api.js';
+import { h, icon, iconButton, guardClick, growBars, nudge, rollTo, joinEnter, morph, img, toast, dialog, sheet, pagedList, emptyView, spinner, skeleton, errorView, skeletonSettled, markAppeared, skParts } from '../ui.js';
+import { A, api, auth, takePrefetchedRelease, recentRelease, rememberRelease, releaseGen } from '../api.js';
 import { t, tp } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
 import {
   gradeText, digits, seasonName, LIST_NAMES, chooseListStatus, toggleFavorite, requireAuth, commentItem, commentComposer,
   openRelease, imageViewer, report, backToolbar, sectionHead, collectionCard, relTime, releaseRow,
 } from './common.js';
-import { prefetchWatch, watchBlock } from './episodes.js';
+import { prefetchWatch, watchBlock, typesOf, typeLogo } from './episodes.js';
 import { partyWatchButton } from '../party/ui.js';
+import { heartIcon, lottieIcon, copyIcon } from '../lottie.js';
 
 const AGE = ['', '0+', '6+', '12+', '16+', '18+'];
 const BROADCAST = ['', 'каждый понедельник', 'каждый вторник', 'каждую среду', 'каждый четверг', 'каждую пятницу', 'каждую субботу', 'каждое воскресенье'];
@@ -33,29 +34,108 @@ function linkJoin(prefix, value, searchBy) {
   return out;
 }
 
+// Строки сведений: страна и сезон, серии, тип и статус, студия/автор/режиссёр, первоисточник, жанры, озвучка, даты.
+// preview — из данных строки списка (страница ещё грузится): там нет типа и статуса — на их месте серая полоска,
+// чтобы строк было столько же и ничего не сдвинулось, когда придёт страница
+function infoRowsView(rel, { preview = false } = {}) {
+  const st = rel.status?.id ?? rel.status_id; // статус — свежий (после фонового обновления)
+  const infoRows = [];
+  const countryParts = [rel.country, [seasonName(rel.season), rel.year ? `${rel.year} г.` : ''].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  if (countryParts) infoRows.push(['ic_flag_' + (rel.country === 'Япония' ? 'japan' : rel.country === 'Китай' ? 'chinese' : 'unknown'), cap(countryParts), true]);
+  const R = rel.episodes_released; const T = rel.episodes_total;
+  if (R || T || rel.duration) {
+    let e = R != null && R === T ? `${R} эп.` : R != null && T != null ? `${R} из ${T} эп.` : R != null ? `${R} из ? эп.` : T != null ? `? из ${T} эп.` : '? эп.';
+    if (rel.duration > 0) e += ` по ~${rel.duration} мин.`;
+    infoRows.push(['ic_episodes', e]);
+  }
+  if (!rel.category && !rel.status && preview) infoRows.push(['ic_schedule', h('span', { class: 'sk sk-line', style: { display: 'inline-block', width: '150px', height: '12px', verticalAlign: 'middle' } })]);
+  if (rel.category || rel.status) {
+    let s = [rel.category?.name?.toLowerCase(), rel.status?.name?.toLowerCase()].filter(Boolean).join(', ');
+    if (st === 2 && rel.broadcast >= 1 && rel.broadcast <= 7) s += ` ${BROADCAST[rel.broadcast]}`;
+    infoRows.push(['ic_schedule', cap(s)]);
+  }
+  const studioParts = [linkJoin('студия', rel.studio, 1), linkJoin('автор', rel.author, 3), linkJoin('режиссёр', rel.director, 2)].filter(Boolean);
+  if (studioParts.length) {
+    const span = h('span');
+    studioParts.forEach((p, i) => { if (i) span.append(', '); span.append(...p); });
+    infoRows.push(['ic_studio', span]);
+  }
+  if (rel.source) infoRows.push(['ic_source', h('span', null, 'Первоисточник ', rel.source)]);
+  if (rel.genres) infoRows.push(['ic_tune_variant', h('span', null, ...linkJoin('', rel.genres, 4))]);
+  if (rel.translators) infoRows.push(['ic_voice', rel.translators]);
+  if (rel.release_date) infoRows.push(['ic_calendar', rel.release_date]);
+  return h('div', { class: 'info-rows' }, infoRows.map(([ic, txt, raw]) => h('div', { class: 'info-row' }, raw ? h('img', { src: `/icons/${ic}.svg`, style: { width: '20px', height: '20px' } }) : icon(ic), h('div', null, txt))));
+}
+
 // Пока грузится release/{id}: шапка из данных карточки списка,
 // остальное — скелетоны в той же раскладке, чтобы страница не прыгала.
+// Скелетон страницы аниме — из тех же классов, что настоящая страница (.rel-actions, .watch-row, .card-title,
+// .info-rows, .screens, .rating-box…), поэтому размеры и отступы совпадают; секции — как у обычной страницы, до
+// комментариев внизу (раньше — только первая карточка и две справа, ниже пустота). Из данных строки списка
+// (preload) — сразу настоящие постер, название, фон и примечание
+// Блок сведений в предпросмотре. Из данных строки списка (в них почти все поля страницы) — настоящие строки и
+// описание: совпадают с пришедшей страницей до пикселя (серые полоски не совпадали: другие высота строк и описания,
+// жёсткое число строк). Без них — серые полоски в размерах настоящих: строка — 21 px (высота строки текста),
+// описание — свёрнутые 6 строк .desc-text
+function infoPreview(p) {
+  const { line, circle } = skParts;
+  if (p && (p.description != null || p.genres || p.country)) {
+    const longDesc = (p.description || '').length > 300;
+    return h('div', { class: 'card' }, infoRowsView(p, { preview: true }),
+      h('div', { style: { marginTop: '14px' } }, h('div', { class: 'desc-text collapsed' }, p.description || t('description_not_specified')),
+        longDesc ? h('button', { class: 'btn btn-text', style: { paddingLeft: 0, pointerEvents: 'none' }, tabindex: '-1' }, 'Подробнее…') : null));
+  }
+  // высота строки — как у строки сведений с текстом (21 px; в две строки — 39) и строки описания (1lh)
+  const textLine = (w, hgt = '21px') => h('div', { style: { height: hgt, display: 'flex', alignItems: 'center', flex: '1' } }, line(w));
+  return h('div', { class: 'card' },
+    // страна, серии, статус, студия, первоисточник, жанры (обычно в две строки), озвучка, даты
+    h('div', { class: 'info-rows' }, ['34%', '30%', '26%', '62%', '28%', ['92%', '40%'], '44%', '32%'].map((w, i) => h('div', { class: 'info-row' }, circle('20px'),
+      // первая строка (страна) — с флагом-картинкой, без текстовой высоты: 20 px
+      Array.isArray(w) ? h('div', { style: { flex: '1' } }, textLine(w[0], '19.5px'), textLine(w[1], '19.5px')) : textLine(w, i ? '21px' : '20px')))),
+    // описание (свёрнуто до 6 строк) и «Подробнее…»
+    h('div', { style: { marginTop: '14px' } }, h('div', { class: 'desc-text collapsed', style: { maskImage: 'none', webkitMaskImage: 'none' } }, ...['98%', '95%', '97%', '93%', '96%', '60%'].map((w) => textLine(w, '1lh'))),
+      h('div', { style: { height: '40px', display: 'flex', alignItems: 'center' } }, line('84px'))));
+}
+
 function previewPage(p) {
+  const { line, block, circle, pill, col } = skParts;
   const title = p && (p.title_ru || p.title_original);
-  const sk = (style) => h('div', { class: 'sk', style });
+  const card = (...c) => h('div', { class: 'card' }, ...c);
+  const cardTitle = (w) => h('div', { class: 'card-title' }, line(w, 'title'));
+  const thumbs = (n) => h('div', { class: 'screens' }, Array.from({ length: n }, () => block({ width: '231px', height: '130px', borderRadius: '10px', flex: 'none' })));
+  const relCards = (n) => h('div', { class: 'screens', style: { gap: '14px' } }, Array.from({ length: n }, () => h('div', { class: 'release-card', style: { width: '128px', flex: 'none' } },
+    block({ width: '100%', aspectRatio: '2 / 3', borderRadius: '10px' }), line('90%'), line('60%'))));
+  const comment = (w) => h('div', { class: 'comment', style: { padding: '12px 16px' } }, circle('40px'), col('8px', line('30%', 'title'), line(w), line('22%')));
   return [
     h('div', { class: 'rel-hero' },
-      p?.image ? h('div', { class: 'bg', style: { backgroundImage: `url("${p.image}")` } }) : null,
+      p?.image ? heroBg(p.image) : null,
       h('div', { class: 'inner' },
         h('div', { class: `poster ${p?.image ? '' : 'sk'}` }, p?.image ? img(p.image) : null),
         h('div', { class: 'head' },
-          title ? h('h1', { class: 'rel-title' }, title) : skLine('55%', 'big'),
-          p?.title_ru && p?.title_original ? h('div', { class: 'rel-orig' }, p.title_original) : skLine('35%'),
-          h('div', { class: 'row', style: { gap: '6px', marginTop: '4px' } }, sk({ width: '42px', height: '22px' }), sk({ width: '96px', height: '22px' })),
+          title ? h('h1', { class: 'rel-title' }, title) : line('55%', 'big'),
+          p?.title_ru && p?.title_original ? h('div', { class: 'rel-orig' }, p.title_original) : line('35%'),
+          h('div', { class: 'row', style: { gap: '6px', marginTop: '4px', flexWrap: 'wrap' } }, block({ width: '36px', height: '22px', borderRadius: '6px' }), block({ width: '86px', height: '22px', borderRadius: '6px' })),
           p?.note ? h('div', { class: 'rel-note', html: p.note, style: noteStyle(p) }) : null,
-          h('div', { class: 'rel-actions' }, sk({ width: '150px', height: '40px', borderRadius: '20px' }), sk({ width: '84px', height: '40px', borderRadius: '20px' }), sk({ width: '84px', height: '40px', borderRadius: '20px' })),
-          h('div', { style: { marginTop: '14px' } }, sk({ width: '100%', height: '48px', borderRadius: '24px' }))))),
+          // «Не смотрю», «♡ число», «💬 число»
+          h('div', { class: 'rel-actions' }, pill('124px'), pill('96px'), pill('64px')),
+          // «Смотреть» и «Смотреть вместе»
+          h('div', { style: { marginTop: '14px' } }, h('div', { class: 'watch' }, h('div', { class: 'watch-row' },
+            block({ flex: '1 1 260px', height: '48px', borderRadius: '24px' }), pill('190px', '48px'))))))), // ширина как у «Смотреть вместе» — так же переносится на узком окне
     h('div', { class: 'rel-body skeleton' },
-      h('div', null, h('div', { class: 'card' },
-        h('div', { class: 'info-rows' }, ['48%', '30%', '42%', '56%', '64%'].map((w) => h('div', { class: 'info-row' }, sk({ width: '20px', height: '20px', borderRadius: '50%', flex: 'none' }), skLine(w)))),
-        h('div', { style: { marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '9px' } }, ['98%', '94%', '97%', '90%', '60%'].map((w) => skLine(w))))),
-      h('div', null, h('div', { class: 'card' }, skLine('40%', 'title'), sk({ height: '96px', borderRadius: '12px', marginTop: '14px' })),
-        h('div', { class: 'card' }, skLine('55%', 'title'), sk({ height: '10px', borderRadius: '5px', marginTop: '14px' }), h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '14px' } }, ['70%', '62%', '74%', '58%', '66%'].map((w) => skLine(w)))))),
+      h('div', null,
+        infoPreview(p),
+        card(cardTitle('16%'), thumbs(2)),
+        card(cardTitle('14%'), thumbs(4)),
+        card(cardTitle('30%'), relCards(5)),
+        card(cardTitle('34%'), relCards(5)),
+        card(cardTitle('26%'), line('36%', '', { margin: '-4px 0 14px' }), block({ height: '46px', borderRadius: '23px', marginBottom: '8px' }),
+          comment('70%'), comment('85%'), comment('55%'), comment('78%'), comment('62%'))),
+      h('div', null,
+        card(cardTitle('40%'), h('div', { class: 'rating-box' }, col('6px', block({ width: '64px', height: '44px', borderRadius: '8px' }), line('70px')),
+          col('9px', ...[90, 30, 12, 6, 8].map((w) => line(`${w}%`, '', { height: '6px' }))))),
+        card(cardTitle('60%'), block({ height: '10px', borderRadius: '5px', margin: '8px 0 12px' }),
+          h('div', { class: 'info-rows' }, ['40%', '46%', '58%', '44%', '40%'].map((w) => h('div', { class: 'row' }, circle('10px'), h('div', { class: 'grow' }, line(w)), line('36px'))))),
+        card(...[['62%', '44px'], ['78%', '']].map(([w, badge]) => h('div', { class: 'row', style: { gap: '16px', padding: '8px 0' } }, block({ width: '24px', height: '24px', borderRadius: '6px', flex: 'none' }), h('div', { class: 'grow' }, line(w)), badge ? block({ width: badge, height: '22px', borderRadius: '6px' }) : null))))),
   ];
 }
 
@@ -65,57 +145,106 @@ registerScreen('release', ({ id, random, profileId, status, collectionId, preloa
   let usePreload = !random && preload ? preload : null;
   async function fetchRelease() {
     let r;
+    const gen = releaseGen(); // ответ на запрос до смены аккаунта в память не кладём (api.js)
     if (random === 1) r = await A.random(true);
     else if (random === 2) r = await A.randomProfileList(profileId, status, true);
     else if (random === 3) r = await A.randomFavorite(true);
     else if (random === 4) r = await A.randomCollection(collectionId, true);
-    else r = await (takePrefetchedRelease(id) || A.release(id, true));
+    else {
+      const cached = recentRelease(id);
+      if (cached) { // уже открывали — сразу из памяти; свежие данные фоном: изменилось важное — страница обновится
+        A.release(id, true).then((fresh) => { rememberRelease(fresh, gen); if (gen === releaseGen()) refreshFrom(fresh); }, () => {});
+        return cached;
+      }
+      r = await (takePrefetchedRelease(id) || A.release(id, true));
+    }
+    rememberRelease(r, gen);
     return r;
   }
+  // Шапка одна на экран: колокольчик и «Ещё» видны сразу, пока страница грузится (до загрузки нажатие ничего
+  // не делает) — раньше они появлялись после загрузки и сдвигали кнопку «Смотреть вместе»
+  const toolbar = backToolbar('', [
+    random ? iconButton('ic_shuffle', t('label_random'), () => render()) : null,
+    iconButton('ic_bell', 'Уведомления о новых сериях', () => rel && typeNotifications(rel)),
+    iconButton('ic_more', 'Ещё', () => rel && moreSheet(rel)),
+  ], { party: true }); // 👥 «Смотреть вместе» — как в главной шапке
+  const titleEl = toolbar.querySelector('.title');
+  titleEl.style.opacity = '0';
+  let scrollHooked = false; // название в шапке проявляется при прокрутке (подписка — при первой сборке страницы)
   async function render() {
-    root.replaceChildren(backToolbar('', [], { party: true }), ...previewPage(usePreload));
+    rel = null; titleEl.textContent = '';
+    root.replaceChildren(toolbar, ...previewPage(usePreload));
     usePreload = null; // «Случайный» и повторная загрузка — без старых данных
     let r;
-    try { r = await fetchRelease(); } catch (e) { await skeletonSettled(root); root.replaceChildren(backToolbar('', [], { party: true }), errorView(e, render)); return; }
+    try { r = await fetchRelease(); } catch (e) { await skeletonSettled(root); root.replaceChildren(toolbar, errorView(e, render)); return; }
     const instant = await skeletonSettled(root);
     rel = r.release;
     if (!rel || r.code !== 0 || rel.is_deleted) {
-      root.replaceChildren(backToolbar('', [], { party: true }), h('div', { class: 'empty' }, icon('ic_error', 'big'),
-        h('div', { class: 'empty-title' }, 'Страница не найдена'), h('div', { class: 'empty-sub' }, 'Возможно, она была удалена и больше недоступна'),
-        h('button', { class: 'btn btn-tonal', onclick: () => history.back() }, 'Назад')));
+      // как «Коллекция не найдена» и «Профиль не найден» — пустой экран с привидением, а не своя статичная иконка
+      const gone = emptyView('Страница не найдена', 'Возможно, она была удалена и больше недоступна');
+      gone.append(h('button', { class: 'btn btn-tonal', onclick: () => history.back() }, 'Назад'));
+      root.replaceChildren(toolbar, gone);
       return;
     }
     build();
-    if (instant) markAppeared(root); // страница сменила видимый скелетон — без проявления блоков
+    // страница сменила видимый скелетон — проявляется поверх, без рывка; шапка не трогается (она и так видна,
+    // её проявление читалось как блик)
+    // страница сменила видимый скелетон: одна анимация на весь переход — пока экран въезжает, контент подхватывает
+    // этот въезд с того же места; въезд кончился — контент встаёт сразу (отдельное проявление было второй анимацией)
+    markAppeared(root); // строки и карточки внутри — без своего проявления
+    joinEnter(root);
+
+  }
+
+  // Фоновое обновление страницы, показанной из памяти: обновляются только изменившиеся блоки (livePatch в build) —
+  // счётчики перекатываются на месте, рейтинг и «в списках» — числами без повторного роста полос; открытые ветки
+  // ответов, начатый комментарий, сердце и звёзды не трогаются. Раньше пересобиралась вся страница
+  let livePatch = null;
+  function refreshFrom(fresh) {
+    const f = fresh?.code === 0 && fresh.release;
+    if (!f || !rel || f.id !== rel.id || !root.isConnected || !livePatch) return;
+    livePatch(f);
   }
 
   function build() {
     const title = rel.title_ru || rel.title_original || t('unnamed');
     const sub = rel.title_ru && rel.title_original ? rel.title_original : '';
-    const toolbar = backToolbar(title, [
-      random ? iconButton('ic_shuffle', t('label_random'), () => render()) : null,
-      iconButton('ic_bell', 'Уведомления о новых сериях', () => typeNotifications(rel)),
-      iconButton('ic_more', 'Ещё', () => moreSheet(rel)),
-    ], { party: true }); // 👥 «Смотреть вместе» — как в главной шапке
-    toolbar.querySelector('.title').style.opacity = '0';
-    ctx.entry.node.closest('#viewport')?.addEventListener('scroll', function onS(e) {
-      if (!toolbar.isConnected) { e.currentTarget.removeEventListener('scroll', onS); return; }
-      toolbar.querySelector('.title').style.opacity = e.currentTarget.scrollTop > 240 ? '1' : '0';
-    });
+    titleEl.textContent = title;
+    if (!scrollHooked) {
+      scrollHooked = true;
+      ctx.entry.node.closest('#viewport')?.addEventListener('scroll', function onS(e) {
+        if (!toolbar.isConnected) { e.currentTarget.removeEventListener('scroll', onS); scrollHooked = false; return; }
+        titleEl.style.opacity = e.currentTarget.scrollTop > 240 ? '1' : '0';
+      });
+    }
 
     // --- Панель: список / избранное / комментарии ---
     const listBtn = h('button', { class: 'btn list-btn' });
     const favBtn = h('button', { class: 'btn list-btn' });
+    const heart = heartIcon(!!rel.is_favorite); // одно и то же сердце между перерисовками — анимация не обрывается
+    const favCount = h('span');
+    const paintFav = (on, animate) => {
+      heart.set(on, animate); // до смены цвета кнопки (lottie.js, heartIcon)
+      favBtn.className = `btn list-btn ${on ? 'tag tag-fav' : ''}`;
+    };
+    let shownStatus = null; let shownFavs = null;
     const paintPanel = () => {
       const s = rel.profile_list_status || 0;
       listBtn.replaceChildren(icon('ic_arrow_drop_down', 'sm'), t(LIST_NAMES[s]));
       // button_tag_{color}: цвет по статусу; 0 «Не смотрю» — обычная серая кнопка
       listBtn.className = `btn list-btn ${s ? `tag tag-${s}` : ''}`;
-      favBtn.className = `btn list-btn ${rel.is_favorite ? 'tag tag-fav' : ''}`;
-      favBtn.replaceChildren(icon(rel.is_favorite ? 'ic_favorite' : 'ic_favorite_border', 'sm'), digits(rel.favorites_count));
+      // статус сменился — кнопка коротко откликается (не при первой отрисовке)
+      if (shownStatus != null && shownStatus !== s) nudge(listBtn, [{ transform: 'scale(.94)' }, { transform: 'scale(1.04)', offset: 0.5 }, { transform: 'none' }], 300);
+      shownStatus = s;
+      paintFav(!!rel.is_favorite, false);
+      const n = rel.favorites_count || 0;
+      if (shownFavs == null) favCount.textContent = digits(n); else rollTo(favCount, digits(n), n > shownFavs);
+      shownFavs = n;
     };
+    favBtn.append(heart, favCount);
     listBtn.onclick = () => chooseListStatus(rel, paintPanel);
-    favBtn.onclick = () => toggleFavorite(rel, paintPanel);
+    // сердце выпрыгивает сразу по нажатию, ответ сервера — потом (не удалось — paintPanel вернёт как было)
+    favBtn.onclick = guardClick(favBtn, () => toggleFavorite(rel, paintPanel, (on) => paintFav(on, true)));
     paintPanel();
 
     // --- Кнопка просмотра ---
@@ -134,8 +263,10 @@ registerScreen('release', ({ id, random, profileId, status, collectionId, preloa
       ctx.setDispose(() => watch.dispose());
     }
 
+    let commentsCount = null;
+    const preComments = preCommentsOf(rel);
     const hero = h('div', { class: 'rel-hero' },
-      h('div', { class: 'bg', style: { backgroundImage: `url("${rel.image}")` } }),
+      heroBg(rel.image),
       h('div', { class: 'inner' },
         h('div', { class: 'poster', onclick: () => imageViewer(rel.image, { title: rel.title_ru || rel.title_original || '' }) }, img(rel.image)),
         h('div', { class: 'head' },
@@ -146,34 +277,12 @@ registerScreen('release', ({ id, random, profileId, status, collectionId, preloa
             rel.title_alt || rel.title_original ? h('button', { class: 'badge', onclick: () => titleInfo(rel) }, icon('ic_info_outline', 'xs'), 'Названия') : null),
           rel.note ? h('div', { class: 'rel-note', html: rel.note, style: noteStyle(rel) }) : null,
           h('div', { class: 'rel-actions' }, listBtn, favBtn,
-            h('button', { class: 'btn list-btn', onclick: () => navigate('comments', { kind: 'release', id: rel.id, release: rel }) }, icon('ic_comment_outline', 'sm'), digits(rel.comment_count ?? rel.comments_count ?? 0))),
+            h('button', { class: 'btn list-btn', onclick: () => navigate('comments', { kind: 'release', id: rel.id, release: rel }), onpointerdown: preComments }, icon('ic_comment_outline', 'sm'), commentsCount = h('span', null, digits(rel.comment_count ?? rel.comments_count ?? 0)))),
           h('div', { style: { marginTop: '14px' } }, watch))));
 
-    // --- Информация ---
-    const infoRows = [];
-    const countryParts = [rel.country, [seasonName(rel.season), rel.year ? `${rel.year} г.` : ''].filter(Boolean).join(' ')].filter(Boolean).join(', ');
-    if (countryParts) infoRows.push(['ic_flag_' + (rel.country === 'Япония' ? 'japan' : rel.country === 'Китай' ? 'chinese' : 'unknown'), cap(countryParts), true]);
-    const R = rel.episodes_released; const T = rel.episodes_total;
-    if (R || T || rel.duration) {
-      let e = R != null && R === T ? `${R} эп.` : R != null && T != null ? `${R} из ${T} эп.` : R != null ? `${R} из ? эп.` : T != null ? `? из ${T} эп.` : '? эп.';
-      if (rel.duration > 0) e += ` по ~${rel.duration} мин.`;
-      infoRows.push(['ic_episodes', e]);
-    }
-    if (rel.category || rel.status) {
-      let s = [rel.category?.name?.toLowerCase(), rel.status?.name?.toLowerCase()].filter(Boolean).join(', ');
-      if (st === 2 && rel.broadcast >= 1 && rel.broadcast <= 7) s += ` ${BROADCAST[rel.broadcast]}`;
-      infoRows.push(['ic_schedule', cap(s)]);
-    }
-    const studioParts = [linkJoin('студия', rel.studio, 1), linkJoin('автор', rel.author, 3), linkJoin('режиссёр', rel.director, 2)].filter(Boolean);
-    if (studioParts.length) {
-      const span = h('span');
-      studioParts.forEach((p, i) => { if (i) span.append(', '); span.append(...p); });
-      infoRows.push(['ic_studio', span]);
-    }
-    if (rel.source) infoRows.push(['ic_source', h('span', null, 'Первоисточник ', rel.source)]);
-    if (rel.genres) infoRows.push(['ic_tune_variant', h('span', null, ...linkJoin('', rel.genres, 4))]);
-    if (rel.translators) infoRows.push(['ic_voice', rel.translators]);
-    if (rel.release_date) infoRows.push(['ic_calendar', rel.release_date]);
+    // --- Информация --- (функцией: при фоновом обновлении — новые серии/статус — блок пересобирается отдельно)
+    const infoRowsEl = () => infoRowsView(rel);
+    let infoEl = infoRowsEl();
 
     // Длинное описание свёрнуто: раскрывается и кнопкой, и нажатием на сам текст, сворачивается только кнопкой
     const longDesc = (rel.description || '').length > 300;
@@ -185,14 +294,33 @@ registerScreen('release', ({ id, random, profileId, status, collectionId, preloa
 
     const left = h('div', null,
       h('div', { class: 'card' },
-        h('div', { class: 'info-rows' }, infoRows.map(([ic, txt, raw]) => h('div', { class: 'info-row' }, raw ? h('img', { src: `/icons/${ic}.svg`, style: { width: '20px', height: '20px' } }) : icon(ic), h('div', null, txt)))),
+        infoEl,
         h('div', { style: { marginTop: '14px' } }, desc, longDesc ? descToggle : null)),
       videoBanners(rel),
       screenshots(rel),
       relatedBlock(rel),
       recommendedBlock(rel),
       commentsBlock(rel, () => build()));
-    const right = h('div', null, ratingBlock(rel), statsBlock(rel), collectionsBlock(rel));
+    let ratingEl = ratingBlock(rel); let statsEl = statsBlock(rel); let collEl = collectionsBlock(rel);
+    const right = h('div', null, ratingEl, statsEl, collEl);
+    // свежие данные пришли фоном (refreshFrom): меняем только то, что изменилось
+    // блок изменился — правим в нём только изменившееся и плавно (ui.js morph): числа перекатываются, полосы доезжают
+    const swap = (old, fresh) => { if (old && fresh) { morph(old, markAppeared(fresh)); return old; } if (old) old.remove(); return fresh; };
+    livePatch = (f) => {
+      const was = { ...rel };
+      const diff = (...keys) => keys.some((k) => f[k] !== was[k]);
+      Object.assign(rel, f);
+      paintPanel(); // статус, сердце, число «в избранном» (перекатывается)
+      const nc = rel.comment_count ?? rel.comments_count ?? 0; const oc = was.comment_count ?? was.comments_count ?? 0;
+      if (nc !== oc) rollTo(commentsCount, digits(nc), nc > oc);
+      if (diff('grade', 'vote_count', 'your_vote', 'vote_1_count', 'vote_2_count', 'vote_3_count', 'vote_4_count', 'vote_5_count')) ratingEl = swap(ratingEl, ratingBlock(rel, { grow: false }));
+      if (diff('watching_count', 'plan_count', 'completed_count', 'hold_on_count', 'dropped_count', 'status_id') || (f.status?.id !== was.status?.id)) statsEl = swap(statsEl, statsBlock(rel, { grow: false }));
+      if (diff('collection_count')) collEl = swap(collEl, collectionsBlock(rel));
+      if (diff('episodes_released', 'episodes_total', 'status_id', 'broadcast', 'duration') || (f.status?.id !== was.status?.id)) {
+        morph(infoEl, infoRowsEl());
+        watch.repaint?.(); // «Смотреть / Продолжить» — по новым сериям
+      }
+    };
 
     root.replaceChildren(toolbar, hero, h('div', { class: 'rel-body' }, left, right));
   }
@@ -200,6 +328,17 @@ registerScreen('release', ({ id, random, profileId, status, collectionId, preloa
   render();
   return root;
 });
+
+// Размытый постер за шапкой: проявляется, когда картинка загрузилась (а не вспыхивает поверх тёмного фона);
+// уже в кэше — сразу, без проявления (иначе при смене скелетона на страницу фон бы перемигивал)
+function heroBg(src) {
+  const el = h('div', { class: 'bg', style: { backgroundImage: `url("${src}")` } });
+  const im = new Image();
+  im.src = src;
+  if (im.complete && im.naturalWidth) el.classList.add('ready');
+  else im.onload = () => el.classList.add('ready', 'fade-in');
+  return el;
+}
 
 function noteStyle(rel) {
   const dark = document.documentElement.dataset.theme === 'dark';
@@ -209,8 +348,9 @@ function noteStyle(rel) {
 }
 
 function titleInfo(rel) {
-  const row = (label, val) => (val ? h('div', { class: 'menu-item', style: { padding: '10px 0' }, onclick: () => { navigator.clipboard?.writeText(val); toast('Скопировано'); } },
-    h('div', { class: 'grow' }, h('div', { class: 'sub' }, label), h('div', { style: { whiteSpace: 'pre-line' } }, val)), icon('ic_copy')) : null);
+  // значок копирования на месте превращается в галочку (lottie.js copyIcon)
+  const row = (label, val) => { if (!val) return null; const ic = copyIcon(); return h('div', { class: 'menu-item inset', onclick: () => { navigator.clipboard?.writeText(val); ic.done(); toast('Скопировано', { ok: true }); } },
+    h('div', { class: 'grow' }, h('div', { class: 'sub' }, label), h('div', { style: { whiteSpace: 'pre-line' } }, val)), ic); };
   dialog({ title: 'Названия', content: h('div', null, row('Название', rel.title_ru), row('Оригинальное название', rel.title_original), row('Альтернативные названия', rel.title_alt)), actions: [{ label: t('close') }] });
 }
 
@@ -218,8 +358,8 @@ function moreSheet(rel) {
   const base = (window.__toggles && window.__toggles.baseUrl) || 'https://anixart-app.com/';
   const link = `${base}release/${rel.id}`;
   sheet(null, [
-    { label: 'Поделиться', icon: 'ic_export_variant', onClick: () => { const text = `${rel.title_ru}\n${link}`; if (navigator.share) navigator.share({ text }).catch(() => {}); else { navigator.clipboard?.writeText(text); toast('Скопировано'); } } },
-    { label: 'Скопировать ссылку', icon: 'ic_link', onClick: () => { navigator.clipboard?.writeText(link); toast('Скопировано'); } },
+    { label: 'Поделиться', icon: 'ic_export_variant', onClick: () => { const text = `${rel.title_ru}\n${link}`; if (navigator.share) navigator.share({ text }).catch(() => {}); else { navigator.clipboard?.writeText(text); toast('Скопировано', { ok: true }); } } },
+    { label: 'Скопировать ссылку', icon: 'ic_link', onClick: () => { navigator.clipboard?.writeText(link); toast('Скопировано', { ok: true }); } },
     { label: 'Пожаловаться', icon: 'ic_alert', onClick: () => report('release', rel.id) },
   ]);
 }
@@ -227,28 +367,32 @@ function moreSheet(rel) {
 async function typeNotifications(rel) {
   if (!requireAuth()) return;
   try {
-    const [types, cur] = await Promise.all([A.types_all(), api.get(`profile/preference/notification/release/type/${rel.id}`)]);
-    const all = types.types || [];
+    // озвучки этого релиза (как на экране серий), а не весь справочник type/all; уже включённые, которых у релиза
+    // больше нет, тоже в списке — чтобы их можно было снять
+    const [types, cur] = await Promise.all([typesOf(rel.id), api.get(`profile/preference/notification/release/type/${rel.id}`)]);
     const selected = new Set((cur.profile_release_type_notification_preferences || cur.types || []).map((x) => (typeof x === 'object' ? x.id : x)));
-    const box = h('div', { class: 'sheet-list' }, all.map((ty) => {
+    let list = types;
+    const gone = [...selected].filter((id) => !types.some((ty) => ty.id === id));
+    if (gone.length) list = list.concat(((await A.types_all()).types || []).filter((ty) => gone.includes(ty.id)));
+    const box = h('div', { class: 'sheet-list' }, list.length ? list.map((ty) => {
       const cb = h('input', { type: 'checkbox' }); cb.checked = selected.has(ty.id);
       cb.onchange = () => { if (cb.checked) selected.add(ty.id); else selected.delete(ty.id); };
-      return h('label', { class: 'sheet-item', style: { cursor: 'pointer' } }, cb, ty.name);
-    }));
+      return h('label', { class: 'sheet-item', style: { cursor: 'pointer' } }, cb, typeLogo(ty, 'sm'), ty.name);
+    }) : h('div', { class: 'muted', style: { padding: '12px 24px' } }, 'У релиза пока нет озвучек'));
     dialog({
       title: 'Уведомления о новых сериях', content: box,
       actions: [{ label: 'Отмена' }, {
         label: 'Сохранить', primary: true,
         onClick: async () => {
           await api.post('profile/preference/notification/release/type/edit', { release_id: rel.id, profile_release_type_notification_preferences: [...selected] });
-          toast(selected.size ? 'Уведомления о новых сериях включены' : 'Уведомления о новых сериях отключены');
+          toast(selected.size ? 'Уведомления о новых сериях включены' : 'Уведомления о новых сериях отключены', { ok: true });
         },
       }],
     });
   } catch { toast(t('error_load')); }
 }
 
-function ratingBlock(rel) {
+function ratingBlock(rel, { grow = true } = {}) {
   const st = rel.status?.id ?? rel.status_id;
   if (st === 3) return null;
   const card = h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Рейтинг'));
@@ -257,18 +401,34 @@ function ratingBlock(rel) {
     const sum = [1, 2, 3, 4, 5].reduce((a, i) => a + (rel[`vote_${i}_count`] || 0), 0) || 1;
     card.append(h('div', { class: 'rating-box' },
       h('div', null, h('div', { class: 'rating-big' }, bigGrade(rel.grade)), h('div', { class: 'muted', style: { fontSize: '13px', marginTop: '4px' } }, `${digits(rel.vote_count)} ${tp('votes', rel.vote_count)}`)),
-      h('div', { class: 'rating-bars' }, [5, 4, 3, 2, 1].map((i) => h('div', { class: 'rating-bar' }, h('span', null, String(i)),
-        h('div', { class: 'track' }, h('div', { class: 'fill', style: { width: `${((rel[`vote_${i}_count`] || 0) * 100) / sum}%` } })))))));
+      (grow ? (el) => growBars(el, '.fill', 60) : (el) => el)(h('div', { class: 'rating-bars' }, [5, 4, 3, 2, 1].map((i) => h('div', { class: 'rating-bar' }, h('span', null, String(i)),
+        h('div', { class: 'track' }, h('div', { class: 'fill', style: { width: `${((rel[`vote_${i}_count`] || 0) * 100) / sum}%` } }))))))));
   }
   if (auth.loggedIn) {
     const zone = h('div', { style: { marginTop: '14px' } });
-    const paint = () => {
+    // voted — только что проголосовали: звёзды по очереди выпрыгивают (lottie.js)
+    const paint = (voted) => {
       zone.replaceChildren();
       if (rel.your_vote) {
-        zone.append(h('div', { class: 'row' },
-          h('div', { class: 'stars' }, [1, 2, 3, 4, 5].map((i) => h('span', { class: i <= rel.your_vote ? 'on' : '', style: { color: i <= rel.your_vote ? 'var(--orange)' : 'var(--text4)' } }, icon('ic_star_rate')))),
-          h('div', { class: 'grow' }, h('div', null, `${rel.your_vote} из 5`), h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Вы проголосовали')),
-          h('button', { class: 'btn btn-text', onclick: async () => { try { const r = await A.deleteVote(rel.id); if (r.code !== 0) throw 0; rel.your_vote = null; paint(); } catch { toast('Произошла ошибка при удалении голоса.'); } } }, 'Изменить')));
+        // до старта звёзды серые (начальный кадр), выпрыгивают по очереди, когда готовы все — иначе залитая
+        // запасная иконка мелькала до загрузки анимации, а очерёдность сбивалась
+        const pops = [];
+        const star = (i) => {
+          if (i > rel.your_vote) return icon('ic_star_rate');
+          const el = lottieIcon('star', { fallback: 'ic_star_rate', pad: 0.5, rest: voted ? 0 : 'pop', muted: voted });
+          if (voted) pops.push(el);
+          return el;
+        };
+        if (voted) queueMicrotask(async () => {
+          const ok = await Promise.all(pops.map((el) => el.ready));
+          pops.forEach((el, k) => (ok[k] ? setTimeout(() => { el.play('pop'); el.classList.remove('lt-muted'); }, 120 + k * 70) : el.classList.remove('lt-muted')));
+        });
+        // звёзды — своей строкой, подпись и «Изменить» — под ними: в колонке 320 px рядом со звёздами подпись не помещалась
+        zone.append(
+          h('div', { class: 'stars' }, [1, 2, 3, 4, 5].map((i) => h('span', { class: i <= rel.your_vote ? 'on' : '', style: { color: i <= rel.your_vote ? 'var(--orange)' : 'var(--text4)' } }, star(i)))),
+          h('div', { class: 'row vote-done' },
+            h('div', { class: 'grow' }, h('b', null, `${rel.your_vote} из 5`), h('span', { class: 'muted' }, ' · Вы проголосовали')),
+            h('button', { class: 'btn btn-text', onclick: async () => { try { const r = await A.deleteVote(rel.id); if (r.code !== 0) throw 0; rel.your_vote = null; paint(); } catch { toast('Произошла ошибка при удалении голоса.'); } } }, 'Изменить')));
       } else {
         zone.append(h('div', { class: 'stars pick' }, [1, 2, 3, 4, 5].map((i) => h('button', { title: STAR_LABELS[i], onclick: () => confirmVote(i) }, icon('ic_star_rate')))));
       }
@@ -280,7 +440,7 @@ function ratingBlock(rel) {
         onClick: async () => {
           try {
             const r = await A.vote(rel.id, n); if (r.code !== 0) throw 0;
-            rel.your_vote = n; paint();
+            rel.your_vote = n; paint(true);
             afterVote(rel);
           } catch { toast('Произошла ошибка при отправке голоса.'); }
         },
@@ -305,7 +465,7 @@ function afterVote(rel) {
         if (m.length < 5) { toast('Ваш комментарий слишком короткий. Дайте свободу мысли!'); return true; }
         if (m.length > 720) { toast('Ваш комментарий слишком длинный. Краткость – сестра таланта!'); return true; }
         const r = await A.releaseCommentAdd(rel.id, { parentCommentId: null, replyToProfileId: null, message: m, spoiler: sp.checked });
-        toast(r.code === 0 ? 'Комментарий отправлен' : commentAddError(r.code));
+        toast(r.code === 0 ? 'Комментарий отправлен' : commentAddError(r.code), { ok: r.code === 0 });
         return false;
       },
     }],
@@ -323,7 +483,7 @@ export function commentAddError(code) {
   })[code] || t('error_load');
 }
 
-function statsBlock(rel) {
+function statsBlock(rel, { grow = true } = {}) {
   const st = rel.status?.id ?? rel.status_id;
   const card = h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'В списках у людей'));
   if (st === 3) {
@@ -332,16 +492,17 @@ function statsBlock(rel) {
   }
   const rows = [['list_watching', rel.watching_count, 'green'], ['list_plan', rel.plan_count, 'purple'], ['list_completed', rel.completed_count, 'blue'], ['list_hold_on', rel.hold_on_count, 'yellow'], ['list_dropped', rel.dropped_count, 'red']];
   const total = rows.reduce((a, r) => a + (r[1] || 0), 0) || 1;
-  card.append(h('div', { class: 'progress-multi' }, rows.map(([, n, c]) => h('div', { style: { width: `${((n || 0) * 100) / total}%`, background: `var(--${c})` } }))));
+  const bars = h('div', { class: 'progress-multi' }, rows.map(([, n, c]) => h('div', { style: { width: `${((n || 0) * 100) / total}%`, background: `var(--${c})` } })));
+  card.append(grow ? growBars(bars) : bars);
   card.append(h('div', { class: 'info-rows' }, rows.map(([k, n, c]) => h('div', { class: 'row' }, h('span', { style: { width: '10px', height: '10px', borderRadius: '50%', background: `var(--${c})` } }), h('span', { class: 'grow' }, t(k)), h('b', null, digits(n))))));
   return card;
 }
 
 function collectionsBlock(rel) {
   return h('div', { class: 'card' },
-    h('div', { class: 'menu-item', style: { padding: '8px 0' }, onclick: () => navigate('release-collections', { release: rel }) },
+    h('div', { class: 'menu-item inset', onclick: () => navigate('release-collections', { release: rel }) },
       icon('ic_collection'), h('div', { class: 'grow' }, 'Показать в коллекциях'), rel.collection_count > 0 ? h('span', { class: 'badge' }, digits(rel.collection_count)) : null),
-    h('div', { class: 'menu-item', style: { padding: '8px 0' }, onclick: () => addToCollection(rel) },
+    h('div', { class: 'menu-item inset', onclick: () => addToCollection(rel) },
       icon('ic_collection_add'), h('div', { class: 'grow' }, 'Добавить к себе в коллекцию')));
 }
 
@@ -358,7 +519,7 @@ async function addToCollection(rel) {
         class: 'sheet-item', onclick: async () => {
           d.close();
           const res = await A.collectionMyReleaseAdd(c.id, rel.id);
-          toast(res.code === 0 ? `Релиз был успешно добавлен в вашу коллекцию ${c.title}` : res.code === 5 ? 'Этот релиз уже находится в вашей коллекции' : res.code === 7 ? 'Вы превысили допустимый лимит релизов в коллекции' : t('error_load'));
+          toast(res.code === 0 ? `Релиз был успешно добавлен в вашу коллекцию ${c.title}` : res.code === 5 ? 'Этот релиз уже находится в вашей коллекции' : res.code === 7 ? 'Вы превысили допустимый лимит релизов в коллекции' : t('error_load'), { ok: res.code === 0 });
         },
       }, icon('ic_collection'), c.title));
     }
@@ -441,10 +602,13 @@ function recommendedBlock(rel) {
       h('div', { class: 'poster', style: { width: '100%' } }, img(r.image)), h('div', { class: 't clamp2', style: { fontSize: '13px' } }, r.title_ru || t('unnamed'))))));
 }
 
+// первая страница комментариев — с нажатия кнопки мыши: успевает за ожидание перехода, экран — сразу с ними
+const preCommentsOf = (rel) => (e) => { if (e.button === 0) import('./comments.js').then((m) => m.prefetchComments('release', rel.id)).catch(() => {}); };
 function commentsBlock(rel, rebuild) {
+  const preComments = preCommentsOf(rel);
   const card = h('div', { class: 'card', style: { padding: '16px 0 0' } },
     h('div', { class: 'card-title', style: { padding: '0 16px' } }, h('div', { class: 'grow' }, 'Комментарии', h('div', { class: 'muted', style: { fontSize: '13px', fontWeight: 400 } }, 'Популярные и актуальные')),
-      h('button', { class: 'section-more', onclick: () => navigate('comments', { kind: 'release', id: rel.id, release: rel }) }, 'Показать все', icon('ic_chevron_end', 'sm'))));
+      h('button', { class: 'section-more', onclick: () => navigate('comments', { kind: 'release', id: rel.id, release: rel }), onpointerdown: preComments }, 'Показать все', icon('ic_chevron_end', 'sm'))));
   // написать — сразу под заголовком, над комментариями
   card.append(commentComposer({
     top: true,
@@ -457,7 +621,7 @@ function commentsBlock(rel, rebuild) {
   }));
   const list = rel.comments || [];
   if (!list.length) card.append(h('div', { class: 'muted', style: { padding: '8px 16px 12px' } }, 'Еще никто не оставлял комментарии. Будьте первыми!'));
-  list.forEach((c) => card.append(commentItem(c, { kind: 'release', release: rel })));
+  list.forEach((c) => card.append(commentItem(c, { kind: 'release', release: rel, ownerId: rel.id })));
   return card;
 }
 

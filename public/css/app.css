@@ -108,11 +108,15 @@ img { display: block; }
   #bottomnav .nav-item { width: auto; flex: 1; }
 }
 .screen { min-height: 100%; }
-/* «Войдите в аккаунт» и подобные заглушки — посередине оставшейся высоты экрана, а не у верха.
-   Экран — столбец на всю высоту; заглушка (или её родитель под шапкой, как у вкладки AI) растягивается */
-.screen:has(.center-gate), .screen :has(.center-gate) { display: flex; flex-direction: column; }
-.screen :has(.center-gate) { flex: 1; }
-.center-gate { flex: 1; justify-content: center; padding-bottom: 72px; }
+/* Пустые экраны, ошибки, «Войдите в аккаунт» — посередине оставшейся под шапкой высоты, а не у верха (раньше
+   «Ничего не найдено» висело сверху, под ним — полэкрана пустоты). Экран — столбец на всю высоту, все обёртки
+   между ним и заглушкой растягиваются. .empty.inline — заглушка, под которой идёт контент (лента: «подписок
+   нет» + рекомендации каналов), — остаётся на месте */
+.screen:has(.empty:not(.inline)), .screen :has(.empty:not(.inline)) { display: flex; flex-direction: column; }
+.screen :has(.empty:not(.inline)) { flex: 1; }
+.empty:not(.inline), .center-gate { flex: 1; justify-content: center; padding-top: 24px; padding-bottom: var(--empty-pb, 72px); }
+/* --empty-pb считает ui.js (centerEmpties): содержимое — по центру всей области экрана, чуть выше середины,
+   а не по центру места под шапкой (под высокой шапкой оно смотрелось ниже середины окна) */
 .container { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
 
 /* ---------- App bar ---------- */
@@ -149,12 +153,17 @@ img { display: block; }
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--carmine); border-bottom-color: var(--carmine); }
 :root[data-theme="dark"] .tab.active { color: var(--text); border-bottom-color: var(--text); }
+/* полоска выбранной вкладки — общая для полосы (ui.js tabs): переезжает к новой вкладке */
+.tabbar.has-ink .tab.active { border-bottom-color: transparent; }
+.tabbar.static.has-ink { position: relative; }
+.tab-ink { position: absolute; left: 0; bottom: 0; width: 0; height: 3px; background: var(--carmine); pointer-events: none; }
+:root[data-theme="dark"] .tab-ink { background: var(--text); }
+.tab-ink.ready { transition: transform .3s var(--ease-out), width .3s var(--ease-out); }
 .tabbody { min-height: 200px; }
 
 /* ---------- Кнопки, чипы, поля ---------- */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 20px; border-radius: 20px;
   font-family: 'Google Sans', 'Roboto', sans-serif; font-size: 14px; white-space: nowrap; transition: filter .15s, background .15s; }
-.btn:hover { filter: brightness(.96); }
 .btn:disabled { opacity: .5; cursor: default; }
 .btn-primary { background: var(--carmine); color: #fff; }
 :root[data-theme="dark"] .btn-primary { background: var(--accent); color: var(--on-accent); }
@@ -211,7 +220,8 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 /* ---------- Карточки релизов ---------- */
 .list { display: flex; flex-direction: column; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 14px; padding: 14px 20px; }
-.release-row { display: flex; gap: 14px; padding: 10px 20px; cursor: pointer; transition: background .12s; position: relative; }
+/* строки списков: подсветка при наведении — скруглённая и с отступом от краёв экрана (margin + padding = прежние 20px) */
+.release-row { display: flex; gap: 14px; margin: 0 8px; padding: 10px 12px; border-radius: 14px; cursor: pointer; transition: background .12s; position: relative; }
 .release-row:hover { background: var(--block); }
 .poster { position: relative; flex: none; width: 104px; aspect-ratio: 2 / 3; border-radius: 10px; overflow: hidden; background: linear-gradient(135deg, var(--ph1), var(--ph2)); }
 .poster img { width: 100%; height: 100%; object-fit: cover; }
@@ -262,20 +272,28 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; padding: 4px 20px 12px; }
 .tile { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 14px; background: var(--bg2); box-shadow: var(--shadow); cursor: pointer; font-family: 'Google Sans','Roboto',sans-serif; font-size: 15px; }
 :root[data-theme="dark"] .tile { box-shadow: none; }
-.tile:hover { filter: brightness(.97); }
 .tile .ic { color: var(--carmine); }
 :root[data-theme="dark"] .tile .ic { color: var(--text); }
 
 /* ---------- Страница релиза ---------- */
 .rel-hero { position: relative; overflow: hidden; }
 .rel-hero .bg { position: absolute; inset: -40px; background-size: cover; background-position: center; filter: blur(40px) saturate(1.2); opacity: .35; }
+/* фон проявляется, когда картинка загрузилась (release.js heroBg): не вспыхивает поверх тёмного */
+.rel-hero .bg:not(.ready) { opacity: 0 !important; }
+.rel-hero .bg.fade-in { transition: opacity .5s var(--ease-std); }
 /* светлый постер делал фон шапки серым: в тёмной теме фон темнее, кнопки и бейджи — на плотной подложке с рамкой,
    чтобы читались на любом постере */
 :root[data-theme="dark"] .rel-hero .bg { filter: blur(40px) saturate(1.2) brightness(.55); opacity: .5; }
+/* рамка плотнее обычной --sep: подложка почти цвета фона, и на тёмном постере кнопку отличала только рамка —
+   с --sep её было почти не видно (contrast.js) */
+.rel-hero { --hero-line: rgba(0,0,0,.16); }
+:root[data-theme="dark"] .rel-hero { --hero-line: rgba(255,255,255,.16); }
 .rel-hero .list-btn:not(.tag), .rel-hero .badge:not(.rating), .rel-hero .btn-tonal {
-  background: color-mix(in srgb, var(--bg) 62%, transparent); border-color: var(--sep); backdrop-filter: blur(10px); }
-.rel-hero .badge:not(.rating) { border: 1px solid var(--sep); color: var(--text2); }
-.rel-hero .btn-tonal { border: 1px solid var(--sep); }
+  background: color-mix(in srgb, var(--bg) 62%, transparent); border-color: var(--hero-line); }
+/* без backdrop-filter: под кнопками и так размытый постер, а пока экран въезжает (анимация прозрачности)
+   Chromium размывал под ними другой фон — после въезда кнопки и бейджи заметно темнели */
+.rel-hero .badge:not(.rating) { border: 1px solid var(--hero-line); color: var(--text2); }
+.rel-hero .btn-tonal { border: 1px solid var(--hero-line); }
 .rel-hero .inner { position: relative; display: flex; align-items: flex-start; gap: 24px; padding: 8px 24px 28px; }
 /* постер не растягивается по высоте колонки — держит пропорцию 2:3 */
 .rel-hero .poster { flex: none; align-self: flex-start; width: 200px; border-radius: 14px; box-shadow: 0 8px 28px rgba(0,0,0,.25); cursor: zoom-in; }
@@ -313,7 +331,7 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .chain-arrow { flex: none; align-self: flex-start; margin-top: 82px; color: var(--text3); display: grid; place-items: center; }
 /* «Показать все»: хронология — номер на вертикальной линии слева, текущий релиз выделен */
 .chain-row { display: flex; align-items: stretch; }
-.chain-row > .release-row { flex: 1; min-width: 0; padding-left: 4px; }
+.chain-row > .release-row { flex: 1; min-width: 0; margin-left: 0; padding-left: 4px; }
 .chain-rail { position: relative; flex: none; width: 60px; display: flex; align-items: center; justify-content: flex-end; }
 .chain-rail::before { content: ''; position: absolute; top: 0; bottom: 0; right: 17px; width: 2px; background: var(--sep); }
 .chain-row:first-child .chain-rail::before { top: 50%; }
@@ -343,6 +361,9 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .stars.pick:has(button:hover) button, .stars.pick:has(button:focus-visible) button { color: var(--orange); }
 .stars.pick button:hover ~ button, .stars.pick button:focus-visible ~ button { color: var(--text4); }
 .stars .ic { width: 32px; height: 32px; }
+/* «5 из 5 · Вы проголосовали … Изменить» под звёздами; кнопка-текст ровно по правому краю карточки */
+.vote-done { margin-top: 6px; font-size: 13px; }
+.vote-done .btn-text { margin-right: -12px; }
 .list-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
 .list-stat { padding: 10px; border-radius: 10px; background: var(--block); }
 .list-stat b { display: block; font-size: 16px; }
@@ -350,14 +371,14 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 
 /* ---------- Эпизоды ---------- */
 .ep-list { display: flex; flex-direction: column; }
-.ep-row { display: flex; align-items: center; gap: 14px; padding: 12px 20px; cursor: pointer; }
+.ep-row { display: flex; align-items: center; gap: 14px; margin: 0 8px; padding: 12px; border-radius: 14px; cursor: pointer; }
 .ep-row:hover { background: var(--block); }
 .ep-row .num { width: 42px; height: 42px; border-radius: 12px; background: var(--btn2); display: grid; place-items: center; font-weight: 500; flex: none; }
 /* серия запускается: спиннер на месте номера */
 .ep-row .num .spinner { width: 20px; height: 20px; border-width: 2.5px; }
 .ep-row.watched .num { background: color-mix(in srgb, var(--green) 20%, transparent); color: var(--green); }
 .ep-row.last .num { outline: 2px solid var(--carmine); }
-.type-row { display: flex; align-items: center; gap: 14px; padding: 12px 20px; cursor: pointer; }
+.type-row { display: flex; align-items: center; gap: 14px; margin: 0 8px; padding: 12px; border-radius: 14px; cursor: pointer; }
 .type-row:hover { background: var(--block); }
 .type-row img, .type-row .ph { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; background: var(--btn2); flex: none; display: grid; place-items: center; }
 
@@ -374,9 +395,35 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .comment .tools button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px; border-radius: 6px; }
 .comment .tools button:hover { background: var(--block); }
 .comment .tools button.on { color: var(--carmine); }
-.comment-input { display: flex; gap: 8px; align-items: flex-end; padding: 10px 20px; position: sticky; bottom: 0; background: var(--bg); border-top: 1px solid var(--sep); }
-.comment-input textarea { flex: 1; min-height: 44px; max-height: 160px; }
+/* Поле комментария (common.js commentComposer): одна плашка — текст сам подрастает, справа «Спойлер» и
+   «Отправить» значками, по строке ввода (раньше — отдельное поле с ручкой и крупной кнопкой «Спойлер» не по центру) */
+.comment-input { padding: 10px 20px; position: sticky; bottom: 0; background: var(--bg); border-top: 1px solid var(--sep); }
 .comment-input.top { position: static; border-top: 0; border-bottom: 1px solid var(--sep); background: transparent; padding-top: 4px; padding-bottom: 12px; }
+/* экран комментариев: поле закреплено под шапкой — написать, не листая наверх (фон сплошной: без backdrop-filter) */
+.comment-input.top.sticky { position: sticky; top: var(--appbar-h); z-index: 14; background: var(--bg); padding-top: 8px; }
+.comment-input.inline { position: static; border: 0; background: transparent; padding: 8px 0 4px; }
+.composer-box { display: flex; align-items: flex-end; gap: 2px; padding: 4px 4px 4px 16px; border-radius: 22px; border: 1px solid var(--input-border);
+  background: var(--input-bg); transition: border-color .18s var(--ease-std); }
+.composer-box:focus-within { border-color: var(--carmine); }
+:root[data-theme="dark"] .composer-box:focus-within { border-color: var(--text3); }
+.composer-ta { flex: 1; min-width: 0; height: 36px; min-height: 36px; max-height: 160px; padding: 8px 0; border: 0; outline: 0; background: transparent;
+  resize: none; font: inherit; line-height: 20px; color: var(--text); }
+.composer-ta::placeholder { color: var(--text3); }
+.composer-box .icon-btn.sm { width: 36px; height: 36px; flex: none; }
+.composer-spoiler { color: var(--text3); }
+.composer-spoiler.on { color: var(--carmine); background: color-mix(in srgb, var(--carmine) 15%, transparent); }
+:root[data-theme="dark"] .composer-spoiler.on { color: var(--text); background: var(--btn2); }
+.composer-send:disabled { opacity: .5; }
+
+/* Ветка ответов под комментарием: отступ под текстом и линия слева — видно, что это ответы в треде */
+.comment-thread { margin: 6px 0 0 -6px; padding-left: 14px; border-left: 2px solid var(--sep); }
+.comment-thread[hidden] { display: none; }
+.comment.reply { padding: 8px 0; gap: 10px; }
+.comment.reply .who { font-size: 13px; }
+.avatar.sm { width: 28px; height: 28px; }
+.comment .tools .thread-toggle { color: var(--link); }
+.thread-more { margin: 2px 0 6px; padding: 4px 6px; border-radius: 6px; color: var(--link); font-size: 13px; }
+.thread-more:hover { background: var(--block); }
 .verified { color: #42a5f5; }
 
 /* ---------- Профиль ---------- */
@@ -393,7 +440,9 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 
 /* ---------- Настройки / меню-списки ---------- */
 .menu-list { display: flex; flex-direction: column; }
-.menu-item { display: flex; align-items: center; gap: 16px; padding: 14px 24px; cursor: pointer; }
+.menu-item { display: flex; align-items: center; gap: 16px; margin: 0 8px; padding: 14px 16px; border-radius: 12px; cursor: pointer; }
+/* пункт внутри карточки или диалога: подсветка выходит за текст на 12px и скруглена (поля карточки 16px) */
+.menu-item.inset { margin: 0 -12px; padding: 10px 12px; }
 .menu-item:hover { background: var(--block); }
 .menu-item .ic { color: var(--icon); }
 .menu-item .sub { color: var(--text2); font-size: 13px; }
@@ -431,7 +480,7 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .dialog.sheet { padding: 18px 0 10px; }
 .dialog.sheet .dialog-title { padding: 0 24px; font-size: 18px; }
 .sheet-list { display: flex; flex-direction: column; }
-.sheet-item { display: flex; align-items: center; gap: 16px; padding: 13px 24px; text-align: left; }
+.sheet-item { display: flex; align-items: center; gap: 16px; margin: 0 8px; padding: 13px 16px; border-radius: 12px; text-align: left; }
 .sheet-item:hover { background: var(--block); }
 .sheet-item .ic { color: var(--icon); }
 .sheet-item.checked { color: var(--carmine); } .sheet-item.checked .ic { color: var(--carmine); }
@@ -661,18 +710,19 @@ button, .chip, .tab, .tile, .menu-item, .sheet-item, .release-row, .type-row, .e
 .nav-item .ic { transition: transform .25s var(--ease-out); }
 .nav-item.active .pill .ic { transform: scale(1.06); }
 
-/* переходы между экранами: вперёд — въезд справа, назад — слева, смена вкладки — затухание */
-.screen.enter-forward { animation: screen-forward .28s var(--ease-out); }
-.screen.enter-back { animation: screen-back .28s var(--ease-out); }
-.screen.enter-fade { animation: screen-fade .22s var(--ease-std); }
-@keyframes screen-forward { from { opacity: 0; transform: translateX(28px); } }
-@keyframes screen-back { from { opacity: 0; transform: translateX(-28px); } }
+/* переходы между экранами: вперёд — въезд справа, назад — слева, смена вкладки — затухание. Двигается и проявляется
+   контент под шапкой, а шапка (.appbar) сразу на месте — как в мобильном приложении: иначе при каждом переходе
+   шапка тускнела и проявлялась заново (мигала). Правила — после «появления контента» ниже: перекрывают его */
+/* въезд — с частичной видимости: прежний экран убирается сразу, и с нуля между ними мелькал пустой тёмный кадр */
+@keyframes screen-forward { from { opacity: .35; transform: translateX(28px); } }
+@keyframes screen-back { from { opacity: .35; transform: translateX(-28px); } }
 @keyframes screen-fade { from { opacity: 0; } }
-.tabbody > * { animation: screen-fade .2s var(--ease-std); }
+/* проявление содержимого вкладки — разовое, только при переключении (ui.js tabs): CSS-анимация шла и при первом
+   показе экрана (вторая анимация поверх въезда — блик) и при каждом возврате на экран */
 .tab { position: relative; }
 
-/* появление загруженного контента и картинок */
-.screen > *:not(.spinner-wrap) { animation: content-in .25s var(--ease-std); }
+/* въезд экрана — одна анимация из router.js (ui.js enterScreen): контент под шапкой; пришедший во время въезда
+   контент подхватывает её (joinEnter), после — встаёт сразу. CSS-появление контента экрана было второй анимацией */
 @keyframes content-in { from { opacity: 0; } }
 img.fade { opacity: 0; transition: opacity .35s var(--ease-std); }
 img.fade.loaded { opacity: 1; }
@@ -765,7 +815,10 @@ html.economy .sk:not(.sk-root .sk) { animation: sk-reveal .01ms var(--sk-delay, 
 .ai-cards { padding: 10px 0 2px; max-width: 100%; }
 .ai-cards .ai-card { width: 120px; flex: none; }
 .ai-cards .ai-card .t { font-size: 13px; }
-.ai-composer { max-width: 860px; width: 100%; margin: 0 auto; border-top: 0; align-items: flex-end; position: static; flex: none; }
+/* своя раскладка в строку: общий .comment-input стал блоком под поле комментария (commentComposer) — без неё
+   кнопка «Отправить» уезжала под поле */
+.ai-composer { display: flex; gap: 8px; max-width: 860px; width: 100%; margin: 0 auto; border-top: 0; align-items: flex-end; position: static; flex: none; }
+.ai-composer textarea { flex: 1; min-width: 0; }
 .ai-composer textarea { resize: none; height: 48px; padding: 12px 14px; line-height: 1.4; border-radius: 24px; }
 .ai-send { width: 48px; height: 48px; flex: none; background: var(--carmine); color: #fff; }
 .ai-send:hover { background: var(--carmine); filter: brightness(1.08); }
@@ -815,7 +868,10 @@ html:not(.in-party) .party-btn.only-in-room { display: none; }
 .party-row { display: flex; align-items: center; gap: 12px; font-size: 14px; cursor: pointer; }
 .party-row small { display: block; font-size: 12px; color: var(--text2); }
 .party-row.readonly { cursor: default; opacity: .65; }
-.party-chat { display: flex; flex-direction: column; gap: 4px; min-height: 60px; max-height: 180px; overscroll-behavior: contain; overflow: auto; padding: 8px 10px; border-radius: 12px; background: var(--block); font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.party-chat { display: flex; flex-direction: column; gap: 4px; min-height: 60px; max-height: 180px; overflow: auto; padding: 8px 10px; border-radius: 12px; background: var(--block); font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+/* прокрутка колесом не уходит панели, только когда чату есть что листать (.scrollable — ui.js containScroll):
+   с contain всегда Chromium глушил колесо и над пустым чатом — панель под ним не листалась */
+.scrollable-contain.scrollable { overscroll-behavior: contain; }
 .party-chat:empty::before { content: 'Сообщений пока нет'; color: var(--text3); }
 .party-chat .msg b { font-weight: 600; }
 .party-chat .msg.me b { color: var(--accent); }
@@ -1020,3 +1076,66 @@ html:not(.in-party) .party-btn.only-in-room { display: none; }
 .p-eps-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .p-eps-legend i { width: 12px; height: 12px; border-radius: 3px; }
 .p-eps-legend i.w { background: #70a873; } .p-eps-legend i.cur { box-shadow: inset 0 0 0 2px #fff; }
+
+/* ---------- Наведение и нажатие ---------- */
+/* Кнопки с заливкой: слой состояния цветом текста поверх фона (как в Material 3) — заметен на любой заливке
+   и в обеих темах, в отличие от прежнего затемнения фильтром (в тёмной теме его не было видно) */
+.btn, .chip, .tile, .fav-btn { position: relative; isolation: isolate; }
+.btn::after, .chip::after, .tile::after, .fav-btn::after { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit;
+  background: currentColor; opacity: 0; pointer-events: none; transition: opacity .18s var(--ease-std); }
+.btn:hover:not(:disabled)::after, .chip:hover::after, .tile:hover::after, .fav-btn:hover::after { opacity: .08; }
+.btn:active:not(:disabled)::after, .chip:active::after, .tile:active::after, .fav-btn:active::after { opacity: .14; }
+.btn:disabled:active { transform: none; }
+/* строки: нажатие чуть плотнее наведения, иконка пункта при наведении темнеет до цвета текста */
+.menu-item:active, .sheet-item:active, .release-row:active, .ep-row:active, .type-row:active, .pop-item:active:not(:disabled) { background: var(--btn2); }
+.menu-item .ic, .sheet-item .ic { transition: color .18s var(--ease-std), transform .25s var(--ease-out); }
+.menu-item:hover .ic, .sheet-item:not(.checked):hover .ic { color: var(--text); }
+.menu-item:hover > .ic:first-child, .sheet-item:hover > .ic:first-child { transform: scale(1.08); }
+.release-row:hover .poster img, .type-row:hover img { transform: scale(1.04); }
+.type-row img { transition: transform .25s var(--ease-out); }
+/* «Показать все ›»: стрелка подаётся вперёд */
+.section-more .ic { transition: transform .2s var(--ease-out); }
+.section-more:hover .ic { transform: translateX(3px); }
+.banner img { transition: transform .4s var(--ease-out); }
+.banner:hover img { transform: scale(1.03); }
+.stat.clickable:hover { background: var(--btn2); }
+.screens > img:hover, .screens > .vb:hover > img { filter: brightness(1.08); }
+.screens > img, .screens > .vb > img { transition: filter .2s var(--ease-std); }
+.comment .avatar { transition: transform .2s var(--ease-out); }
+.comment .avatar:hover { transform: scale(1.06); }
+.info-row a:hover, .linkish:hover, .content a:hover { text-decoration: underline; }
+.nav-item:active .pill { transform: scale(.94); }
+.nav-item .pill { transition: transform .15s var(--ease-std); }
+/* выбор оценки: звезда под курсором подрастает */
+.stars.pick button { transition: color .15s var(--ease-std), transform .2s var(--ease-out); }
+.stars.pick button:hover { transform: scale(1.18); }
+.stars.pick button:active { transform: scale(.92); }
+/* клавиатура: видимое кольцо фокуса (мышью — без него) */
+button:focus-visible, a:focus-visible, .menu-item:focus-visible, .release-card:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--carmine); outline-offset: 2px; }
+:root[data-theme="dark"] :is(button, a, .menu-item, .release-card, [tabindex]):focus-visible { outline-color: var(--accent); }
+
+/* ---------- Lottie (js/lottie.js) ---------- */
+/* пока анимация грузится — обычная иконка-маска (fallback), потом её место занимает SVG того же размера;
+   холст может выходить за края иконки (--lt-pad, брызги у сердца) — клики проходят сквозь него */
+.lt { position: relative; animation: lt-attach 1ms; } /* lt-attach — сигнал «вставлен в DOM» для lottie.js */
+@keyframes lt-attach { from { opacity: .99; } }
+.lt.lt-on { background: none; -webkit-mask: none; mask: none; }
+/* muted: до готовности — приглушённая иконка, как начальный кадр (звезда оценки серая, а не сразу залитая) */
+.lt.lt-muted:not(.lt-on):not(.lt-fail) { background: var(--text4); }
+/* blank: до готовности — пустое место того же размера (анимация начинается с пустоты); не загрузилась — иконка */
+.lt.lt-blank:not(.lt-on):not(.lt-fail) { background: none; }
+.lt-host { position: absolute; inset: var(--lt-pad, 0); pointer-events: none; }
+.lt-host svg { display: block; }
+/* цвет — по классу слоя (cl в сценах tools/lottie-studio; в плеере вместо них — слоты): f/s — заливка/обводка цветом текста, b — цветом фона, m — приглушённым */
+.lt-host .f path { fill: currentColor; }
+.lt-host .s path { stroke: currentColor; }
+.lt-host .b path { fill: var(--bg); }
+.lt-host .m path { fill: var(--text4); }
+.empty .lt.big { width: 96px; height: 96px; margin-bottom: -4px; }
+/* тост «готово»: галочка в круге слева */
+#toast.ok { display: flex; align-items: center; gap: 10px; padding-left: 12px; }
+#toast .toast-ic { width: 22px; height: 22px; color: #73c978; }
+/* счётчик непрочитанных на колокольчике (выпрыгивает из common.js, только когда их стало больше: CSS-анимация
+   перезапускалась бы при каждом возврате на вкладку) */
+.notif-badge { position: absolute; top: 4px; right: 4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--carmine);
+  color: #fff; font-size: 10px; line-height: 16px; text-align: center; }

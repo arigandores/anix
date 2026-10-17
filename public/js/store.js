@@ -110,8 +110,10 @@ try {
   }
 } catch { /* storage недоступен */ }
 
+// по умолчанию — тёмная; светлую или «как в системе» выбирают в настройках (выбор хранится в anixart.theme)
+export const DEFAULT_THEME = 'dark';
 export function theme() {
-  try { return localStorage.getItem('anixart.theme') || 'system'; } catch { return 'system'; }
+  try { return localStorage.getItem('anixart.theme') || DEFAULT_THEME; } catch { return DEFAULT_THEME; }
 }
 export function setTheme(v) {
   try { localStorage.setItem('anixart.theme', v); } catch { /* ignore */ }
@@ -143,6 +145,16 @@ export const db = {
     all[k] = { releaseId: r, sourceId: s, position: p, playbackPosition: 0, isWatched: false, ...(all[k] || {}), ...patch };
     save('anixart.db.episodes', all);
     return all[k];
+  },
+  // Место в серии в любой озвучке: в этой озвучке серию не начинали, а в другой смотрели — продолжить с того же
+  // места (номер серии один и тот же). Последнее по времени (savedAt), у старых записей — самое дальнее
+  positionAnySource(r, p) {
+    let best = null;
+    for (const e of Object.values(this.episodes())) {
+      if (e.releaseId !== r || e.position !== p || !(e.playbackPosition > 0)) continue;
+      if (!best || (e.savedAt || 0) > (best.savedAt || 0) || ((e.savedAt || 0) === (best.savedAt || 0) && e.playbackPosition > best.playbackPosition)) best = e;
+    }
+    return best ? best.playbackPosition : 0;
   },
   watchedOf(r, s) {
     const out = {};

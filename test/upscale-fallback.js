@@ -19,6 +19,20 @@ const CASES = {
   radeon: { probe: { error: 'CUDA driver version is insufficient for CUDA runtime version' }, nvidia: '0', lowPower: true },
 };
 const SLOW = (c) => c.swiftshader || c.lowPower; // медленный адаптер: «не успевает» — тоже правильный исход
+// Видеокарта занята не нами (игра): загрузка по nvidia-smi до запуска плеера, медиана 5 замеров за ~1,5 с, выше BUSY% —
+// строка «87% · 11528 МБ», иначе '' (свободна или nvidia-smi нет)
+const BUSY = 30;
+async function otherGpuLoad() {
+  const { execFileSync } = require('child_process');
+  const xs = [];
+  for (let i = 0; i < 5; i++) {
+    try { xs.push(execFileSync('nvidia-smi', ['--query-gpu=utilization.gpu,memory.used', '--format=csv,noheader,nounits'], { encoding: 'utf8', timeout: 5000 }).trim().split(/\r?\n/)[0].split(',').map(Number)); } catch { return ''; }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  xs.sort((a, b) => a[0] - b[0]);
+  const [util, mem] = xs[2];
+  return util > BUSY ? `${util}% · ${mem} МБ` : '';
+}
 const mode = process.argv.find((a) => CASES[a]);
 
 if (!mode) {
@@ -119,6 +133,8 @@ async function main() {
   const hasHint = /Обновите драйвер видеокарты NVIDIA/.test(settingsText); const hasTrt = /Ускорение NVIDIA/.test(settingsText);
   check(mode === 'driver' ? hasHint : !hasTrt, `настройки: ${hasHint ? 'подсказка про драйвер' : hasTrt ? 'пункт ускорения есть' : 'пункта ускорения нет'}`);
 
+  // загрузка видеокарты чужими приложениями — до запуска плеера (иначе в замер попадёт наше же улучшение)
+  const busy = SLOW(C) ? '' : await otherGpuLoad();
   // плеер: «Атака титанов 3», Kodik — «Авто» работает на WebGPU
   await js(`localStorage.setItem('anixart.pref.SELECTED_PLAYER','2'); localStorage.setItem('anixart.pref.ON_EPISODE_DISCLAIMER','true'); localStorage.setItem('anixart.pref.UPSCALE_MODE', JSON.stringify('auto')); 1`);
   await js(`(async () => { const { getGpu } = await import('/js/upscale/engine.js'); const { gpuKey } = await import('/js/upscale/bench.js');
@@ -142,14 +158,18 @@ async function main() {
     if (s.state === 'on' || s.state === 'idle' || s.state === 'error') break;
   }
   const noTrt = s.stages.every((x) => !/:trt$/.test(x));
-  check((s.state === 'on' || (SLOW(C) && s.state === 'idle')) && noTrt, `«Авто» без ускорения: ${s.state} · ${s.text || '—'} · ${s.stages.join(' + ') || 'без модели'}`);
+  check(noTrt, `«Авто» без TensorRT: ${s.stages.join(' + ') || 'без модели'}`);
+  // скорость меряется на настоящей видеокарте: её занимает другое приложение (игра) — «не успевает» и рывки честные,
+  // проверять скорость нельзя (ложный провал), остальное проверяем
+  const perf = (ok, what) => (busy ? console.log(`SKIP [${mode}] ${what} — видеокарту занимает другое приложение: ${busy}`) : check(ok, what));
+  perf(s.state === 'on' || (SLOW(C) && s.state === 'idle'), `«Авто» без ускорения: ${s.state} · ${s.text || '—'} · ${s.stages.join(' + ') || 'без модели'}`);
   // плавность: за 5 с улучшен почти каждый кадр, пропусков нет
   if (s.state === 'on') {
     await sleep(3000);
     const q = () => js(`(() => { const ov = document.querySelector('.player-overlay'); const p = ov.querySelector('video').getVideoPlaybackQuality(); return { drawn: ov.upscale.debug.drawn, total: p.totalVideoFrames, dropped: p.droppedVideoFrames, ms: Math.round(ov.upscale.debug.lastMs) }; })()`);
     const a0 = await q(); await sleep(5000); const a1 = await q();
     const total = a1.total - a0.total; const drawn = a1.drawn - a0.drawn; const dropped = a1.dropped - a0.dropped;
-    check(SLOW(C) || (total > 90 && drawn >= total * 0.9 && dropped === 0), `плавно: кадров ${total}, улучшено ${drawn}, пропущено ${dropped}, ${a1.ms} мс`);
+    perf(SLOW(C) || (total > 90 && drawn >= total * 0.9 && dropped === 0), `плавно: кадров ${total}, улучшено ${drawn}, пропущено ${dropped}, ${a1.ms} мс`);
   }
   // меню плеера: строка ускорения — подсказка (driver) или её нет
   await js(`document.querySelector('.player-controls .gear').click(); [...document.querySelectorAll('.player-menu .pm-row')].find((x) => /Улучшение/.test(x.textContent)).click(); 1`);

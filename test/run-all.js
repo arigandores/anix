@@ -86,8 +86,10 @@ function run([name, file, engine]) {
       const clean = out.split('\n').filter((l) => !/^\[\d+:\d+\/|Electron Security Warning|Content-Security-Policy|this app to unnecessary|For more information|^https?:\/\//.test(l)).join('\n');
       const ok = code === 0 && !FAILED.test(clean);
       const sec = ((Date.now() - t0) / 1000).toFixed(0);
-      console.log(`${ok ? 'ok  ' : 'FAIL'} ${name.padEnd(15)} ${sec.padStart(4)} с${ok ? '' : `  → test/logs/${name}.log`}`);
-      resolve({ name, ok, sec, clean });
+      // SKIP — проверка не проводилась (например, видеокарту занимает игра): прошёл, но не целиком — видно в итоге
+      const skips = (clean.match(/^SKIP\b.*$/gm) || []);
+      console.log(`${ok ? 'ok  ' : 'FAIL'} ${name.padEnd(15)} ${sec.padStart(4)} с${ok ? '' : `  → test/logs/${name}.log`}${skips.length ? `  (пропущено проверок: ${skips.length})` : ''}`);
+      resolve({ name, ok, sec, clean, skips });
     });
   });
 }
@@ -105,6 +107,11 @@ function run([name, file, engine]) {
     console.log(`\n--- ${r.name} (последние строки) ---`);
     console.log(r.clean.trim().split('\n').slice(-15).join('\n'));
   }
-  console.log(`\n${bad.length ? `ПРОВАЛЕНО: ${bad.map((r) => r.name).join(', ')}` : 'ВСЁ ПРОШЛО'} · ${((Date.now() - t0) / 1000).toFixed(0)} с`);
+  const skipped = results.filter((r) => r.skips.length);
+  if (skipped.length) {
+    console.log('\n--- пропущенные проверки ---');
+    for (const r of skipped) console.log(r.skips.map((l) => `${r.name}: ${l}`).join('\n'));
+  }
+  console.log(`\n${bad.length ? `ПРОВАЛЕНО: ${bad.map((r) => r.name).join(', ')}` : skipped.length ? 'ПРОШЛО, НО С ПРОПУСКАМИ' : 'ВСЁ ПРОШЛО'} · ${((Date.now() - t0) / 1000).toFixed(0)} с`);
   process.exit(bad.length ? 1 : 0);
 })();

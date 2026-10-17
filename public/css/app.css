@@ -655,6 +655,13 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .bench-fill { width: 0; height: 100%; border-radius: 4px; background: var(--carmine); transition: width .3s; }
 .bench-label { font-size: 13px; color: var(--muted, inherit); opacity: .8; }
 .bench-results { max-width: min(640px, 94vw); }
+/* Обновление приложения (update.js): «Что нового» листается внутри окна, кнопки остаются на виду; прогресс — .bench-bar */
+.update-ver { color: var(--text2); font-size: 14px; margin: -8px 0 14px; }
+.update-notes { max-height: min(50vh, 440px); min-height: 96px; overflow: auto; padding-right: 8px; color: var(--text); overflow-wrap: anywhere; }
+/* маленькое окно: сжимается только список, заголовок, галочка и кнопки остаются на виду без прокрутки окна */
+.update-dialog, .update-dialog > .dialog-content, .update-wrap, .update { display: flex; flex-direction: column; min-height: 0; }
+.update-notes .ai-md p:first-child { color: var(--text); }
+.update-skip { margin-top: 16px; font-size: 14px; color: var(--text2); cursor: pointer; width: fit-content; }
 .bench-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 10px; }
 .bench-table th, .bench-table td { padding: 6px 8px; text-align: right; vertical-align: top; border-bottom: 1px solid var(--divider, rgba(127,127,127,.2)); }
 .bench-table th:first-child, .bench-table td:first-child { text-align: left; }

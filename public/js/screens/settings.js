@@ -8,6 +8,7 @@ import { AI_MODELS, AI_EFFORTS } from './ai.js';
 import { trtStatus, trtInstall, benchRunDialog, benchResultsDialog, benchInfo, SHARPNESS, SHARP_LABEL } from '../upscale/index.js';
 import { AUDIO_OPTS } from '../audio.js';
 import { clearPresence, discordStatus } from '../discord.js';
+import { canUpdate, checkUpdate, lastCheck, updateDialog, whatsNewDialog, releaseNotes } from '../update.js';
 
 function item(ic, title, sub, onClick) {
   return h('div', { class: 'menu-item', onclick: onClick }, icon(ic), h('div', { class: 'grow' }, h('div', null, title), sub ? h('div', { class: 'sub' }, sub) : null));
@@ -116,13 +117,41 @@ registerScreen('settings', () => {
   fetch('/__info').then((r) => r.json()).then((i) => {
     about.querySelector('.sub').textContent = `Версия ${i.appVersion} • неофициальный клиент Anixart`;
   }).catch(() => {});
-  list.append(h('div', { class: 'menu-cat' }, 'О приложении'), about,
+  list.append(h('div', { class: 'menu-cat' }, 'О приложении'), about, ...updateItems(),
     item('ic_open_in_new', 'Исходный код', 'github.com/arigandores/anix-desktop', () => window.open('https://github.com/arigandores/anix-desktop', '_blank')),
     h('div', { class: 'muted3', style: { fontSize: '12px', padding: '8px 16px 16px' } },
       'Anix Desktop не связан с разработчиками Anixart. Аккаунт, каталог и комментарии — сервис Anixart, видео — сторонние источники.'));
   root.append(list);
   return root;
 });
+
+// «Проверить обновления» и «Что нового» (update.js) — только в приложении для Windows. Проверка из настроек
+// предлагает и версию, которую пропустили при запуске.
+function updateItems() {
+  if (!canUpdate()) return [];
+  const known = lastCheck();
+  const IDLE = 'Новые версии выходят на GitHub';
+  let busy = false;
+  const check = item('ic_preference_update', 'Проверить обновления', known?.version ? `Вышла версия ${known.version} — нажмите, чтобы обновить` : IDLE, async () => {
+    if (busy) return;
+    busy = true;
+    const sub = check.querySelector('.sub');
+    sub.textContent = 'Проверяем…';
+    const r = await checkUpdate().catch(() => null);
+    busy = false;
+    if (!r) { sub.textContent = 'Не удалось проверить — нет связи с GitHub'; return; }
+    if (!r.supported) { sub.textContent = 'Обновляется только установленное приложение'; return; }
+    if (!r.version) { sub.textContent = `Установлена последняя версия — ${r.current}`; return; }
+    sub.textContent = `Вышла версия ${r.version} — нажмите, чтобы обновить`;
+    updateDialog(r);
+  });
+  const notes = item('ic_history', 'Что нового', 'Изменения в установленной версии', async () => {
+    const [i, md] = await Promise.all([fetch('/__info').then((r) => r.json()), releaseNotes()]).catch(() => []);
+    if (!md) { toast('Не удалось загрузить описание версии'); return; }
+    whatsNewDialog(i.appVersion, md);
+  });
+  return [check, notes];
+}
 
 // Ускорение NVIDIA (TensorRT) для улучшения картинки: только на видеокартах RTX. Пока библиотеки не скачаны —
 // пункт «Установить» с прогрессом, после — переключатель (electron/trt.js, upscale/index.js)

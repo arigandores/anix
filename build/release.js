@@ -2,7 +2,8 @@
 // Сборка файла релиза в release\: AnixDesktop-Setup-<v>.exe (electron-builder, NSIS). Portable не выпускается:
 // он при каждом запуске распаковывал бы ~200 МБ во временную папку, а установщику права администратора не нужны.
 // Версия для браузера отдельно не собирается — это архив «Source code» релиза на GitHub.
-// Запуск: npm run build:release. Загрузка в GitHub Release — вручную (gh release create).
+// Для автообновления (electron/updater.js) рядом кладутся latest.yml и .blockmap — их тоже выкладывают в релиз.
+// Запуск: npm run build:release. Загрузка в GitHub Release — в CI (.github/workflows/release.yml).
 // config.local.json (ключи источников и соцвхода) попадает в сборку, если есть; --no-keys — собрать без него.
 const fs = require('fs');
 const path = require('path');
@@ -27,7 +28,8 @@ try {
 }
 
 console.log(`\nФайл релиза (${withKeys ? 'с ключами из config.local.json' : 'без ключей'}):`);
-for (const f of [`AnixDesktop-Setup-${version}.exe`]) {
+for (const f of [`AnixDesktop-Setup-${version}.exe`, `AnixDesktop-Setup-${version}.exe.blockmap`, 'latest.yml']) {
   const p = path.join(out, f);
   console.log(`  ${f}  ${fs.existsSync(p) ? `${(fs.statSync(p).size / 1048576).toFixed(1)} МБ` : 'НЕТ'}`);
+  if (!fs.existsSync(p)) process.exitCode = 1;
 }

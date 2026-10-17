@@ -137,7 +137,8 @@ export function toast(msg, { ms = 2600, ok = false } = {}) {
 }
 
 // --- Диалоги / bottom sheets ---
-export function dialog({ title, content, actions = [], onClose, cls = '' } = {}) {
+// dismissible() — можно ли закрыть Esc и кликом мимо окна (false — только кнопками: идёт скачивание обновления)
+export function dialog({ title, content, actions = [], onClose, cls = '', dismissible = () => true } = {}) {
   const backdrop = h('div', { class: 'backdrop' });
   const box = h('div', { class: `dialog ${cls}`, role: 'dialog', 'aria-modal': 'true' });
   let closed = false;
@@ -149,7 +150,7 @@ export function dialog({ title, content, actions = [], onClose, cls = '' } = {})
     setTimeout(() => backdrop.remove(), 160);
     onClose && onClose();
   };
-  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  const onKey = (e) => { if (e.key === 'Escape' && dismissible()) close(); };
   if (title) box.append(h('div', { class: 'dialog-title' }, title));
   if (content) box.append(h('div', { class: 'dialog-content' }, content));
   if (actions.length) {
@@ -159,7 +160,7 @@ export function dialog({ title, content, actions = [], onClose, cls = '' } = {})
     }, a.label))));
   }
   backdrop.append(box);
-  backdrop.addEventListener('mousedown', (e) => { if (e.target === backdrop) close(); });
+  backdrop.addEventListener('mousedown', (e) => { if (e.target === backdrop && dismissible()) close(); });
   document.addEventListener('keydown', onKey);
   overlayHost().append(backdrop);
   return { close, box };

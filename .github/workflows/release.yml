@@ -2,6 +2,7 @@
 #   Тег vX.Y.Z (версия = package.json) → установщик собирается и выкладывается в релиз; текст релиза — сообщение
 #   аннотированного тега (git tag -a v1.4.0 -F notes.md).
 #   Вручную (Actions → Release → Run workflow) → только сборка: установщик в артефактах запуска, релиз не создаётся.
+#   Вместе с установщиком в релиз идут latest.yml и .blockmap — по ним приложение находит и скачивает обновление.
 # Ключи источников, соцвхода и Discord (config.local.json) — из секрета CONFIG_LOCAL_JSON, в репозитории их нет.
 # anix-trt.exe (ускорение NVIDIA) собирается с CUDA Toolkit только при изменении trt/, иначе берётся из кэша.
 name: Release
@@ -80,7 +81,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: AnixDesktop-Setup
-          path: release/AnixDesktop-Setup-*.exe
+          path: |
+            release/AnixDesktop-Setup-*.exe
+            release/AnixDesktop-Setup-*.exe.blockmap
+            release/latest.yml
           retention-days: 14
 
       - name: Релиз на GitHub
@@ -92,4 +96,4 @@ jobs:
           # checkout оставляет тег без аннотации — забираем его целиком, текст релиза берётся из неё
           git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
           v=$(node -p "require('./package.json').version")
-          gh release create "$GITHUB_REF_NAME" "release/AnixDesktop-Setup-$v.exe" --title "Anix Desktop $v" --notes-from-tag --verify-tag
+          gh release create "$GITHUB_REF_NAME" "release/AnixDesktop-Setup-$v.exe" "release/AnixDesktop-Setup-$v.exe.blockmap" release/latest.yml --title "Anix Desktop $v" --notes-from-tag --verify-tag

@@ -259,7 +259,7 @@ function link(label, href) {
   if (/^https?:\/\//i.test(href)) return inline(label, h('a', { href, target: '_blank', rel: 'noopener noreferrer' }));
   return inline(label, h('span'));
 }
-function markdown(src) {
+export function markdown(src) {
   const root = h('div', { class: 'ai-md' });
   let list = null;
   for (const raw of String(src).split('\n')) {

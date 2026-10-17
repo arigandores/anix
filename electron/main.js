@@ -6,6 +6,7 @@ const path = require('path');
 const { start } = require('../server');
 const trt = require('./trt'); // ускорение апскейла на тензорных ядрах NVIDIA
 const { attachWebQuality } = require('./web-quality'); // веб-плеер: качество по «Приоритету качества»
+const updater = require('./updater'); // автообновление из GitHub Releases
 
 let win;
 let serverInfo;
@@ -78,6 +79,7 @@ ipcMain.handle('clear-web-cache', async () => {
 const AUTH_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
 trt.register(ipcMain);
+updater.register(ipcMain);
 
 ipcMain.handle('open-external', (_e, url) => {
   if (!/^https?:\/\//.test(String(url))) return false;

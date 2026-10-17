@@ -50,6 +50,13 @@
       "shortcutName": "Anix Desktop",
       "artifactName": "AnixDesktop-Setup-${version}.${ext}"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "arigandores",
+        "repo": "anix-desktop"
+      }
+    ],
     "protocols": [
       {
         "name": "Anix Desktop",
@@ -75,6 +82,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.89.1",
-    "@agentclientprotocol/sdk": "1.8.0"
+    "@agentclientprotocol/sdk": "1.8.0",
+    "electron-updater": "6.3.9"
   }
 }

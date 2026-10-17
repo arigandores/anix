@@ -5,6 +5,7 @@ import { initRouter, switchTab, TABS, resetAllTabs } from './router.js';
 import './screens/index.js';
 import { initDragScroll } from './dragscroll.js';
 import { preloadLottie, navIcon } from './lottie.js';
+import { startupUpdateCheck } from './update.js';
 
 const NAV = [
   { tab: 'home', title: 'home', icon: 'ic_home', iconOn: 'ic_home_filled' },
@@ -76,6 +77,7 @@ async function main() {
   refreshNotifBadge();
   preloadLottie(); // анимации интерфейса — заранее, в простое
   preloadIcons(); // иконки страницы аниме и шапок — заранее: иначе маска подгружалась при первом показе и иконка появлялась на кадр позже текста
+  setTimeout(startupUpdateCheck, 2000); // вышла ли новая версия — когда первый экран загрузился (update.js)
   setInterval(refreshNotifBadge, 120000);
   window.addEventListener('auth-changed', () => { resetAllTabs(); refreshNotifBadge(); });
   window.addEventListener('notifications-read', refreshNotifBadge);

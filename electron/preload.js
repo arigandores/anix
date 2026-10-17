@@ -1,5 +1,5 @@
 'use strict';
-// Мост для фронтенда: вход через соцсети, системный браузер, очистка веб-кэша, ускорение апскейла (TensorRT)
+// Мост для фронтенда: вход через соцсети, системный браузер, очистка веб-кэша, обновление, ускорение апскейла (TensorRT)
 const { contextBridge, ipcRenderer, sharedTexture } = require('electron');
 
 // Ускорение апскейла: главный процесс один раз на сеанс присылает кольцо общих текстур (electron/trt.js),
@@ -26,6 +26,15 @@ contextBridge.exposeInMainWorld('anixartNative', {
   // Приглашения anixdesktop://watch/<код> (electron/main.js): та, с которой запустили приложение, и новые
   pendingDeepLink: () => ipcRenderer.invoke('deep-link-pending'),
   onDeepLink: (cb) => { ipcRenderer.on('deep-link', (_e, url) => cb(url)); },
+  // Обновление приложения (electron/updater.js): проверка, текст релиза, скачивание с прогрессом, установка с перезапуском
+  update: {
+    check: () => ipcRenderer.invoke('update-check'),
+    notes: (version) => ipcRenderer.invoke('update-notes', version),
+    download: () => ipcRenderer.invoke('update-download'),
+    cancel: () => ipcRenderer.invoke('update-cancel'),
+    install: () => ipcRenderer.invoke('update-install'),
+    onProgress: (cb) => { const f = (_e, p) => cb(p); ipcRenderer.on('update-progress', f); return () => ipcRenderer.removeListener('update-progress', f); },
+  },
   trt: trtOk ? {
     status: () => ipcRenderer.invoke('trt-status'),
     install: () => ipcRenderer.invoke('trt-install'),

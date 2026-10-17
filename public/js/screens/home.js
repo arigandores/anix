@@ -76,19 +76,26 @@ function filterTab(patch) {
   return () => releaseList((page) => A.filter(page, body, true));
 }
 
+// Названия вкладок Главной по порядку — и для «Вкладки Главной по умолчанию» в настройках
+export function homeTabTitles() {
+  return [prefs.get('HOME_CUSTOM_FILTER_TAB_NAME') || t('my_custom_filter_tab'), t('tab_title_anime'), t('tab_title_donghua'), t('tab_title_actual'),
+    t('tab_title_ongoing'), t('tab_title_upcoming'), t('tab_title_finished'), t('tab_title_movies'), t('tab_title_ova')];
+}
+
 registerScreen('tab:home', () => {
-  const customName = prefs.get('HOME_CUSTOM_FILTER_TAB_NAME') || t('my_custom_filter_tab');
+  const titles = homeTabTitles();
+  const customName = titles[0];
   const defs = [
-    { title: customName, render: customTab },
-    { title: t('tab_title_anime'), render: filterTab({ country: t('country_japan') !== 'country_japan' ? t('country_japan') : 'Япония' }) },
-    { title: t('tab_title_donghua'), render: filterTab({ country: t('country_china') !== 'country_china' ? t('country_china') : 'Китай' }) },
-    { title: t('tab_title_actual'), render: filterTab({}) },
-    { title: t('tab_title_ongoing'), render: filterTab({ status_id: 2 }) },
-    { title: t('tab_title_upcoming'), render: filterTab({ status_id: 3 }) },
-    { title: t('tab_title_finished'), render: filterTab({ status_id: 1 }) },
-    { title: t('tab_title_movies'), render: filterTab({ category_id: 2 }) },
-    { title: t('tab_title_ova'), render: filterTab({ category_id: 3 }) },
-  ];
+    { render: customTab },
+    { render: filterTab({ country: t('country_japan') !== 'country_japan' ? t('country_japan') : 'Япония' }) },
+    { render: filterTab({ country: t('country_china') !== 'country_china' ? t('country_china') : 'Китай' }) },
+    { render: filterTab({}) },
+    { render: filterTab({ status_id: 2 }) },
+    { render: filterTab({ status_id: 3 }) },
+    { render: filterTab({ status_id: 1 }) },
+    { render: filterTab({ category_id: 2 }) },
+    { render: filterTab({ category_id: 3 }) },
+  ].map((d, i) => ({ ...d, title: titles[i] }));
   const tb = tabs(defs, { initial: prefs.get('HOME_DEFAULT_PAGE') ?? 1 });
   window.addEventListener('custom-filter-changed', () => tb.refresh(0));
   const bar = tb.querySelector('.tabbar');

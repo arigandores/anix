@@ -1,10 +1,12 @@
-// Настройки: Воспроизведение / Внешний вид / Профиль (основное)
-import { h, icon, toast, sheet, prompt, confirmDialog, dialog } from '../ui.js';
+// Настройки: разделы в боковом меню (на узком окне — полоса сверху), справа — пункты выбранного раздела
+import { h, icon, toast, sheet, prompt, confirmDialog, dialog, nudge } from '../ui.js';
 import { A, auth } from '../api.js';
 import { t, prefs, theme, setTheme } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
 import { backToolbar } from './common.js';
+import { homeTabTitles } from './home.js';
 import { AI_MODELS, AI_EFFORTS } from './ai.js';
+import { SPEEDS, speedName } from '../player.js';
 import { trtStatus, trtInstall, benchRunDialog, benchResultsDialog, benchInfo, SHARPNESS, SHARP_LABEL } from '../upscale/index.js';
 import { AUDIO_OPTS } from '../audio.js';
 import { clearPresence, discordStatus } from '../discord.js';
@@ -13,9 +15,11 @@ import { canUpdate, checkUpdate, lastCheck, updateDialog, whatsNewDialog, releas
 function item(ic, title, sub, onClick) {
   return h('div', { class: 'menu-item', onclick: onClick }, icon(ic), h('div', { class: 'grow' }, h('div', null, title), sub ? h('div', { class: 'sub' }, sub) : null));
 }
+// Переключатель: key — настройка-флаг или { get, set } для настроек с другими значениями
 function toggle(ic, title, sub, key, onChange) {
-  const cb = h('input', { type: 'checkbox' }); cb.checked = !!prefs.get(key);
-  cb.onchange = () => { prefs.set(key, cb.checked); onChange && onChange(cb.checked); };
+  const { get, set } = typeof key === 'string' ? { get: () => !!prefs.get(key), set: (v) => prefs.set(key, v) } : key;
+  const cb = h('input', { type: 'checkbox' }); cb.checked = get();
+  cb.onchange = () => { set(cb.checked); onChange && onChange(cb.checked); };
   return h('label', { class: 'menu-item' }, icon(ic), h('div', { class: 'grow' }, h('div', null, title), sub ? h('div', { class: 'sub' }, sub) : null), h('span', { class: 'switch' }, cb, h('span')));
 }
 // Переключатель с подтверждением и перезапуском (альтернативное соединение, режим экономии)
@@ -44,22 +48,54 @@ function choice(ic, title, options, get, set) {
   return h('div', { class: 'menu-item', onclick: () => sheet(title, options.map(([v, l]) => ({ label: l, checked: v === get(), onClick: () => { set(v); paint(); } }))) },
     icon(ic), h('div', { class: 'grow' }, h('div', null, title), sub));
 }
+const cat = (title) => h('div', { class: 'menu-cat' }, title);
 
-registerScreen('settings', () => {
-  // строки берутся при открытии экрана: strings.json грузится после импорта модулей
+// --- Разделы. Строки берутся при сборке раздела: strings.json грузится после импорта модулей ---
+
+function lookSection() {
+  return [
+    choice('ic_preference_night', 'Тёмная тема', [['system', 'Как в системе'], ['light', 'Светлая'], ['dark', 'Тёмная']], theme, setTheme),
+    choice('ic_preference_appearance', 'Вид списков', [[0, 'Список'], [1, 'Сетка']], () => prefs.get('VIEW_TYPE') || 0, (v) => prefs.set('VIEW_TYPE', v)),
+    // то же, что «Вкладка по умолчанию» в ic_tune на Главной (home.js)
+    choice('ic_home', 'Вкладка Главной по умолчанию', homeTabTitles().map((l, i) => [i, l]),
+      () => prefs.get('HOME_DEFAULT_PAGE') ?? 1, (v) => prefs.set('HOME_DEFAULT_PAGE', v)),
+    choice('ic_bookmarks', 'Вкладка в закладках по умолчанию', ['Коллекции', 'История', 'Избранное', 'Смотрю', 'В планах', 'Просмотрено', 'Отложено', 'Брошено'].map((l, i) => [i, l]),
+      () => prefs.get('BOOKMARKS_DEFAULT_PAGE') ?? 2, (v) => prefs.set('BOOKMARKS_DEFAULT_PAGE', v)),
+  ];
+}
+
+function playbackSection() {
   // от лучшего качества к худшему, как в чипе плеера над сериями; «спрашивать» — диалог перед каждой серией
   const PLAYERS = [[2, t('player_embedded')], [3, t('player_third_party')], [1, t('player_web')], [0, 'Спрашивать перед каждой серией']];
   const QUALITY = [[0, t('quality_max_available')], [1, t('quality_min_available')], [3, '480p'], [4, '720p'], [5, '1080p'], [6, '1440p'], [7, '2160p']];
-  const root = h('div', null, backToolbar('Настройки'));
-  const list = h('div', { class: 'menu-list', style: { maxWidth: '760px' } });
-  list.append(h('div', { class: 'menu-cat' }, 'Внешний вид'),
-    choice('ic_preference_night', 'Тёмная тема', [['system', 'Как в системе'], ['light', 'Светлая'], ['dark', 'Тёмная']], theme, setTheme),
-    choice('ic_preference_appearance', 'Вид списков', [[0, 'Список'], [1, 'Сетка']], () => prefs.get('VIEW_TYPE') || 0, (v) => prefs.set('VIEW_TYPE', v)),
-    choice('ic_bookmarks', 'Вкладка в закладках по умолчанию', ['Коллекции', 'История', 'Избранное', 'Смотрю', 'В планах', 'Просмотрено', 'Отложено', 'Брошено'].map((l, i) => [i, l]),
-      () => prefs.get('BOOKMARKS_DEFAULT_PAGE') ?? 2, (v) => prefs.set('BOOKMARKS_DEFAULT_PAGE', v)),
-    h('div', { class: 'menu-cat' }, 'Воспроизведение'),
+  // пропуск опенинга и эндинга — то же, что «Пропуски» в шестерёнке плеера: 'auto' — сам, иначе кнопка «Пропустить»
+  const skip = (key) => ({ get: () => prefs.get(key) === 'auto', set: (v) => prefs.set(key, v ? 'auto' : 'watch') });
+  const EXT_AUTO = 'mpv / VLC (автоопределение)';
+  const ext = item('ic_open_link', t('pref_external_player'), prefs.get('THIRD_PARTY_PLAYER_PATH') || EXT_AUTO, async () => {
+    const v = await prompt('Путь к плееру (mpv.exe или vlc.exe)', { value: prefs.get('THIRD_PARTY_PLAYER_PATH') });
+    if (v == null) return;
+    prefs.set('THIRD_PARTY_PLAYER_PATH', v.trim());
+    ext.querySelector('.sub').textContent = v.trim() || EXT_AUTO;
+    toast('Сохранено', { ok: true });
+  });
+  return [
     choice('ic_play_circle', t('player'), PLAYERS, () => prefs.get('SELECTED_PLAYER'), (v) => prefs.set('SELECTED_PLAYER', v)),
     choice('ic_quality', t('video_quality_priority'), QUALITY, () => prefs.get('SELECTED_VIDEO_QUALITY_V2'), (v) => prefs.set('SELECTED_VIDEO_QUALITY_V2', v)),
+    // скорость запоминается и из шестерёнки плеера
+    choice('ic_play_speed', 'Скорость воспроизведения', SPEEDS.map((s, i) => [i, s === 1 ? 'Обычная' : speedName(s)]), () => prefs.get('SELECTED_PLAYER_SPEED') ?? 3, (v) => prefs.set('SELECTED_PLAYER_SPEED', v)),
+    toggle('ic_voice', t('remember_type_source'), t('remember_type_source_summary'), 'IS_REMEMBERING_TYPE_SOURCE'),
+    ext,
+    cat('Серии и пропуски'),
+    toggle('ic_player_next', t('pref_autoplay_title'), t('pref_autoplay_summary'), 'AUTO_PLAY'),
+    toggle('ic_player_rewind_fast', 'Пропускать опенинг', 'Сам, после короткого отсчёта; иначе — кнопка «Пропустить»', skip('SKIP_OPENING')),
+    toggle('ic_player_rewind_fast', 'Пропускать эндинг', 'Сам, после короткого отсчёта; иначе — кнопка «Пропустить»', skip('SKIP_ENDING')),
+    toggle('ic_player_next', 'Пропускать филлеры', '«Следующая серия» перескакивает филлеры; в плеере покажем, сколько пропущено', 'SKIP_FILLERS'),
+  ];
+}
+
+function pictureSection() {
+  return [
+    cat('Улучшение картинки'),
     // улучшение картинки во встроенном плеере — то же, что в шестерёнке плеера (upscale/index.js)
     choice('ic_upscale', 'Улучшение картинки', [['off', 'Выключено'], ['auto', 'Авто — подберёт под серию и видеокарту'],
       ['fast', 'Лёгкое — немного чётче, почти без нагрузки'], ['quality', 'Сильное — чистые линии, меньше артефактов сжатия'],
@@ -75,21 +111,21 @@ registerScreen('settings', () => {
       if (r) benchResultsDialog();
     }),
     item('ic_info_outline', 'Результаты проверки', 'Сколько мс на кадр занимает каждая модель', () => benchResultsDialog()),
+    cat('Звук'),
     // улучшение звука во встроенном плеере — то же, что «Звук» в шестерёнке плеера (audio.js)
     ...AUDIO_OPTS.map((o) => toggle(o.icon, o.label, o.sub, o.pref)),
-    discordSetting(),
-    toggle('ic_player_next', t('pref_autoplay_title'), t('pref_autoplay_summary'), 'AUTO_PLAY'),
-    toggle('ic_player_next', 'Пропускать филлеры', '«Следующая серия» перескакивает филлеры; в плеере покажем, сколько пропущено', 'SKIP_FILLERS'),
-    toggle('ic_voice', t('remember_type_source'), t('remember_type_source_summary'), 'IS_REMEMBERING_TYPE_SOURCE'),
-    item('ic_open_link', t('pref_external_player'), prefs.get('THIRD_PARTY_PLAYER_PATH') || 'mpv / VLC (автоопределение)', async () => {
-      const v = await prompt('Путь к плееру (mpv.exe или vlc.exe)', { value: prefs.get('THIRD_PARTY_PLAYER_PATH') });
-      if (v != null) { prefs.set('THIRD_PARTY_PLAYER_PATH', v.trim()); toast('Сохранено', { ok: true }); }
-    }));
+  ];
+}
 
-  list.append(h('div', { class: 'menu-cat' }, 'AI-помощник'),
+function aiSection() {
+  return [
     choice('ic_ai', 'Модель', AI_MODELS.map(([v, l, d]) => [v, `${l} — ${d}`]), () => prefs.get('AI_MODEL'), (v) => prefs.set('AI_MODEL', v)),
-    choice('ic_tune', 'Глубина рассуждений (effort)', AI_EFFORTS.map(([v, l]) => [v, v === 'medium' ? `${l} — по умолчанию` : v === 'low' ? `${l} — быстрее всего` : v === 'max' ? `${l} — медленно, расходует больше лимитов` : l]), () => prefs.get('AI_EFFORT'), (v) => prefs.set('AI_EFFORT', v)));
-  list.append(h('div', { class: 'menu-cat' }, 'Дополнительно'),
+    choice('ic_tune', 'Глубина рассуждений (effort)', AI_EFFORTS.map(([v, l]) => [v, v === 'medium' ? `${l} — по умолчанию` : v === 'low' ? `${l} — быстрее всего` : v === 'max' ? `${l} — медленно, расходует больше лимитов` : l]), () => prefs.get('AI_EFFORT'), (v) => prefs.set('AI_EFFORT', v)),
+  ];
+}
+
+function advancedSection() {
+  return [
     restartToggle('ic_preference_data', t('alternative_connection'), t('alternative_connection_summary'), 'FORCE_SHOULD_USE_MIRROR_URLS',
       t('alternative_connection_enable_text'), t('alternative_connection_disable_text')),
     restartToggle('ic_preference_update', t('economy_mode'), t('economy_mode_summary'), 'ECONOMY_MODE', t('economy_mode_enable_text'), t('economy_mode_disable_text')),
@@ -97,32 +133,92 @@ registerScreen('settings', () => {
       if (!(await confirmDialog(t('clear_webview_cache'), t('clear_webview_cache_summary'), t('yes')))) return;
       toast(t('clearing_cache_progress'));
       try { const n = await window.anixartNative.clearWebCache(); toast(n ? t('cache_cleared_size', fmtBytes(n)) : t('cache_cleared')); } catch { toast(t('cache_clear_error')); }
-    }) : null);
+    }) : null,
+  ];
+}
 
-  if (auth.loggedIn) {
-    list.append(h('div', { class: 'menu-cat' }, 'Профиль'),
-      item('ic_pencil', 'Изменить статус', null, async () => {
-        const v = await prompt('Изменить статус', { placeholder: 'Ваш статус…', okLabel: 'Сохранить' });
-        if (v == null) return;
-        try { const r = await A.statusEdit(v); toast(r.code === 0 ? 'Сохранено' : t('error_load')); } catch { toast(t('error_load')); }
-      }),
-      item('ic_lock', 'Изменить пароль', null, () => changePassword()),
-      item('ic_history', 'Выйти из учетной записи', auth.profile?.login, async () => {
-        if (await confirmDialog('Выход', 'Выйти из учетной записи?', 'Выйти')) { auth.clear(); toast('Вы вышли из учетной записи'); }
-      }));
-  } else {
-    list.append(h('div', { class: 'menu-cat' }, 'Профиль'), item('ic_profile', t('log_in'), null, () => navigate('auth')));
-  }
+function accountSection() {
+  if (!auth.loggedIn) return [item('ic_profile', t('log_in'), 'Закладки, история и комментарии — с аккаунтом Anixart', () => navigate('auth'))];
+  return [
+    item('ic_bell', 'Уведомления', 'Какие уведомления присылать', () => navigate('notification-settings')),
+    item('ic_pencil', 'Изменить статус', null, async () => {
+      const v = await prompt('Изменить статус', { placeholder: 'Ваш статус…', okLabel: 'Сохранить' });
+      if (v == null) return;
+      try { const r = await A.statusEdit(v); toast(r.code === 0 ? 'Сохранено' : t('error_load')); } catch { toast(t('error_load')); }
+    }),
+    item('ic_lock', 'Изменить пароль', null, () => changePassword()),
+    item('ic_history', 'Выйти из учетной записи', auth.profile?.login, async () => {
+      if (await confirmDialog('Выход', 'Выйти из учетной записи?', 'Выйти')) { auth.clear(); toast('Вы вышли из учетной записи'); }
+    }),
+  ];
+}
+
+function aboutSection() {
   const about = item('ic_info_outline', 'Anix Desktop', 'Неофициальный клиент Anixart', () => {});
   fetch('/__info').then((r) => r.json()).then((i) => {
     about.querySelector('.sub').textContent = `Версия ${i.appVersion} • неофициальный клиент Anixart`;
   }).catch(() => {});
-  list.append(h('div', { class: 'menu-cat' }, 'О приложении'), about, ...updateItems(),
+  return [about, ...updateItems(),
     item('ic_open_in_new', 'Исходный код', 'github.com/arigandores/anix-desktop', () => window.open('https://github.com/arigandores/anix-desktop', '_blank')),
-    h('div', { class: 'muted3', style: { fontSize: '12px', padding: '8px 16px 16px' } },
-      'Anix Desktop не связан с разработчиками Anixart. Аккаунт, каталог и комментарии — сервис Anixart, видео — сторонние источники.'));
-  root.append(list);
-  return root;
+    h('div', { class: 'muted3', style: { fontSize: '12px', padding: '8px 24px 16px' } },
+      'Anix Desktop не связан с разработчиками Anixart. Аккаунт, каталог и комментарии — сервис Anixart, видео — сторонние источники.')];
+}
+
+const SECTIONS = [
+  { id: 'look', icon: 'ic_preference_appearance', title: 'Внешний вид', render: lookSection },
+  { id: 'playback', icon: 'ic_play_circle', title: 'Воспроизведение', render: playbackSection },
+  { id: 'picture', icon: 'ic_upscale', title: 'Картинка и звук', render: pictureSection },
+  { id: 'discord', icon: 'ic_discord', title: 'Discord', render: () => [discordSetting()] },
+  { id: 'ai', icon: 'ic_ai', title: 'AI-помощник', render: aiSection },
+  { id: 'advanced', icon: 'ic_tune', title: 'Дополнительно', render: advancedSection },
+  { id: 'account', icon: 'ic_profile', title: 'Аккаунт', render: accountSection },
+  { id: 'about', icon: 'ic_info_outline', title: 'О приложении', render: aboutSection },
+];
+let lastSection = 'look'; // повторный заход в настройки — в тот же раздел (до перезапуска)
+
+// params.section — открыть сразу нужный раздел («Редактировать» в профиле → «Аккаунт»)
+registerScreen('settings', ({ section } = {}) => {
+  const nav = h('div', { class: 'settings-nav', role: 'tablist', 'aria-label': 'Разделы настроек' });
+  const body = h('div', { class: 'settings-body', role: 'tabpanel' });
+  const built = new Map();
+  const buttons = new Map();
+  let current = null;
+  const visible = () => SECTIONS.filter((s) => buttons.get(s.id)?.isConnected);
+  function select(id, byUser) {
+    const s = SECTIONS.find((x) => x.id === id) || SECTIONS[0];
+    if (s.id === current) return;
+    current = s.id; lastSection = s.id;
+    buttons.forEach((b, k) => { const on = k === s.id; b.classList.toggle('active', on); b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; });
+    if (!built.has(s.id)) built.set(s.id, h('div', { class: 'menu-list', 'data-section': s.id }, h('h2', { class: 'settings-title' }, s.title), ...s.render()));
+    body.replaceChildren(built.get(s.id));
+    if (!byUser) return; // первый показ — без своей анимации: идёт въезд экрана
+    nudge(built.get(s.id), [{ opacity: 0 }, { opacity: 1 }], 200);
+    const vp = document.getElementById('viewport');
+    if (vp && vp.scrollTop > 0) vp.scrollTop = 0; // новый раздел — с начала
+    buttons.get(s.id).scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+  }
+  for (const s of SECTIONS) {
+    const b = h('button', { class: 'settings-tab', role: 'tab', 'data-section': s.id, onclick: () => select(s.id, true) }, icon(s.icon), h('span', null, s.title));
+    buttons.set(s.id, b);
+    nav.append(b);
+  }
+  // стрелки — по разделам, как по вкладкам
+  nav.addEventListener('keydown', (e) => {
+    const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const list = visible(); const i = list.findIndex((s) => s.id === current);
+    const next = list[(i + step + list.length) % list.length];
+    select(next.id, true); buttons.get(next.id).focus();
+  });
+  // нет Discord-приложения в сборке — нет и раздела (флаг из /__features — без проверки, запущен ли Discord)
+  fetch('/__features').then((r) => r.json()).then((f) => {
+    if (f.discord !== false) return;
+    buttons.get('discord').remove();
+    if (current === 'discord') select('look');
+  }).catch(() => {});
+  select(section || lastSection);
+  return h('div', null, backToolbar('Настройки'), h('div', { class: 'settings' }, h('div', { class: 'settings-in' }, nav, body)));
 });
 
 // «Проверить обновления» и «Что нового» (update.js) — только в приложении для Windows. Проверка из настроек
@@ -181,20 +277,18 @@ function trtSetting() {
 // Статус в Discord: привязывать ничего не нужно — статус уходит в Discord, запущенный на этом компьютере
 // (server/discord.js). Подпись показывает, видит ли приложение Discord.
 function discordSetting() {
-  const slot = h('div');
-  discordStatus().then((st) => {
-    if (!st.configured) { slot.remove(); return; }
-    const el = toggle('ic_discord', 'Статус в Discord', '', 'DISCORD_PRESENCE', (on) => { if (!on) clearPresence(); paint(); });
-    const sub = h('div', { class: 'sub' }); el.querySelector('.grow').append(sub);
-    const paint = () => {
-      sub.textContent = prefs.get('DISCORD_PRESENCE') !== true ? 'Выключено — включите, чтобы друзья видели, что вы смотрите'
-        : st.running ? 'Discord подключён — друзья видят, что вы смотрите: тайтл, серию и время'
-          : 'Discord не запущен на этом компьютере — статус появится, как только вы его откроете';
-    };
-    paint();
-    slot.replaceWith(el);
-  });
-  return slot;
+  const sub = h('div', { class: 'sub' }, 'Проверяем Discord…');
+  const el = toggle('ic_discord', 'Статус в Discord', '', 'DISCORD_PRESENCE', (on) => { if (!on) clearPresence(); paint(); });
+  el.querySelector('.grow').append(sub);
+  let st = null;
+  const paint = () => {
+    if (!st) return;
+    sub.textContent = prefs.get('DISCORD_PRESENCE') !== true ? 'Выключено — включите, чтобы друзья видели, что вы смотрите'
+      : st.running ? 'Discord подключён — друзья видят, что вы смотрите: тайтл, серию и время'
+        : 'Discord не запущен на этом компьютере — статус появится, как только вы его откроете';
+  };
+  discordStatus().then((s) => { st = s; paint(); });
+  return el;
 }
 
 function changePassword() {

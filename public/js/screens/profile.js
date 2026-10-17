@@ -24,7 +24,7 @@ function registered(sec) {
 }
 
 function friendButtons(p, rebuild) {
-  if (p.is_my_profile) return [h('button', { class: 'btn btn-tonal', onclick: () => navigate('settings') }, 'Редактировать')];
+  if (p.is_my_profile) return [h('button', { class: 'btn btn-tonal', onclick: () => navigate('settings', { section: 'account' }) }, 'Редактировать')];
   const me = auth.profileId; const fs = p.friend_status;
   const out = (me < p.id && fs === 0) || (me > p.id && fs === 1);
   const inc = (me < p.id && fs === 1) || (me > p.id && fs === 0);

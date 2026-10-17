@@ -31,7 +31,7 @@ app.whenReady().then(async () => {
   let l = await log();
   check('по умолчанию Sonnet / medium', l.includes('model=sonnet') && l.includes('effort=medium'), l.join(', '));
   // пункты в настройках
-  await js(`(async () => { const r = await import('/js/router.js'); r.navigate('settings', {}); })()`); await sleep(800);
+  await js(`(async () => { const r = await import('/js/router.js'); r.navigate('settings', { section: 'ai' }); })()`); await sleep(800);
   const items = await js(`[...document.querySelectorAll('.menu-item')].map(e => e.textContent.trim()).filter(t => /Модель|Глубина/.test(t))`);
   check('в настройках есть «Модель» и «Глубина рассуждений»', items.length === 2, JSON.stringify(items));
   await js(`localStorage.setItem('anixart.pref.AI_MODEL', '"opus"'); localStorage.setItem('anixart.pref.AI_EFFORT', '"high"'); history.back()`); await sleep(800);

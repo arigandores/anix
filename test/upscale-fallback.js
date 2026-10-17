@@ -106,13 +106,13 @@ async function main() {
   }
 
   // настройки: подсказка про драйвер только для NVIDIA со старым драйвером; иначе пункта нет
-  const navErr = await js(`(async () => { try { await import('/js/screens/settings.js'); (await import('/js/router.js')).navigate('settings'); return ''; } catch (e) { return String(e && e.stack || e); } })()`);
+  const navErr = await js(`(async () => { try { await import('/js/screens/settings.js'); (await import('/js/router.js')).navigate('settings', { section: 'picture' }); return ''; } catch (e) { return String(e && e.stack || e); } })()`);
   if (navErr) console.log(`   [${mode}] переход в настройки: ${navErr.slice(0, 300)}`);
   let settingsText = '';
   // пока грузится главная, router не начинает второй переход — повторяем, пока настройки не откроются
   for (let i = 0; i < 40 && !/Улучшение картинки/.test(settingsText); i++) {
     await sleep(400); settingsText = await js(`document.querySelector('#viewport').textContent`);
-    if (!/Улучшение картинки/.test(settingsText) && i % 5 === 4) await js(`(async () => { (await import('/js/router.js')).navigate('settings'); })(); 1`);
+    if (!/Улучшение картинки/.test(settingsText) && i % 5 === 4) await js(`(async () => { (await import('/js/router.js')).navigate('settings', { section: 'picture' }); })(); 1`);
   }
   await sleep(500); settingsText = await js(`document.querySelector('#viewport').textContent`);
   check(/Улучшение картинки/.test(settingsText), `экран настроек открыт (${settingsText.length} символов${/Улучшение картинки/.test(settingsText) ? '' : `: ${settingsText.slice(0, 120)}`})`);

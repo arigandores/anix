@@ -10,7 +10,8 @@ import { party, bindPlayer, playerEpisode, partyEnded, partyWhy, roomSkip, setRo
 import { partyPlayerButton, queueAdd, partyInfo } from './party/ui.js';
 
 const QUALITIES = ['Default', '360p', '480p', '720p', '1080p', '1440p', '2160p']; // utils/domain/release/Quality
-const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+export const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+export const speedName = (s) => (s === 1 ? t('speed_normal') : `${String(s).replace('.', ',')}x`); // и в настройках
 
 function fmt(sec) {
   if (!isFinite(sec) || sec < 0) sec = 0;
@@ -577,7 +578,6 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   // --- Шестерёнка: качество, скорость, пропуск опенинга и эндинга ---
   // Главная страница меню — строки со значениями; качество и скорость открываются списком внутри меню
   const qualityName = (q) => (q === 'Default' ? t('quality_default') : q);
-  const speedName = (s) => (s === 1 ? t('speed_normal') : `${String(s).replace('.', ',')}x`);
   function closeMenu() { if (!menu) return; menu.remove(); menu = null; gearBtn.classList.remove('on'); poke(); }
   // Качество у каждого своё. В комнате после перезагрузки потока место и пуск задаёт комната: позиция до смены
   // за время загрузки устарела бы на 1–2 с, и возврат к ней ушёл бы всем как перемотка назад

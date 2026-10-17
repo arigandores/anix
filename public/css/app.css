@@ -448,6 +448,28 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .menu-item .sub { color: var(--text2); font-size: 13px; }
 .menu-cat { padding: 18px 24px 6px; color: var(--carmine); font-size: 14px; font-weight: 500; }
 :root[data-theme="dark"] .menu-cat { color: var(--text); }
+/* Экран настроек: разделы слева (прилипают под шапкой), пункты выбранного раздела справа. Узкое окно — разделы
+   полосой-лентой под шапкой, как вкладки (settings.js) */
+.settings { container-type: inline-size; }
+.settings-in { display: grid; grid-template-columns: 228px minmax(0, 680px); gap: 0 20px; padding: 8px 12px 32px; }
+.settings-nav { position: sticky; top: calc(var(--appbar-h) + 8px); align-self: start; display: flex; flex-direction: column; gap: 2px; }
+.settings-tab { display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 16px; border-radius: 22px; color: var(--text2);
+  font-family: 'Google Sans', 'Roboto', sans-serif; font-size: 15px; text-align: left; white-space: nowrap; }
+.settings-tab .ic { color: var(--icon); flex: none; }
+.settings-tab:hover { background: var(--block); color: var(--text); }
+.settings-tab.active, .settings-tab.active:hover { background: var(--nav-ind); color: var(--text); font-weight: 500; }
+.settings-tab.active .ic { color: var(--nav-icon-on); }
+.settings-title { margin: 8px 24px 4px; font-family: 'Google Sans', 'Roboto', sans-serif; font-size: 22px; font-weight: 500; }
+@container (max-width: 640px) {
+  .settings-in { grid-template-columns: minmax(0, 1fr); padding: 0 0 32px; }
+  .settings-nav { top: var(--appbar-h); z-index: 15; flex-direction: row; gap: 6px; padding: 6px 12px 10px; overflow-x: auto; scrollbar-width: none;
+    background: var(--bg); border-bottom: 1px solid var(--sep); }
+  .settings-nav::-webkit-scrollbar { display: none; }
+  .settings-tab { flex: none; height: 36px; padding: 0 14px; border-radius: 18px; font-size: 14px; }
+  .settings-tab .ic { display: none; }
+  .settings-title { display: none; }
+  .settings-body { padding-top: 4px; }
+}
 
 /* ---------- Пустые состояния / загрузка ---------- */
 .empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 60px 24px; text-align: center; color: var(--text2); }

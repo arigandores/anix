@@ -56,16 +56,19 @@ app.whenReady().then(async () => {
   for (const [label, code, wait] of screens) await visit(label, code, wait);
 
   // все диалоги-выборы на экране настроек
-  await visit('settings', "r.navigate('settings',{})");
-  const items = await js(`document.querySelectorAll('.menu-item').length`);
-  for (let i = 0; i < items; i++) {
-    await js(`document.querySelectorAll('.backdrop').forEach(b => b.remove()); document.querySelectorAll('.menu-item')[${i}]?.click(); 1`);
-    await sleep(350);
-    const isPrompt = await js(`!!document.querySelector('.backdrop input.input')`);
-    const hits = await js(SCAN);
-    if (hits.length) report[`settings-dialog-${i}`] = hits;
-    if (i === 3) await shot('audit-settings-player');
-    if (isPrompt) await js(`document.querySelectorAll('.backdrop').forEach(b => b.remove()); 1`);
+  // (по разделам: в настройках виден только выбранный раздел)
+  for (const sec of ['look', 'playback', 'picture', 'ai']) {
+    await visit(`settings-${sec}`, `r.navigate('settings',{ section: '${sec}' })`);
+    const items = await js(`document.querySelectorAll('#viewport .screen:last-child .menu-item').length`);
+    for (let i = 0; i < items; i++) {
+      await js(`document.querySelectorAll('.backdrop').forEach(b => b.remove()); document.querySelectorAll('#viewport .screen:last-child .menu-item')[${i}]?.click(); 1`);
+      await sleep(350);
+      const isPrompt = await js(`!!document.querySelector('.backdrop input.input')`);
+      const hits = await js(SCAN);
+      if (hits.length) report[`settings-${sec}-dialog-${i}`] = hits;
+      if (sec === 'playback' && i === 0) await shot('audit-settings-player');
+      if (isPrompt) await js(`document.querySelectorAll('.backdrop').forEach(b => b.remove()); 1`);
+    }
   }
   await js(`document.querySelectorAll('.backdrop').forEach(b => b.remove()); 1`);
 

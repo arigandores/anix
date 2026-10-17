@@ -130,7 +130,7 @@ app.whenReady().then(async () => {
   const settingsItem = (title, w = win) => w.webContents.executeJavaScript(`import('/js/router.js').then(async (r) => {
     document.querySelectorAll('.backdrop').forEach((b) => b.remove());
     ${ready} // сразу после перезагрузки роутер ещё не готов (строки грузятся) — ждём первый экран
-    if (document.querySelector('#viewport .screen:last-child')?.dataset.screen !== 'settings') r.navigate('settings', {});
+    if (document.querySelector('#viewport .screen:last-child')?.dataset.screen !== 'settings') r.navigate('settings', { section: 'about' });
     for (let i = 0; i < 50; i++) {
       const el = [...document.querySelectorAll('#viewport .screen:last-child .menu-item')].find((e) => e.querySelector('.grow > div')?.textContent === ${JSON.stringify(title)});
       if (el) { el.click(); return true; }

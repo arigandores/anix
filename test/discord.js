@@ -64,7 +64,7 @@ app.whenReady().then(async () => {
 
   const status = () => js(`fetch('/discord/status').then((r) => r.json())`);
   const settingsSub = async () => {
-    await js(`import('/js/router.js').then((m) => m.navigate('settings'))`); await sleep(1500);
+    await js(`import('/js/router.js').then((m) => m.navigate('settings', { section: 'discord' }))`); await sleep(1500);
     const t = await js(`[...document.querySelectorAll('.menu-item')].map((m) => m.innerText).find((x) => x.includes('Статус в Discord')) || ''`);
     await js(`history.back()`); await sleep(500);
     return t.split(/\r?\n/).slice(1).join(' ');
@@ -82,7 +82,7 @@ app.whenReady().then(async () => {
   server.close(); await sleep(300);
 
   // включаем переключателем в настройках
-  await js(`import('/js/router.js').then((m) => m.navigate('settings'))`); await sleep(1500);
+  await js(`import('/js/router.js').then((m) => m.navigate('settings', { section: 'discord' }))`); await sleep(1500);
   await js(`(() => { const it = [...document.querySelectorAll('.menu-item')].find((m) => m.textContent.includes('Статус в Discord')); it.querySelector('input').click(); })()`);
   await sleep(300);
   const subOn = await js(`[...document.querySelectorAll('.menu-item')].find((m) => m.textContent.includes('Статус в Discord')).querySelector('.sub').textContent`);

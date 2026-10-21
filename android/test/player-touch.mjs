@@ -78,8 +78,8 @@ await drag([[cx, r.y + r.h * 0.3]], [[cx + 10, r.y + r.h * 0.8]]);
 check('вертикальный свайп — без перемотки', Math.abs(await js(`${V}.currentTime`) - t2) < 1);
 
 // Перемотка опенинга без меток: кнопка — только у серии без меток (с метками — «Пропустить» по ним), +1:25
-const op = await js(`(() => { const b = document.querySelector('.player-controls .op-btn'); return { shown: !!b && !b.hidden, marks: !!document.querySelector('.seg.mark'), title: b?.title }; })()`);
-check('кнопка «перемотать опенинг» — только у серии без меток', op.shown !== op.marks, op);
+const op = await js(`(() => { const b = document.querySelector('.player-controls .op-btn'); return { shown: !!b && !b.hidden, marks: !!document.querySelector('.seg[data-kind="opening"]'), title: b?.title }; })()`);
+check('кнопка «перемотать опенинг» — только у серии без метки опенинга (метка эндинга — не в счёт)', op.shown !== op.marks, op);
 if (op.shown) {
   const a = await js(`${V}.currentTime`);
   await js(`document.querySelector('.op-btn').click(), 1`); await sleep(300);

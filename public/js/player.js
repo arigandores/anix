@@ -946,7 +946,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     segKey = key;
     segs = timelineSegments(d, marks).map((s) => {
       const b = h('div', { class: 'b' }); const p = h('div', { class: 'p' });
-      const el = h('div', { class: `seg ${s.kind !== 'content' ? 'mark' : ''}`, style: { left: `${s.from}%`, width: `${s.to - s.from}%` } }, b, p);
+      const el = h('div', { class: `seg ${s.kind !== 'content' ? 'mark' : ''}`, dataset: { kind: s.kind }, style: { left: `${s.from}%`, width: `${s.to - s.from}%` } }, b, p);
       return { ...s, el, b, p };
     });
     segsEl.replaceChildren(...segs.map((s) => s.el));

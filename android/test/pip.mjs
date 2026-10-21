@@ -1,6 +1,6 @@
 // «Картинка в картинке»: свернули приложение, пока идёт серия, — плеер маленьким окном поверх других, видео идёт,
 // кнопки плеера спрятаны; вернулись — плеер во весь экран. На паузе свернули — без окна, а серия не играет в фоне
-import { ensureDevice, install, launch, js, until, check, skip, done, REAL, tap, sleep, windowState, screenshot, sh, PKG, pageErrors } from './_device.mjs';
+import { ensureDevice, install, launch, js, until, check, skip, done, REAL, tap, sleep, windowState, screenshot, sh, PKG, pageErrors, tapWatchable } from './_device.mjs';
 
 const playing = () => js(`(() => { const v = document.querySelector('.player-overlay video'); return !!v && !v.paused && v.currentTime > 0; })()`);
 const time = () => js(`document.querySelector('.player-overlay video')?.currentTime || 0`);
@@ -11,7 +11,7 @@ await launch({ fresh: true });
 if ((await js(`fetch('/api/config/toggles').then((r) => r.status)`)) >= 500) { skip('PiP', 'бекенд Anixart не отвечает'); done('pip'); }
 
 // Серия: первое аниме, первая озвучка, первая серия
-await tap('.release-row', { index: 0, wait: 25000 });
+await tapWatchable({ wait: 25000 });
 await tap('.btn-watch', { wait: 20000, after: 1200 });
 await until(`${REAL('.type-row, .ep-row')} > 0`, 20000);
 if (await js(`${REAL('.type-row')} > 0`)) await tap('.type-row', { index: 0, after: 1200 });

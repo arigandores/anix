@@ -27,9 +27,12 @@ try {
     && html.indexOf('/android/android.css') > html.indexOf('/css/app.css'));
   check('модели апскейла в сборку не попали', !fs.existsSync(path.join(out, 'models')));
 
-  // app.css: правила с :hover — только при наведении мышью (на телефоне :hover залипает после тапа), остальное как было
-  const orig = fs.readFileSync(path.join(root, 'public', 'css', 'app.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  // app.css: правила с :hover — только при наведении мышью (на телефоне :hover залипает после тапа), общей полосы
+  // прокрутки ПК (::-webkit-scrollbar) нет — она держала колонку справа; остальное как было
+  const SCROLLBAR = /(^|\})\s*::-webkit-scrollbar[^{]*\{[^}]*\}/g;
+  const orig = fs.readFileSync(path.join(root, 'public', 'css', 'app.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(SCROLLBAR, '$1');
   const conv = fs.readFileSync(path.join(out, 'css', 'app.css'), 'utf8');
+  check('app.css для Android: без общей полосы прокрутки ПК', !/(^|\})\s*::-webkit-scrollbar/.test(conv) && /\.tabbar\.scrollable::-webkit-scrollbar/.test(conv));
   const balanced = (c) => { let d = 0; for (const ch of c) { if (ch === '{') d++; else if (ch === '}') d--; if (d < 0) return false; } return d === 0; };
   check('app.css для Android: скобки на месте', balanced(conv));
   const outside = conv.replace(/@media \(hover: hover\) \{[^{}]*\{[^{}]*\} \}/g, '');

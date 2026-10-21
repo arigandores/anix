@@ -3,14 +3,14 @@
 // участников, сообщение из чата телефона доходит до ПК и обратно, «Пригласить» — ссылка в буфер, выход виден
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { ensureDevice, install, launch, js, until, check, skip, done, tap, sleep, screenshot, typeText, waitFor, ROOT, pageErrors, windowState } from './_device.mjs';
+import { ensureDevice, install, launch, js, until, check, skip, done, tap, sleep, screenshot, typeText, waitFor, ROOT, pageErrors, windowState, tapWatchable } from './_device.mjs';
 
 await ensureDevice();
 install();
 await launch({ fresh: true });
 if ((await js(`fetch('/api/config/toggles').then((r) => r.status)`)) >= 500) { skip('совместный просмотр', 'бекенд Anixart не отвечает'); done('party'); }
 
-await tap('.release-row', { index: 0, wait: 25000, after: 1200 });
+await tapWatchable({ wait: 25000, after: 1200 });
 await tap('.btn-party', { wait: 20000, after: 2500 });
 const code = await until(`import('/js/party/room.js').then(({ party }) => party.room?.code || null)`, 20000);
 check('«Смотреть вместе» — комната создана', !!code, code);
@@ -52,7 +52,9 @@ try {
   check('сообщение отправлено с телефона (есть в чате, поле очистилось)', sent.chat.includes('phone-hello') && !sent.value, sent);
   const got = await ev((e) => e.chat, 30000);
   check('сообщение телефона дошло до ПК', !!got, got?.chat);
-  check('ответ ПК виден на телефоне', !!(await until(`/pc-hello/.test(document.querySelector('.party-panel')?.textContent || '')`, 30000)));
+  const reply = await until(`/pc-hello/.test(document.querySelector('.party-panel')?.textContent || '')`, 30000);
+  // не пришёл — пришло ли в комнату (сеть) или пришло, но не видно (отрисовка)
+  check('ответ ПК виден на телефоне', !!reply, reply ? '' : await js(`import('/js/party/room.js').then(({ party }) => ({ chat: party.room?.chat.map((m) => m.text), panel: (document.querySelector('.party-panel')?.textContent || '').slice(-120) }))`));
 
   // «Пригласить» — https-ссылка с кодом в буфере обмена, подтверждение
   await tap('.party-panel .btn-primary', { text: 'Пригласить', after: 1200 });

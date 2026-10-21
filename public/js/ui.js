@@ -1,6 +1,7 @@
 // Мини-набор UI-примитивов (аналог Material-компонентов приложения).
 import { lottieIcon, bellIcon, emptyIcon, errorIcon, hoverIcon } from './lottie.js';
 import { remembered } from './api.js';
+import { touch } from './platform.js';
 
 export function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -667,27 +668,178 @@ export function tabs(defs, { initial = 0, onChange, scrollable = true, cache: us
     ink.dataset.placed = '1';
   };
   new ResizeObserver(() => placeInk(false)).observe(bar);
-  function select(i) {
+  // Вкладка, построенная для свайпа (видна рядом, пока тянут), — та же и после свайпа: у вкладок без кеша второе
+  // построение — второй запрос и скелетон поверх уже показанного списка. Свежая — построена не раньше 10 с назад
+  const builtAt = new Map();
+  const build = (i, reuse) => {
+    if (!cache.has(i) || (!useCache && !(reuse && Date.now() - (builtAt.get(i) ?? 0) < 10000))) { cache.set(i, defs[i].render()); builtAt.set(i, Date.now()); }
+    return cache.get(i);
+  };
+  // swiped — вкладку сменили свайпом: содержимое въезжает сбоку само (swipePages), без проявления
+  function select(i, { swiped = false } = {}) {
     if (i === current) return;
     const first = current === -1;
     current = i;
     tabEls().forEach((b, j) => b.classList.toggle('active', j === i));
     placeInk(true);
-    if (!useCache || !cache.has(i)) cache.set(i, defs[i].render());
-    body.replaceChildren(cache.get(i));
+    body.replaceChildren(build(i, swiped));
     // переключили вкладку — содержимое проявляется (разово); при первом показе экрана — нет: там уже идёт въезд
     // экрана, и своё проявление с нуля поверх него давало блик (экран «Списки просмотра»)
-    if (!first) nudge(cache.get(i), [{ opacity: 0 }, { opacity: 1 }], 200);
+    if (!first && !swiped) nudge(cache.get(i), [{ opacity: 0 }, { opacity: 1 }], 200);
     tabEls()[i]?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
     onChange && onChange(i);
   }
   defs.forEach((d, i) => bar.append(h('button', { class: 'tab', role: 'tab', onclick: () => select(i) }, d.title)));
   bar.append(ink);
   const root = h('div', { class: 'tabs' }, bar, body);
+  if (touch && defs.length > 1) {
+    swipePages(body, {
+      count: () => defs.length, current: () => current, page: () => cache.get(current), ink, tabEls,
+      peek: (i) => build(i, true),
+      select: (i) => select(i, { swiped: true }),
+    });
+  }
   root.select = select;
   root.refresh = (i = current) => { cache.delete(i); const c = current; current = -1; select(c); };
   select(initial);
   return root;
+}
+
+// Палец: свайп влево-вправо по содержимому вкладки — соседняя вкладка, как в мобильном приложении (вкладки tabs(),
+// разделы настроек). Текущая вкладка, соседняя (вплотную рядом, peek(i) строит её заранее) и полоска под вкладкой
+// (ink, если есть) идут за пальцем; отпустили дальше четверти ширины или смахнули быстро — соседняя доезжает на место,
+// иначе всё возвращается. У крайней вкладки — упругий отказ. Жест не забираем у того, что листают по горизонтали
+// само (карусели, ползунки), и у вложенных вкладок (их .swipe-pages ближе к пальцу). select(i) меняет вкладку без
+// своей анимации проявления.
+// Жест — по всему экрану ниже полосы вкладок, а не только по содержимому: раздел настроек или короткий список ниже
+// себя пуст, и свайп по пустому месту (на телефоне — полэкрана) иначе не делал ничего
+const OWN_SWIPE = 'input, textarea, select, [contenteditable], .sortable, .player-overlay, .iv';
+const NOT_PAGES = '.appbar, .tabbar, .settings-nav, #bottomnav, .backdrop, .player-overlay, .update-dialog';
+function ownsSwipe(target) {
+  for (let el = target; el && el !== document.documentElement; el = el.parentElement) {
+    if (el.matches(OWN_SWIPE)) return true;
+    if (el.scrollWidth > el.clientWidth + 1 && /(auto|scroll)/.test(getComputedStyle(el).overflowX)) return true;
+  }
+  return false;
+}
+// чьи вкладки листает палец: ближайшие вокруг (вложенные — свои), иначе вкладки экрана, если палец ниже их начала
+function swipeTarget(target, y) {
+  if (!(target instanceof Element) || target.closest(NOT_PAGES) || ownsSwipe(target)) return null;
+  const own = target.closest('.swipe-pages');
+  if (own) return own;
+  const screen = target.closest('.screen');
+  if (!screen) return null;
+  const pages = [...screen.querySelectorAll('.swipe-pages')].filter((p) => p.getClientRects().length && !p.parentElement.closest('.swipe-pages'));
+  const p = pages[pages.length - 1];
+  return p && y >= p.getBoundingClientRect().top ? p : null;
+}
+let swipeRouted = false;
+function routeSwipes() {
+  if (swipeRouted) return;
+  swipeRouted = true;
+  let active = null;
+  document.addEventListener('touchstart', (e) => {
+    active = null;
+    if (e.touches.length !== 1) return;
+    const p = swipeTarget(e.target, e.touches[0].clientY);
+    if (p?.swipe) { p.swipe.start(e); active = p; }
+  }, { passive: true });
+  document.addEventListener('touchmove', (e) => active?.swipe.move(e), { passive: false });
+  document.addEventListener('touchend', () => { active?.swipe.end(); active = null; });
+  document.addEventListener('touchcancel', () => { active?.swipe.cancel(); active = null; });
+}
+export function swipePages(body, { count, current, page, peek, select, ink = null, tabEls = () => [] }) {
+  body.classList.add('swipe-pages');
+  routeSwipes();
+  let g = null;
+  const calm = () => document.documentElement.classList.contains('economy');
+  const EASE = { duration: 240, easing: 'cubic-bezier(.2,.8,.2,1)' };
+  // вкладка вне потока, поверх .tabbody (высоту задаёт та, что в потоке)
+  const aside = (el) => Object.assign(el.style, { position: 'absolute', inset: '0 auto auto 0', width: '100%', pointerEvents: 'none' });
+  const reset = (el) => { if (el) Object.assign(el.style, { transform: '', position: '', inset: '', width: '', pointerEvents: '' }); };
+  const shift = (el, x) => { if (el) el.style.transform = `translateX(${x}px)`; };
+  const inkAt = (i) => { const t = tabEls()[i]; if (t && ink) { ink.style.width = `${t.offsetWidth}px`; ink.style.transform = `translateX(${t.offsetLeft}px)`; } };
+  // полоска между вкладкой i и соседней j: p — доля пути (0…1)
+  const inkBetween = (i, j, p) => {
+    const a = tabEls()[i]; const b = tabEls()[j];
+    if (!a || !b || !ink) return;
+    ink.classList.remove('ready');
+    ink.style.width = `${a.offsetWidth + (b.offsetWidth - a.offsetWidth) * p}px`;
+    ink.style.transform = `translateX(${a.offsetLeft + (b.offsetLeft - a.offsetLeft) * p}px)`;
+  };
+  // соседняя вкладка i рядом с текущей (null — убрать: палец повернул в другую сторону или к краю)
+  const showPeek = (s, i) => {
+    if (s.peekI === i) return;
+    if (s.peek) { s.peek.remove(); reset(s.peek); }
+    s.peekI = i; s.peek = i == null ? null : peek(i);
+    if (s.peek && s.peek !== s.el) { aside(s.peek); body.append(s.peek); } else s.peek = null;
+  };
+  const start = (e) => {
+    const p = e.touches[0];
+    g = { x: p.clientX, y: p.clientY, dx: 0, axis: null, lastX: p.clientX, lastT: e.timeStamp, v: 0, peek: null, peekI: null };
+  };
+  const move = (e) => {
+    if (!g) return;
+    if (e.touches.length !== 1) { cancel(); return; }
+    const p = e.touches[0];
+    const dx = p.clientX - g.x; const dy = p.clientY - g.y;
+    if (!g.axis) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      // скорее вертикально или страница уже листается — это прокрутка, не свайп
+      if (Math.abs(dx) < Math.abs(dy) * 1.2 || !e.cancelable) { g = null; return; }
+      g.axis = 'x'; g.el = page(); g.from = current(); g.w = body.clientWidth || 1;
+      body.classList.add('swiping');
+    }
+    e.preventDefault();
+    const dir = dx < 0 ? 1 : -1; const to = g.from + dir;
+    const edge = to < 0 || to >= count();
+    g.dx = edge ? dx / 4 : dx;
+    const dt = Math.max(1, e.timeStamp - g.lastT);
+    g.v = 0.7 * ((p.clientX - g.lastX) / dt) + 0.3 * g.v; g.lastX = p.clientX; g.lastT = e.timeStamp;
+    showPeek(g, edge ? null : to);
+    shift(g.el, g.dx); shift(g.peek, g.dx + dir * g.w);
+    if (!edge) inkBetween(g.from, to, Math.min(1, Math.abs(dx) / g.w));
+  };
+  // не дотянули — всё на место, соседняя уезжает обратно за край
+  const cancel = () => {
+    const s = g; g = null;
+    if (!s?.axis) return;
+    const dir = s.dx < 0 ? 1 : -1;
+    const anims = calm() ? [] : [
+      s.el?.animate([{ transform: `translateX(${s.dx}px)` }, { transform: 'none' }], EASE),
+      s.peek?.animate([{ transform: `translateX(${s.dx + dir * s.w}px)` }, { transform: `translateX(${dir * s.w}px)` }], EASE),
+    ].filter(Boolean);
+    reset(s.el);
+    if (s.peek) shift(s.peek, dir * s.w);
+    ink?.classList.add('ready'); inkAt(s.from);
+    Promise.all(anims.map((a) => a.finished.catch(() => {}))).then(() => {
+      if (s.peek && page() !== s.peek) { s.peek.remove(); reset(s.peek); }
+      if (!g) body.classList.remove('swiping');
+    });
+  };
+  const end = () => {
+    if (!g?.axis) { g = null; return; }
+    const dir = g.dx < 0 ? 1 : -1; const to = g.from + dir;
+    const far = Math.abs(g.dx) > g.w * 0.25 || (Math.abs(g.v) > 0.45 && Math.sign(g.v) === -dir && Math.abs(g.dx) > 24);
+    if (to < 0 || to >= count() || !far) { cancel(); return; }
+    const s = g; g = null;
+    const old = s.el;
+    select(to); // новая вкладка — в потоке (та же, что была рядом, или свежая, если вкладка перерисовывается при выборе)
+    const next = page();
+    if (s.peek && s.peek !== next) { s.peek.remove(); reset(s.peek); }
+    reset(next);
+    if (calm() || !old || !next || old === next) { reset(old); body.classList.remove('swiping'); return; }
+    // уходящая — рядом, пока новая доезжает
+    aside(old); body.append(old);
+    const out = old.animate([{ transform: `translateX(${s.dx}px)` }, { transform: `translateX(${-dir * s.w}px)` }], EASE);
+    next.animate([{ transform: `translateX(${s.dx + dir * s.w}px)` }, { transform: 'none' }], EASE);
+    out.finished.catch(() => {}).then(() => {
+      if (page() !== old) old.remove();
+      reset(old);
+      if (!g) body.classList.remove('swiping');
+    });
+  };
+  body.swipe = { start, move, end, cancel };
 }
 
 // --- Форматирование ---

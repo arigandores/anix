@@ -1,9 +1,9 @@
 // Вход: экран входа с клавиатурой, ошибки логина и пароля от бекенда, кнопки соцсетей; вход через ВКонтакте, Telegram
 // и Яндекс — в окне приложения (страница провайдера, «Назад» отменяет), Google — в системном браузере с ожиданием в
 // приложении. Настоящий вход и выход — если заданы ANIX_TEST_LOGIN и ANIX_TEST_PASSWORD
-import { ensureDevice, install, launch, js, until, waitFor, check, skip, done, tap, back, sleep, sh, PKG, topActivity, windowState, screenshot, typeText, pageErrors } from './_device.mjs';
+import { ensureDevice, install, launch, js, until, waitFor, check, skip, done, tap, back, sleep, sh, PKG, topActivity, windowState, screenshot, typeText, pageErrors, devtools } from './_device.mjs';
 
-const pages = async () => (await (await fetch('http://127.0.0.1:9333/json')).json()).map((t) => t.url);
+const pages = async () => (await (await fetch(`${devtools()}/json`)).json()).map((t) => t.url);
 
 await ensureDevice();
 install();
@@ -54,7 +54,7 @@ for (const name of social.filter((n) => HOSTS[n])) {
 // Перехват редиректа: страница провайдера уходит на redirect_uri с кодом (VK, Telegram) или токеном во фрагменте
 // (Яндекс) — окно закрывается, приложение меняет код на токен. Код поддельный — обмен отклонён, это видно по сообщению
 const inPage = async (match, expr) => {
-  const t = (await (await fetch('http://127.0.0.1:9333/json')).json()).find((x) => match.test(x.url));
+  const t = (await (await fetch(`${devtools()}/json`)).json()).find((x) => match.test(x.url));
   const ws = new WebSocket(t.webSocketDebuggerUrl);
   await new Promise((ok) => { ws.onopen = ok; });
   ws.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression: expr } }));
@@ -86,11 +86,12 @@ for (const name of social.filter((n) => REDIRECT[n])) {
 
 // Google — системный браузер, приложение ждёт; «Отмена» снимает ожидание
 if (social.includes('Google')) {
-  await tap('.auth-wrap button[title="Войти через Google"]', { after: 3000 });
-  const top = topActivity();
-  check('Google: вход открылся в браузере', !!top && !top.startsWith(PKG), top);
-  sh(`am start -W -n ${PKG}/.MainActivity`); await sleep(1000);
-  check('Google: приложение ждёт вход из браузера', await js(`/Продолжите вход в открывшемся браузере/.test(document.body.textContent)`));
+  await tap('.auth-wrap button[title="Войти через Google"]', { after: 300 });
+  // браузер — по условию, а не через 3 с: под нагрузкой (4 эмулятора) открывался позже
+  const top = await waitFor(() => { const a = topActivity(); return a && !a.startsWith(PKG) ? a : null; }, 15000, 500) || topActivity();
+  check('Google: вход открылся в браузере', !!top && !top.startsWith(PKG), top.startsWith(PKG) ? `${top}; тосты: ${await js(`(window.__toasts || []).join(' | ')`)}` : top);
+  sh(`am start -W -n ${PKG}/.MainActivity`);
+  check('Google: приложение ждёт вход из браузера', !!(await until(`/Продолжите вход в открывшемся браузере/.test(document.body.textContent)`, 5000)));
   await tap('.backdrop:not(.closing) button', { text: 'Отмена', after: 900 });
   check('Google: «Отмена» — ожидание снято', !(await js(`/Продолжите вход/.test(document.body.textContent)`)));
 }

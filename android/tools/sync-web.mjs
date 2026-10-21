@@ -16,10 +16,12 @@ for (const name of fs.readdirSync(path.join(root, 'public'))) {
   fs.cpSync(path.join(root, 'public', name), path.join(out, name), { recursive: true });
 }
 
-// :hover на телефоне «залипает» после тапа (подсветка остаётся на нажатой кнопке) — правила с :hover в копии app.css
-// действуют только там, где есть наведение: @media (hover: hover). В списке селекторов «.a:hover, .a:focus-visible»
-// без :hover остаётся снаружи. Комментарии убираются (внутри них бывают скобки)
-function hoverOnlyWithMouse(css) {
+// Копия app.css для пальца. :hover на телефоне «залипает» после тапа (подсветка остаётся на нажатой кнопке) — правила
+// с :hover действуют только там, где есть наведение: @media (hover: hover). В списке селекторов «.a:hover,
+// .a:focus-visible» без :hover остаётся снаружи. Общая полоса прокрутки ПК (::-webkit-scrollbar шириной 10px) убрана:
+// с ней WebView держит под полосу колонку справа, и отступ справа шире левого; без неё — системная полоса поверх
+// содержимого, как в приложениях Android. Комментарии убираются (внутри них бывают скобки)
+function forTouch(css) {
   css = css.replace(/\/\*[\s\S]*?\*\//g, '');
   let outCss = ''; let i = 0;
   while (i < css.length) {
@@ -30,7 +32,8 @@ function hoverOnlyWithMouse(css) {
     while (j < css.length && depth) { if (css[j] === '{') depth++; else if (css[j] === '}') depth--; j++; }
     const body = css.slice(open + 1, j - 1);
     const sel = head.trim();
-    if (sel.startsWith('@media') || sel.startsWith('@supports') || sel.startsWith('@layer')) outCss += `${head}{${hoverOnlyWithMouse(body)}}`;
+    if (sel.startsWith('@media') || sel.startsWith('@supports') || sel.startsWith('@layer')) outCss += `${head}{${forTouch(body)}}`;
+    else if (sel.startsWith('::-webkit-scrollbar')) { /* полоса прокрутки ПК */ }
     else if (sel.startsWith('@') || !sel.includes(':hover')) outCss += `${head}{${body}}`;
     else {
       const parts = sel.split(/,(?![^(]*\))/).map((s) => s.trim());
@@ -43,7 +46,7 @@ function hoverOnlyWithMouse(css) {
   return outCss;
 }
 const cssFile = path.join(out, 'css', 'app.css');
-fs.writeFileSync(cssFile, hoverOnlyWithMouse(fs.readFileSync(cssFile, 'utf8')));
+fs.writeFileSync(cssFile, forTouch(fs.readFileSync(cssFile, 'utf8')));
 
 // Модули server/ в обёртке CommonJS. Node-модули, которые им нужны, — маленькие замены ниже (SHIMS)
 const MODULES = ['server/sign.js', 'server/config.js', 'server/social.js', 'server/parsers/index.js', 'server/parsers/skip-marks.js'];

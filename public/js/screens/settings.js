@@ -1,5 +1,5 @@
 // Настройки: разделы в боковом меню (на узком окне — полоса сверху), справа — пункты выбранного раздела
-import { h, icon, toast, sheet, prompt, confirmDialog, dialog, nudge } from '../ui.js';
+import { h, icon, toast, sheet, prompt, confirmDialog, dialog, nudge, swipePages } from '../ui.js';
 import { A, auth } from '../api.js';
 import { t, prefs, theme, setTheme } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
@@ -11,7 +11,7 @@ import { trtStatus, trtInstall, benchRunDialog, benchResultsDialog, benchInfo, S
 import { AUDIO_OPTS } from '../audio.js';
 import { clearPresence, discordStatus } from '../discord.js';
 import { canUpdate, checkUpdate, lastCheck, updateDialog, whatsNewDialog, releaseNotes } from '../update.js';
-import { has, APP_NAME } from '../platform.js';
+import { has, APP_NAME, touch } from '../platform.js';
 
 function item(ic, title, sub, onClick) {
   return h('div', { class: 'menu-item', onclick: onClick }, icon(ic), h('div', { class: 'grow' }, h('div', null, title), sub ? h('div', { class: 'sub' }, sub) : null));
@@ -193,15 +193,19 @@ registerScreen('settings', ({ section } = {}) => {
   const buttons = new Map();
   let current = null;
   const visible = () => SECTIONS.filter((s) => buttons.get(s.id)?.isConnected);
-  function select(id, byUser) {
+  const build = (s) => {
+    if (!built.has(s.id)) built.set(s.id, h('div', { class: 'menu-list', 'data-section': s.id }, h('h2', { class: 'settings-title' }, s.title), ...s.render()));
+    return built.get(s.id);
+  };
+  // swiped — раздел сменили свайпом (swipePages): новый въезжает сбоку сам, без проявления
+  function select(id, byUser, swiped = false) {
     const s = SECTIONS.find((x) => x.id === id) || SECTIONS[0];
     if (s.id === current) return;
     current = s.id; lastSection = s.id;
     buttons.forEach((b, k) => { const on = k === s.id; b.classList.toggle('active', on); b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; });
-    if (!built.has(s.id)) built.set(s.id, h('div', { class: 'menu-list', 'data-section': s.id }, h('h2', { class: 'settings-title' }, s.title), ...s.render()));
-    body.replaceChildren(built.get(s.id));
+    body.replaceChildren(build(s));
     if (!byUser) return; // первый показ — без своей анимации: идёт въезд экрана
-    nudge(built.get(s.id), [{ opacity: 0 }, { opacity: 1 }], 200);
+    if (!swiped) nudge(built.get(s.id), [{ opacity: 0 }, { opacity: 1 }], 200);
     const vp = document.getElementById('viewport');
     if (vp && vp.scrollTop > 0) vp.scrollTop = 0; // новый раздел — с начала
     buttons.get(s.id).scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
@@ -211,7 +215,8 @@ registerScreen('settings', ({ section } = {}) => {
     buttons.set(s.id, b);
     nav.append(b);
   }
-  // стрелки — по разделам, как по вкладкам
+  // палец — свайп по разделу влево-вправо, как по вкладкам; стрелки — по разделам
+  if (touch) swipePages(body, { count: () => visible().length, current: () => visible().findIndex((x) => x.id === current), page: () => built.get(current), peek: (i) => build(visible()[i]), select: (i) => select(visible()[i].id, true, true) });
   nav.addEventListener('keydown', (e) => {
     const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
     if (!step) return;

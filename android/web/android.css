@@ -1,5 +1,9 @@
 /* Android: стили поверх public/css/app.css (подключает android/tools/sync-web.mjs) */
 
+/* Синяя подсветка WebView на нажатом элементе — не как в приложениях: отклик на нажатие — свой, :active в app.css
+   (строка списка темнеет, кнопка чуть сжимается) */
+html { -webkit-tap-highlight-color: transparent; }
+
 /* «Картинка в картинке» (MainActivity): в маленьком окне — только видео, без кнопок плеера, тостов и окон */
 .android-pip .player-overlay > :not(.player-stage),
 .android-pip .player-stage > :not(video),

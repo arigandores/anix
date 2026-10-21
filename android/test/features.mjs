@@ -1,6 +1,6 @@
 // На Android нет улучшения картинки, AI-помощника, статуса в Discord и стороннего плеера (public/js/platform.js):
 // ни вкладки, ни разделов настроек, ни пунктов меню плеера и чипа плеера; апскейл не включается и из старой настройки
-import { ensureDevice, install, launch, js, until, check, skip, done, REAL, tap, back, screenshot, pageErrors, persist } from './_device.mjs';
+import { ensureDevice, install, launch, js, until, check, skip, done, REAL, tap, back, screenshot, pageErrors, persist, tapWatchable } from './_device.mjs';
 
 await ensureDevice();
 install();
@@ -37,11 +37,12 @@ await back(); // настройки → главная
 // Чип плеера на экране серий и меню плеера
 const api = await js(`fetch('/api/config/toggles').then((r) => r.status)`);
 if (api >= 500) { skip('экран серий и плеер', `бекенд Anixart отвечает ${api}`); done('features'); }
-await tap('.release-row', { index: 0, wait: 25000 });
+await tapWatchable({ wait: 25000 });
 await tap('.btn-watch', { wait: 20000 });
-await until(`${REAL('.type-row, .ep-row')} > 0`, 20000);
+// серии — через источник (relay): на эмуляторе под нагрузкой (4 параллельно) бывает дольше 20 с
+check('экран серий: озвучки или серии загрузились', !!(await until(`${REAL('.type-row, .ep-row')} > 0`, 45000)));
 if (await js(`${REAL('.type-row')} > 0`)) await tap('.type-row', { index: 0 });
-await until(`${REAL('.ep-row')} > 0`, 20000);
+check('экран серий: серии загрузились', !!(await until(`${REAL('.ep-row')} > 0`, 45000)));
 await tap('.wchip-player');
 const chip = await js(`[...document.querySelectorAll('.pop-item')].filter((e) => e.getClientRects().length).map((e) => e.textContent.trim())`);
 check('чип плеера: встроенный и веб, без стороннего и «до 4K»', chip.length === 2 && !chip.some((c) => /Сторонний|mpv|4K|нейросет/i.test(c)), chip);

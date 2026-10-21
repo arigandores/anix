@@ -211,6 +211,8 @@ img { display: block; }
 :root[data-theme="dark"] .tab-ink { background: var(--text); }
 .tab-ink.ready { transition: transform .3s var(--ease-out), width .3s var(--ease-out); }
 .tabbody { min-height: 200px; }
+/* свайп между вкладками и разделами настроек пальцем (ui.js swipePages): уходящая вкладка рядом с новой, за краем экрана не видна */
+.swipe-pages.swiping { position: relative; overflow-x: clip; }
 
 /* ---------- Кнопки, чипы, поля ---------- */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 20px; border-radius: 20px;

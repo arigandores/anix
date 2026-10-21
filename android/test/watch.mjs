@@ -1,7 +1,7 @@
 // Главный сценарий, как пальцем: каталог → аниме → «Смотреть» → озвучка → серия → встроенный плеер играет.
 // В плеере: горизонталь без системных полос, экран не гаснет; тап показывает и прячет кнопки (не пауза), пауза — кнопкой;
 // «Назад» закрывает плеер — снова вертикаль, полосы на месте; место в серии запомнено и переживает перезапуск
-import { ensureDevice, install, launch, js, until, check, skip, done, REAL, tap, back, sleep, windowState, screenshot, sh, pageErrors } from './_device.mjs';
+import { ensureDevice, install, launch, js, until, check, skip, done, REAL, tap, back, sleep, windowState, screenshot, sh, pageErrors, tapWatchable } from './_device.mjs';
 
 await ensureDevice();
 install();
@@ -10,7 +10,7 @@ const api = await js(`fetch('/api/config/toggles').then((r) => r.status)`);
 if (api >= 500) { skip('просмотр', `бекенд Anixart отвечает ${api}`); done('watch'); }
 
 check('каталог загрузился', !!(await until(`${REAL('.release-row')} >= 3`, 25000)));
-await tap('.release-row', { index: 0 });
+await tapWatchable();
 check('страница аниме: кнопка «Смотреть»', !!(await until(`${REAL('.btn-watch')}`, 20000)));
 const title = await js(`document.querySelector('.appbar')?.textContent || ''`);
 await tap('.btn-watch');
@@ -106,7 +106,7 @@ screenshot('watch-episodes-after');
 // Перезапуск (свернули → закрыли из «Недавних»): на странице аниме «Продолжить» с того же места
 sh('input keyevent 3'); await sleep(2000);
 await launch();
-await tap('.release-row', { index: 0, wait: 25000 });
+await tapWatchable({ wait: 25000 });
 const cont = await until(`(() => { const b = document.querySelector('.btn-watch'); return b && /Продолжить/.test(b.textContent) ? b.textContent : null; })()`, 20000);
 check('после перезапуска — «Продолжить» на странице аниме', !!cont, cont || '');
 check(`позиция запомнена (~${Math.round(pos)} с)`, pos > 3);

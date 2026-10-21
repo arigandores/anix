@@ -3,6 +3,7 @@
 // Тест печатает PASS/FAIL/SKIP построчно; провал — FAIL и код выхода 1 (android/test/run-all.mjs).
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,6 +15,13 @@ const ADB = fs.existsSync(path.join(SDK, 'platform-tools', 'adb.exe')) ? path.jo
 const AVD = process.env.ANIX_AVD || 'Anix_Test';
 const APK = path.join(ROOT, 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
 export const SHOTS = path.join(ROOT, 'android', 'test', 'shots');
+// последний аргумент { timeout } — сколько ждать (по умолчанию 2 мин: зависший adb — ошибка теста, а не вечное ожидание)
+const run = (...args) => {
+  const o = args.length && typeof args[args.length - 1] === 'object' ? args.pop() : {};
+  return execFileSync(ADB, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, MSYS_NO_PATHCONV: '1' }, timeout: o.timeout ?? 120000 }).replace(/\r/g, '');
+};
+// Подключённые устройства: [серийный номер] в состоянии device
+export const devices = () => run('devices').split('\n').slice(1).filter((l) => /\tdevice$/.test(l)).map((l) => l.split('\t')[0]);
 
 // ---------- результат ----------
 let failed = 0; let skipped = 0;
@@ -35,9 +43,7 @@ process.on('uncaughtException', (e) => { console.log(`FAIL необработа�
 export const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
 // ---------- adb ----------
-export function adb(...args) {
-  return execFileSync(ADB, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, MSYS_NO_PATHCONV: '1' } }).replace(/\r/g, '');
-}
+export const adb = run;
 export const sh = (cmd) => adb('shell', cmd);
 
 export async function waitFor(fn, ms, step = 500) {
@@ -49,15 +55,11 @@ export async function waitFor(fn, ms, step = 500) {
   }
 }
 
-// Устройство: подключённое или эмулятор ANIX_AVD (по умолчанию Anix_Test), разблокированное
+// Устройство: ANDROID_SERIAL или свой эмулятор ANIX_AVD (по умолчанию Anix_Test), разблокированное
 export async function ensureDevice() {
-  const devices = () => adb('devices').split('\n').slice(1).filter((l) => /\tdevice$/.test(l));
-  if (!devices().length) {
-    const emu = path.join(SDK, 'emulator', process.platform === 'win32' ? 'emulator.exe' : 'emulator');
-    // программная отрисовка: с аппаратной (-gpu auto) эмулятор после долгой работы падал при старте
-    spawn(emu, ['-avd', AVD, '-no-snapshot-save', '-no-boot-anim', '-gpu', 'swiftshader_indirect'], { detached: true, stdio: 'ignore' }).unref();
-    if (!(await waitFor(() => devices().length, 240000, 2000))) throw new Error(`эмулятор ${AVD} не запустился`);
-  }
+  // не сказано какое устройство (ANDROID_SERIAL) — свой эмулятор Anix_Test*, запущенный или новый. Не первый попавшийся:
+  // на телефоне обычно release-сборка без DevTools, а чужие эмуляторы (Pixel_7 с PIN-кодом и т. п.) тесты не трогают
+  if (!process.env.ANDROID_SERIAL) [process.env.ANDROID_SERIAL] = await startEmulators(1);
   if (!(await waitFor(() => sh('getprop sys.boot_completed').trim() === '1', 180000, 2000))) throw new Error('устройство не загрузилось');
   if (!/RUNNING_UNLOCKED/.test(sh('dumpsys user'))) {
     sh('input keyevent 224'); sh('wm dismiss-keyguard');
@@ -81,31 +83,74 @@ export async function ensureDevice() {
   sh('settings put global window_animation_scale 0'); sh('settings put global transition_animation_scale 0');
 }
 
+// Эмуляторы для параллельных тестов: n штук, у каждого свой AVD (Anix_Test, Anix_Test_2, …; копии — config.ini
+// основного, данные создаются при первом запуске). Свои узнаются по имени AVD (emu avd name), а не по порту: порт
+// 5554 может занять эмулятор пользователя; новые — на свободных портах. Не -read-only одного AVD: так
+// несколько экземпляров стартуют, но adb shell у всех зависает. Без снимков (-no-snapshot): загрузка с нуля ~25–50 с,
+// а со снимка, сохранённого при падении, эмулятор висел без конца. Запуск по одному (дождаться появления в adb).
+// Программная отрисовка: с аппаратной (-gpu auto) эмулятор после долгой работы падал при старте.
+// Возвращает серийные номера n эмуляторов, загруженных до конца; started — какие запущены сейчас
+const AVD_HOME = process.env.ANDROID_AVD_HOME || path.join(os.homedir(), '.android', 'avd');
+function ensureAvd(name) {
+  if (name === AVD || fs.existsSync(path.join(AVD_HOME, `${name}.ini`))) return;
+  const config = fs.readFileSync(path.join(AVD_HOME, `${AVD}.avd`, 'config.ini'), 'utf8')
+    .replace(/^AvdId=.*$/m, `AvdId=${name}`).replace(/^avd\.ini\.displayname=.*$/m, `avd.ini.displayname=${name}`);
+  fs.mkdirSync(path.join(AVD_HOME, `${name}.avd`), { recursive: true });
+  fs.writeFileSync(path.join(AVD_HOME, `${name}.avd`, 'config.ini'), config);
+  const target = (/^target=.*$/m.exec(fs.readFileSync(path.join(AVD_HOME, `${AVD}.ini`), 'utf8')) || ['target=android-37.0'])[0];
+  fs.writeFileSync(path.join(AVD_HOME, `${name}.ini`), `avd.ini.encoding=UTF-8\r\npath=${path.join(AVD_HOME, `${name}.avd`)}\r\npath.rel=avd\\${name}.avd\r\n${target}\r\n`);
+}
+const avdName = (serial) => { try { return run('-s', serial, 'emu', 'avd', 'name', { timeout: 5000 }).split('\n')[0].trim(); } catch { return ''; } };
+export async function startEmulators(n, { started = [] } = {}) {
+  const emu = path.join(SDK, 'emulator', process.platform === 'win32' ? 'emulator.exe' : 'emulator');
+  const all = () => run('devices').split('\n').slice(1).map((l) => l.split('\t')[0]).filter((d) => d.startsWith('emulator-'));
+  const running = new Map(all().map((d) => [avdName(d), d]));
+  const list = [];
+  for (let i = 0; i < n; i++) {
+    const name = i ? `${AVD}_${i + 1}` : AVD;
+    if (running.has(name)) { list.push(running.get(name)); continue; }
+    let port = 5554;
+    const busy = new Set([...all(), ...list].map((d) => Number(d.replace('emulator-', ''))));
+    while (busy.has(port)) port += 2;
+    const serial = `emulator-${port}`;
+    list.push(serial);
+    ensureAvd(name);
+    spawn(emu, ['-avd', name, '-no-snapshot', '-port', String(port), '-no-boot-anim', '-no-audio', '-no-window', '-gpu', 'swiftshader_indirect'], { detached: true, stdio: 'ignore' }).unref();
+    if (!(await waitFor(() => all().includes(serial), 60000, 1000))) throw new Error(`эмулятор ${name} (${serial}) не запустился`);
+    started.push(serial);
+  }
+  const booted = (d) => run('-s', d, 'shell', 'getprop sys.boot_completed', { timeout: 5000 }).trim() === '1';
+  for (const d of list) if (!(await waitFor(() => booted(d), 240000, 2000))) throw new Error(`${d} не загрузился`);
+  return list;
+}
+
 // APK собран заранее (./gradlew assembleDebug) — ставим, если на устройстве другая сборка
 export function install() {
   if (!fs.existsSync(APK)) throw new Error(`нет ${APK} — сначала cd android && ./gradlew assembleDebug`);
   const stamp = String(fs.statSync(APK).mtimeMs);
-  const mark = path.join(SHOTS, '.installed');
+  const mark = path.join(SHOTS, `.installed-${adb('get-serialno').trim().replace(/[^\w.-]/g, '_')}`);
   fs.mkdirSync(SHOTS, { recursive: true });
   const installed = /versionName/.test(sh(`dumpsys package ${PKG}`));
-  if (installed && fs.existsSync(mark) && fs.readFileSync(mark, 'utf8') === stamp + adb('get-serialno').trim()) return;
+  if (installed && fs.existsSync(mark) && fs.readFileSync(mark, 'utf8') === stamp) return;
   adb('install', '-r', APK);
-  fs.writeFileSync(mark, stamp + adb('get-serialno').trim());
+  fs.writeFileSync(mark, stamp);
 }
 
 export const pid = () => { try { return sh(`pidof ${PKG}`).trim(); } catch { return ''; } }; // нет процесса — pidof с ошибкой
 
 // ---------- DevTools страницы ----------
 let ws = null; let msgId = 0; const waiting = new Map(); const events = [];
+let devtoolsPort = 0; // adb forward tcp:0 — свободный порт на каждый запуск: тесты на нескольких устройствах сразу
+export const devtools = () => `http://127.0.0.1:${devtoolsPort}`;
 export const pageErrors = [];
 async function connect() {
   const p = await waitFor(() => pid(), 15000, 300);
   if (!p) throw new Error('приложение не запустилось');
-  try { adb('forward', '--remove', 'tcp:9333'); } catch { /* не было */ }
-  adb('forward', 'tcp:9333', `localabstract:webview_devtools_remote_${p}`);
+  if (devtoolsPort) { try { adb('forward', '--remove', `tcp:${devtoolsPort}`); } catch { /* не было */ } }
+  devtoolsPort = Number(adb('forward', 'tcp:0', `localabstract:webview_devtools_remote_${p}`).trim());
   // страниц приложения бывает две (пересоздали окно — старая ещё в списке): берём ту, что отвечает, с конца списка
   const ok = await waitFor(async () => {
-    const list = (await (await fetch('http://127.0.0.1:9333/json')).json()).filter((t) => t.type === 'page' && t.url.startsWith(`http://127.0.0.1:${PORT}`));
+    const list = (await (await fetch(`${devtools()}/json`)).json()).filter((t) => t.type === 'page' && t.url.startsWith(`http://127.0.0.1:${PORT}`));
     for (const target of list.reverse()) if (await attach(target)) return true;
     return false;
   }, 25000, 500);
@@ -182,6 +227,17 @@ export async function tap(sel, opts = {}) {
   await sleep(opts.after ?? 400);
   return p;
 }
+// Аниме, которое можно смотреть: первая строка каталога с вышедшими сериями («2 из 11 эп»). Первым в каталоге бывает
+// анонс — без серий, без «Смотреть» и «Смотреть вместе» (тесты, открывавшие первую строку, падали от смены каталога)
+export async function tapWatchable(opts = {}) {
+  const index = await waitFor(async () => {
+    const i = await js(`[...document.querySelectorAll('.release-row')].filter((e) => e.getClientRects().length && !e.closest('.skeleton, .sk-root'))
+      .findIndex((e) => /(^|\\D)[1-9]\\d* из (\\d+|\\?) эп/.test(e.textContent))`);
+    return i >= 0 ? i + 1 : null;
+  }, opts.wait ?? 25000, 300);
+  if (!index) throw new Error('в каталоге нет аниме с вышедшими сериями');
+  return tap('.release-row', { ...opts, index: index - 1 });
+}
 export const key = async (k, after = 600) => { sh(`input keyevent ${k}`); await sleep(after); };
 export const back = () => key(4, 900);
 export async function typeText(s) { sh(`input text ${JSON.stringify(s.replace(/ /g, '%s'))}`); await sleep(400); }
@@ -189,7 +245,7 @@ export async function typeText(s) { sh(`input text ${JSON.stringify(s.replace(/ 
 // ---------- окно ----------
 export function screenshot(name) {
   fs.mkdirSync(SHOTS, { recursive: true });
-  const file = path.join(SHOTS, `${name}.png`);
+  const file = path.join(SHOTS, `${process.env.ANIX_SHOT_TAG ? `${process.env.ANIX_SHOT_TAG}-` : ''}${name}.png`);
   fs.writeFileSync(file, execFileSync(ADB, ['exec-out', 'screencap', '-p'], { maxBuffer: 64 * 1024 * 1024 }));
   return file;
 }
@@ -197,5 +253,13 @@ export const topActivity = () => (/topResumedActivity=ActivityRecord\{\S+ \S+ (\
 export const rotation = () => Number((/mCurrentRotation=(?:ROTATION_)?(\d+)/.exec(sh('dumpsys display')) || /rotation=(\d)/.exec(sh('dumpsys window displays')) || [])[1] || 0);
 // Состояние окна глазами приложения (MainActivity.Bridge.state): полосы, «экран не гаснет», ориентация, PiP
 export const windowState = async () => JSON.parse(await js('anixAndroid.state()'));
-// localStorage WebView пишет на диск с задержкой (~1 с): перед перезапуском — как пользователь, свернуть и подождать
-export async function persist() { sh('input keyevent 3'); await sleep(2000); }
+// localStorage WebView пишет на диск с задержкой: перед перезапуском — как пользователь, свернуть и дождаться записи.
+// Не пауза наугад (2 с под нагрузкой четырёх эмуляторов не хватало — «Пропустить версию» терялась): метка в
+// localStorage, ждём её в файле на диске (run-as — тестовая сборка debuggable); записи до неё ушли вместе с ней
+export async function persist() {
+  const mark = `persist-${Date.now().toString(36)}`;
+  await js(`(localStorage.setItem('anix.test.persist', ${JSON.stringify(mark)}), 1)`);
+  sh('input keyevent 3');
+  const onDisk = () => Number(sh(`run-as ${PKG} sh -c 'cat "app_webview/Default/Local Storage/leveldb/"*.log 2>/dev/null | grep -ac ${mark}' || true`).trim()) > 0;
+  if (!(await waitFor(onDisk, 20000, 250))) throw new Error('localStorage не записался на диск за 20 с');
+}

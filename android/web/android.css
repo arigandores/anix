@@ -18,5 +18,37 @@ html { -webkit-tap-highlight-color: transparent; }
 
 /* Мини-плеер на телефоне: компактный, справа над нижним меню, кнопки (пауза, развернуть, закрыть) видны всегда —
    на ПК они появляются при наведении мыши, а пальцем не наведёшь */
-.android .player-overlay.mini { width: min(62vw, 300px); right: 12px; bottom: calc(var(--android-nav, 84px) + 10px); }
+.android .player-overlay.mini { width: min(62vw, 300px); right: 12px; bottom: calc(var(--bottomnav-h, 84px) + 10px); }
 .android .player-overlay.mini .mini-bar { opacity: 1; padding-top: 14px; }
+
+/* Вырез камеры в плеере (--cut-*: MainActivity → shim.js __anixInsets): видео — до края экрана и под вырезом,
+   кнопки, пропуск опенинга и индикаторы перемотки — в стороне от него */
+.android .player-overlay:not(.mini) .player-top { padding: calc(10px + var(--cut-t, 0px)) calc(14px + var(--cut-r, 0px)) 10px calc(14px + var(--cut-l, 0px)); }
+.android .player-overlay:not(.mini) .player-controls { padding: 34px calc(16px + var(--cut-r, 0px)) calc(10px + var(--cut-b, 0px)) calc(16px + var(--cut-l, 0px)); }
+.android .player-overlay:not(.mini) .skip-row { right: calc(24px + var(--cut-r, 0px)); }
+.android .seek-ind.left { left: calc(48px + var(--cut-l, 0px)); }
+.android .seek-ind.right { right: calc(48px + var(--cut-r, 0px)); }
+
+/* Жесты плеера (player.js): свайп — перемотка, щипок — режим кадра; браузер их себе не забирает */
+.android .player-overlay:not(.mini) .player-stage { touch-action: none; }
+
+/* Шапка прячется при прокрутке вниз (hidebar.js, как в Anixart): уезжает вверх, прилипшее под ней (вкладки, чипы
+   серий, поле комментария, разделы настроек — top: --stick-top в app.css) поднимается к верху экрана */
+.android #viewport .screen .appbar { transition: transform .2s var(--ease-std); }
+.android #viewport .screen :is(.tabbar, .comment-input.top.sticky, .settings-nav, .wchips) { transition: top .2s var(--ease-std); }
+.android.bar-hidden #viewport { --stick-top: 0px; }
+.android.bar-hidden #viewport .screen .appbar { transform: translateY(-100%); }
+
+/* Вложенные экраны без нижнего меню (как в Anixart): комментарии, ответы, «Смотрят», рекомендации, редактор
+   коллекции — больше места полю ввода и списку (data-screen — router.js) */
+.android body:is([data-screen="comments"], [data-screen="replies"], [data-screen="watching"], [data-screen="recommendations"], [data-screen="collection-editor"]) #bottomnav { display: none; }
+
+/* Компактное нижнее меню (настройки → Внешний вид): только значки */
+.compact-nav #bottomnav .nav-item > span:last-child { display: none; }
+.compact-nav #bottomnav { padding-top: 6px; padding-bottom: 6px; }
+
+/* Планшет и телефон боком (шире 900 px): списки аниме, комментарии, уведомления — колонкой по центру, как в Anixart
+   (520–720 dp), а не строками во всю ширину; сетка карточек — по-прежнему на всю ширину */
+@media (min-width: 900px) {
+  .android #viewport .paged > .list { max-width: 760px; margin-inline: auto; }
+}

@@ -1,5 +1,6 @@
 // Главная: вкладки, «Моя вкладка», результаты фильтра
-import { h, icon, iconButton, tabs, pagedList, emptyView, sheet, prompt, toast } from '../ui.js';
+import { h, icon, iconButton, tabs, pagedList, emptyView, sheet, prompt, toast, hintOnce } from '../ui.js';
+import { touch } from '../platform.js';
 import { A } from '../api.js';
 import { t, prefs } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
@@ -110,12 +111,14 @@ registerScreen('tab:home', () => {
     e.preventDefault();
     sheet(defs[i].title, [{ label: t('set_as_default_tab'), icon: 'ic_pin', onClick: () => prefs.set('HOME_DEFAULT_PAGE', i) }]);
   }));
+  // палец: про долгое нажатие на вкладку не догадаться — один раз подсказываем (как в Anixart)
+  if (touch) hintOnce('home-tab-hold', () => bar.querySelector('.tab.active'), 'Удерживайте название вкладки, чтобы открывать Главную на ней', { delay: 1500 });
   // Важное сообщение из config/toggles
   const root = h('div', null, mainToolbar());
   const tg = window.__toggles;
   if (tg && tg.impMessageEnabled && tg.impMessageText) {
     root.append(h('div', {
-      class: 'rel-note', style: { margin: '6px 20px', background: tg.impMessageBackgroundColor || '', color: tg.impMessageTextColor || '', cursor: tg.impMessageLink ? 'pointer' : 'default' },
+      class: 'rel-note', style: { margin: '6px var(--card-inset)', background: tg.impMessageBackgroundColor || '', color: tg.impMessageTextColor || '', cursor: tg.impMessageLink ? 'pointer' : 'default' },
       onclick: () => tg.impMessageLink && window.open(tg.impMessageLink, '_blank'),
     }, tg.impMessageText));
   }

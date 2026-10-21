@@ -198,6 +198,38 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   const fwdBtn = h('button', { class: 'icon-btn', title: '+10 с (→)', onclick: () => seekBy(10) }, icon('ic_player_forward_10'));
   const fsIcon = fullscreenIcon(); // уголки разворачиваются внутрь в полноэкранном режиме и обратно (lottie.js)
   const fsBtn = h('button', { class: 'icon-btn', title: 'Во весь экран (F)', onclick: () => toggleFs() }, fsIcon);
+  // Телефон: окно «картинка в картинке» — само приложение (MainActivity), у WebView своего PiP нет (shim.js)
+  const nativePip = window.anixartNative?.enterPip;
+  // Кадр на вытянутом экране телефона (20:9): «Вписать» — целиком, с полосами по бокам; «Заполнить» — без полос,
+  // края обрезаны; «Растянуть». Кнопкой или щипком (развели пальцы — заполнить, свели — вписать), как в Anixart
+  const FITS = [['contain', 'Вписать'], ['cover', 'Заполнить'], ['fill', 'Растянуть']];
+  let fit = Math.max(0, FITS.findIndex(([f]) => f === prefs.get('PLAYER_FIT')));
+  const fitBtn = h('button', { class: 'icon-btn fit-btn', title: 'Кадр: вписать, заполнить, растянуть', onclick: () => setFit((fit + 1) % FITS.length, true) }, icon('ic_player_fit'));
+  const hintEl = h('div', { class: 'p-hint' }); // плашка посреди экрана: режим кадра, перемотка свайпом
+  let hintTimer = null;
+  const hint = (text, ms = 900) => {
+    hintEl.textContent = text; hintEl.classList.add('show');
+    clearTimeout(hintTimer); if (ms) hintTimer = setTimeout(() => hintEl.classList.remove('show'), ms);
+  };
+  // Перемотка опенинга, когда у серии нет меток (как «⏩» в Anixart): на время из настроек, по умолчанию 1:25
+  const opBtn = h('button', { class: 'icon-btn op-btn', hidden: true, onclick: () => seekBy(prefs.get('PLAYER_REWIND_TIME') || 85) }, icon('ic_player_rewind_fast'));
+  // Блокировка (телефон): касания не действуют, ориентация — текущая (MainActivity); снять — замком, он появляется по тапу
+  let locked = false; let unlockTimer = null;
+  const unlockBtn = h('button', { class: 'p-unlock', title: 'Разблокировать', 'aria-label': 'Разблокировать', onclick: (e) => { e.stopPropagation(); setLock(false); } }, icon('ic_lock'));
+  const lockBtn = h('button', { class: 'icon-btn lock-btn', title: 'Заблокировать экран — касания не действуют', onclick: () => setLock(true) }, icon('ic_lock'));
+  const showUnlock = () => { unlockBtn.classList.add('show'); clearTimeout(unlockTimer); unlockTimer = setTimeout(() => unlockBtn.classList.remove('show'), 2500); };
+  function setLock(on) {
+    locked = on;
+    ov.classList.toggle('locked', on);
+    if (on) { closeMenu(); pop?.close(); showUnlock(); } else { unlockBtn.classList.remove('show'); poke(); }
+    window.anixartNative?.lockOrientation?.(on);
+  }
+  function setFit(i, say) {
+    fit = i;
+    if (ANDROID) video.style.objectFit = FITS[i][0];
+    prefs.set('PLAYER_FIT', FITS[i][0]);
+    if (say) hint(FITS[i][1]);
+  }
   const controls = h('div', { class: 'player-controls' },
     seek,
     h('div', { class: 'row' },
@@ -206,18 +238,21 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
       playBtn,
       fwdBtn,
       nextBtn,
+      opBtn,
       h('div', { class: 'grow' }),
       timeEl,
       ANDROID ? null : volume, // на телефоне громкость — кнопками телефона
       gearBtn,
-      pipOk ? h('button', { class: 'icon-btn pip-btn', title: 'Картинка в картинке (I) — серия в маленьком окне поверх всех окон', onclick: () => togglePip() }, icon('ic_player_pip')) : null,
+      ANDROID ? fitBtn : null,
+      pipOk || nativePip ? h('button', { class: 'icon-btn pip-btn', title: 'Картинка в картинке (I) — серия в маленьком окне поверх всех окон', onclick: () => togglePip() }, icon('ic_player_pip')) : null,
       ANDROID ? null : fsBtn)); // на Android плеер и так на весь экран (MainActivity), кнопка ничего бы не меняла
   // На паузе посреди экрана — «Продолжить»; продолжить можно, как и раньше, и тапом по любому месту (жесты — ниже).
   // Нажатие по кнопке до жестов не доходит: ни двойного тапа, ни удержания ×2
   const centerPlay = h('button', { class: 'p-center', title: 'Продолжить (пробел)', 'aria-label': 'Продолжить', tabindex: '-1',
     onclick: (e) => { e.stopPropagation(); if (video.paused) togglePlay(); }, onpointerdown: (e) => e.stopPropagation() }, icon('ic_player_play'));
-  const stage = h('div', { class: 'player-stage' }, video, msg, centerPlay);
-  const ov = h('div', { class: 'player-overlay', tabindex: '-1' }, top, stage, skipRow, controls);
+  const stage = h('div', { class: 'player-stage' }, video, msg, centerPlay, hintEl);
+  if (ANDROID) setFit(fit);
+  const ov = h('div', { class: 'player-overlay', tabindex: '-1' }, top, stage, skipRow, controls, unlockBtn);
 
   // --- Улучшение картинки (апскейл нейросетью, upscale/index.js) и шторка сравнения ---
   const splitKnob = h('div', { class: 'knob' }, icon('ic_compare', 'sm'));
@@ -287,6 +322,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   }
   topRight.insertBefore(h('button', { class: 'icon-btn', title: 'Свернуть — видео продолжит идти, а вы сможете листать каталог', onclick: () => setMini(true) }, icon('ic_player_mini')), topRight.lastChild);
   ov.mini = setMini; // для тестов
+  if (ANDROID) topRight.prepend(lockBtn);
   // --- Переключатели сверху: озвучка (продолжает с того же места), серия (сетка номеров), плеер ---
   // В комнате совместного просмотра озвучку и серию меняет тот, кто может управлять (у всех сразу); остальные
   // предлагают серию в очередь «Дальше», а озвучку не меняют. Плеер в комнате — только встроенный (синхронизируется он)
@@ -613,6 +649,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   let pipLeave = null; // выходим из PiP сами: 'full' — плеер развернуть, 'close' — плеер закрывается
   let pauseAt = 0; let pipLeftAt = 0;
   function togglePip() {
+    if (!pipOk && nativePip) { nativePip(); return; }
     if (inPip()) { exitPip('full'); return; }
     if (pipOk) video.requestPictureInPicture().catch(() => toast('Картинка в картинке сейчас недоступна — дождитесь загрузки серии'));
   }
@@ -902,6 +939,8 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   const marksNow = () => clampMarks(cur?.res?.skip, video.duration || 0);
   function buildSegments() {
     const d = video.duration || 0; const marks = marksNow();
+    opBtn.hidden = !(d > 0) || !!marks?.opening; // метки есть — пропуск по ним (skipRow)
+    opBtn.title = `Перемотать опенинг: +${fmt(prefs.get('PLAYER_REWIND_TIME') || 85)}`;
     const key = `${Math.round(d)}|${JSON.stringify(marks)}`;
     if (key === segKey) return;
     segKey = key;
@@ -1061,10 +1100,12 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   // Палец (телефон, сенсорный экран): тап показывает или прячет кнопки, пауза — кнопкой, как в мобильных плеерах;
   // мышь: клик — пауза. Были ли кнопки спрятаны — на момент касания (следом тап шлёт mousemove, и они уже видны)
   let touchTap = false; let idleAtTap = false;
+  let gestureAt = 0; // только что был свайп или щипок — его отпускание не тап
   stage.addEventListener('click', (e) => {
     if (isMini()) { setMini(false); return; } // клик по мини-плееру — развернуть
+    if (locked) { showUnlock(); return; }
     if (menu) return; // клик мимо меню только закрывает его (обработчик на ov)
-    if (holding) return;
+    if (holding || Date.now() - gestureAt < 400) return;
     const now = Date.now();
     const r = stage.getBoundingClientRect();
     const x = (e.clientX - r.left) / r.width;
@@ -1087,7 +1128,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   stage.addEventListener('pointerdown', (e) => {
     touchTap = e.pointerType === 'touch'; idleAtTap = ov.classList.contains('idle');
     clearTimeout(holdTimer);
-    if (pc) return; // в комнате скорость общая — удержание ×2 разогнало бы только себя
+    if (pc || locked) return; // в комнате скорость общая — удержание ×2 разогнало бы только себя
     holdTimer = setTimeout(() => {
       holding = true;
       prevRate = video.playbackRate;
@@ -1108,6 +1149,51 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   stage.addEventListener('pointerup', endHold);
   stage.addEventListener('pointerleave', endHold);
 
+  // Пальцем (телефон): по горизонтали — перемотка, сдвиг растёт к краю быстрее (на всю ширину — 3 мин), пока ведёшь —
+  // плашка «+0:35 · 12:40», перематывает, когда палец отпустили; двумя пальцами — щипок, режим кадра (как в Anixart)
+  const fingers = new Map(); let swipe = null; let pinch = null;
+  const spread = () => { const [a, b] = [...fingers.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+  const swipeTarget = (dx) => {
+    const f = Math.min(1, Math.abs(dx) / stage.clientWidth);
+    return Math.max(0, Math.min(video.duration - 1, swipe.from + Math.sign(dx) * f ** 1.6 * 180));
+  };
+  stage.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch' || isMini() || menu || locked) return;
+    fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (fingers.size === 1) { swipe = { x: e.clientX, y: e.clientY, from: video.currentTime, on: false }; pinch = null; return; }
+    swipe = null; endHold(); // второй палец — щипок, не свайп и не удержание
+    if (fingers.size === 2 && ANDROID) pinch = { d: spread() }; // режим кадра — только на телефоне
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!fingers.has(e.pointerId)) return;
+    fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && fingers.size === 2) {
+      const r = spread() / pinch.d;
+      if (r > 1.15 && fit !== 1) { setFit(1, true); pinch.d = spread(); gestureAt = Date.now(); }
+      else if (r < 0.87 && fit !== 0) { setFit(0, true); pinch.d = spread(); gestureAt = Date.now(); }
+      return;
+    }
+    if (!swipe || holding || !video.duration) return;
+    const dx = e.clientX - swipe.x; const dy = e.clientY - swipe.y;
+    if (!swipe.on && Math.abs(dx) > 24 && Math.abs(dx) > Math.abs(dy) * 1.5) { swipe.on = true; clearTimeout(holdTimer); swipe.x = e.clientX; }
+    if (!swipe.on) return;
+    const to = swipeTarget(e.clientX - swipe.x); const d = to - swipe.from;
+    hint(`${d < 0 ? '−' : '+'}${fmt(Math.abs(d))} · ${fmt(to)}`, 0);
+    poke();
+  });
+  const fingerUp = (e) => {
+    if (!fingers.delete(e.pointerId)) return;
+    if (swipe?.on) {
+      if (e.type === 'pointerup') video.currentTime = swipeTarget(e.clientX - swipe.x);
+      hintEl.classList.remove('show');
+      gestureAt = Date.now();
+    }
+    swipe = null;
+    if (fingers.size < 2) { if (pinch) gestureAt = Date.now(); pinch = null; }
+  };
+  stage.addEventListener('pointerup', fingerUp);
+  stage.addEventListener('pointercancel', fingerUp);
+
   // Скрытие элементов управления: после движения мыши — через 2,5 с, после «плей» и автозапуска — через
   // PLAY_HIDE_MS. Пока открыто меню или курсор над панелью — не прячем.
   function poke(ms = 2500) {
@@ -1123,6 +1209,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
 
   function onKey(e) {
     if (isMini() || inPip()) return; // свёрнутый (и ушедший в PiP) плеер клавиши у приложения не забирает
+    if (locked) { if (e.key === 'Escape') setLock(false); e.preventDefault(); return; } // «Назад» — снять блокировку
     if (e.target && /input|textarea/i.test(e.target.tagName) && e.target !== volume) return;
     if (document.querySelector('.backdrop:not(.closing)')) return; // открыт диалог (например, «Продолжить?») — клавиши его
     const k = e.key.toLowerCase();

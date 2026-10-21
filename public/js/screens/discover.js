@@ -76,7 +76,7 @@ registerScreen('tab:discover', async (_p, ctx) => {
       body.append(sectionHead(t('label_recommendations'), items.length >= 25 ? () => navigate('recommendations') : null, t('label_based_on_votes')));
       if (items.length) body.append(h('div', { class: 'hscroll' }, items.map(releaseCard)));
       else {
-        body.append(h('div', { class: 'card', style: { margin: '0 20px' } },
+        body.append(h('div', { class: 'card', style: { margin: '0 var(--card-inset)' } },
           h('div', { class: 'muted' }, t('no_recommendations_hint')),
           h('button', { class: 'btn btn-text', style: { marginTop: '8px', paddingLeft: 0 }, onclick: () => dialog({ title: t('information'), content: h('p', { style: { whiteSpace: 'pre-line' } }, t('no_recommendation_info')), actions: [{ label: t('understand'), primary: true }] }) }, t('more_details'))));
       }
@@ -158,7 +158,7 @@ registerScreen('schedule', async () => {
   let hint = true;
   try { hint = localStorage.getItem('anixart.pref.SCHEDULE_EPISODE') !== 'false'; } catch { /* ignore */ }
   if (hint) {
-    const card = h('div', { class: 'card', style: { margin: '6px 20px 10px', display: 'flex', gap: '10px', alignItems: 'flex-start' } },
+    const card = h('div', { class: 'card', style: { margin: '6px var(--card-inset) 10px', display: 'flex', gap: '10px', alignItems: 'flex-start' } },
       icon('ic_info_outline'), h('div', { class: 'grow muted' }, 'В расписании указаны дни недели, в которые выходят новые серии представленных релизов в Японии и Китае. Уже переведенные серии в озвучке и субтитрах появляются позже.'),
       h('button', { class: 'icon-btn sm', onclick: () => { card.remove(); try { localStorage.setItem('anixart.pref.SCHEDULE_EPISODE', 'false'); } catch { /* ignore */ } } }, icon('ic_close')));
     root.append(card);
@@ -180,6 +180,6 @@ registerScreen('schedule', async () => {
   void gradeText;
   return root;
 }, () => [backToolbar(t('schedule')),
-  scheduleHintShown() ? h('div', { class: 'card', style: { margin: '6px 20px 10px', display: 'flex', gap: '10px', alignItems: 'flex-start' } },
+  scheduleHintShown() ? h('div', { class: 'card', style: { margin: '6px var(--card-inset) 10px', display: 'flex', gap: '10px', alignItems: 'flex-start' } },
     skParts.circle('24px'), skParts.col('8px', skParts.line('96%'), skParts.line('70%'))) : null,
   skeleton('schedule')]);

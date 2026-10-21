@@ -14,8 +14,14 @@ const LAND = process.env.ANIX_LANDSCAPE === '1';
 await ensureDevice();
 install();
 await launch({ fresh: true });
-// поворот мог закончиться уже после запуска — страница подстраивается на лету (configChanges: без пересоздания окна)
-if (LAND) check('экран повёрнут горизонтально', !!(await until('innerWidth > innerHeight', 10000)) && (await windowState()).landscape, await js('[innerWidth, innerHeight]'));
+// поворот мог закончиться уже после запуска — страница подстраивается на лету (configChanges: без пересоздания окна);
+// только что загруженный эмулятор под нагрузкой (4 параллельно) поворачивает страницу дольше 10 с
+let landOk = !LAND || !!(await until('innerWidth > innerHeight', 25000));
+if (!landOk) { // только что загруженный эмулятор сбросил поворот после ensureDevice — выставить заново
+  sh('settings put system accelerometer_rotation 0'); sh('settings put system user_rotation 0'); await sleep(800); sh('settings put system user_rotation 1');
+  landOk = !!(await until('innerWidth > innerHeight', 20000));
+}
+if (LAND) check('экран повёрнут горизонтально', landOk && (await windowState()).landscape, await js('[innerWidth, innerHeight]'));
 if (FONT) check(`крупный шрифт ×${FONT} применён`, Math.abs((await js('anixAndroid.textZoom()')) - Number(FONT) * 100) < 2, await js('anixAndroid.textZoom()'));
 const apiOk = (await js(`fetch('/api/config/toggles').then((r) => r.status)`)) < 500;
 if (!apiOk) { skip('вёрстка', 'бекенд Anixart не отвечает'); done('layout'); }
@@ -87,8 +93,11 @@ for (const theme of ['dark', 'light']) {
   const navs = await js(`[...document.querySelectorAll('#rail .nav-item, #bottomnav .nav-item')].filter((b) => b.getClientRects().length).map((b) => { const r = b.getBoundingClientRect(); return { tab: b.dataset.tab, ok: r.top >= 0 && r.bottom <= innerHeight + 1 && r.left >= 0 && r.right <= innerWidth + 1 }; })`);
   check(`${theme}: все ${navs.length} вкладки меню видны целиком`, navs.length === 5 && navs.every((n) => n.ok), navs.filter((n) => !n.ok).map((n) => n.tab));
   for (const [n, p] of SCREENS) {
-    const go = n.startsWith('tab:') ? `import('/js/router.js').then((m) => (m.switchTab('${n.slice(4)}', { reset: true }), 1))` : `import('/js/router.js').then((m) => (m.navigate('${n}', ${p}), 1))`;
+    // переход — не дожидаясь обещания import() в вызове DevTools: на телефоне боком оно изредка оставалось ждать, и
+    // DevTools отвечал «Promise was collected»; экран дожидаемся по его имени (router.js — body.dataset.screen)
+    const go = n.startsWith('tab:') ? `(import('/js/router.js').then((m) => m.switchTab('${n.slice(4)}', { reset: true })), 1)` : `(import('/js/router.js').then((m) => m.navigate('${n}', ${p})), 1)`;
     await js(go);
+    check(`${theme} ${n}: экран открылся`, !!(await until(`document.body.dataset.screen === ${JSON.stringify(n)}`, 15000)), await js('document.body.dataset.screen'));
     await until(`!document.querySelector('#viewport .screen:last-child .sk-root, #viewport .screen:last-child .skeleton')`, 12000);
     await sleep(900);
     const a = await js(AUDIT(MIN_TAP));

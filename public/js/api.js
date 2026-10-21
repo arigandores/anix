@@ -286,6 +286,14 @@ export const A = {
   releaseReasons: () => api.get('report/release/reasons'),
   reportRelease: (body) => api.post('report/release', body),
   types_all: () => api.get('type/all'),
+  // CollectionMyApi.editImage: multipart — файл в части "image", часть "name" = "image" (как шлёт Anixart);
+  // ответ { code, url }, code 2 — коллекция не найдена
+  collectionEditImage: (cid, blob, filename = 'cover.jpg') => {
+    const fd = new FormData();
+    fd.append('image', blob, filename);
+    fd.append('name', 'image');
+    return api.multipart(`collectionMy/editImage/${cid}`, fd);
+  },
 };
 
 // Предзагрузка релиза при наведении на карточку (common.js → hoverPrefetch).
@@ -365,5 +373,22 @@ export function remembered(key, load, onFresh) {
 
 // в памяти — и личные поля (статус, избранное, оценка): другой аккаунт их видеть не должен
 window.addEventListener('auth-changed', () => { cacheGen += 1; recent.clear(); relPrefetch.clear(); reads.clear(); inflight.clear(); });
+// Обновить экран свайпом вниз (router.js reloadCurrent): следующие загрузки — с сервера, а не из памяти
+export function forgetRecent() { recent.clear(); relPrefetch.clear(); reads.clear(); inflight.clear(); }
 
 export default api;
+
+// Уведомления о сериях по спискам, озвучкам и релизам (NotificationPreferenceApi). Поля тел без @JsonProperty в
+// официальном клиенте — в camelCase (как parentCommentId, searchBy), с аннотацией — как в ней
+export const notifStatusEdit = (statuses) => api.post('profile/preference/notification/status/edit', { profileStatusNotificationPreferences: statuses });
+export const notifTypeEdit = (types) => api.post('profile/preference/notification/type/edit', { profileTypeNotificationPreferences: types });
+// переключатель «По выбранным релизам» (is_release_type_notifications_enabled): GET без параметров меняет на противоположное
+export const notifSelectedReleasesToggle = () => api.get('profile/preference/notification/selected/releases/edit');
+export const notifReleases = (page) => api.get(`profile/preference/notification/release/all/${page}`);
+export const notifReleaseTypes = (rid) => api.get(`profile/preference/notification/release/type/${rid}`);
+export const notifReleaseTypesEdit = (rid, types) => api.post('profile/preference/notification/release/type/edit', { release_id: rid, profile_release_type_notification_preferences: types });
+// Экспорт и импорт закладок (ExportApi, ImportApi): списки 0 — избранное, 1–5 — статусы; sort 0 — по названию,
+// 1 — по статусу, 2 — по оценке. Импорт: { selected_importer_name, watching, plans, completed, dropped, holdOn }
+export const bookmarksExport = (lists, sort) => api.post('export/bookmarks', { bookmarksExportProfileLists: lists }, { sort });
+export const bookmarksImportStatus = () => api.post('import/status');
+export const bookmarksImport = (body) => api.post('import/bookmarks', body);

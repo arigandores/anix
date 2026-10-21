@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Значок уведомлений в строке состояния (NotifyJob.kt): знак приложения одним цветом, 24 dp -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="512" android:viewportHeight="512">
+    <path android:pathData="M108,444 L256,76 L404,444" android:strokeWidth="76" android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" />
+    <path android:pathData="M226,300 L226,386 L296,343 Z" android:fillColor="#FFFFFFFF"
+        android:strokeColor="#FFFFFFFF" android:strokeWidth="28" android:strokeLineJoin="round" />
+</vector>

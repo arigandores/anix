@@ -6,5 +6,14 @@
         <item name="android:statusBarColor">@color/bg</item>
         <item name="android:navigationBarColor">@color/bg</item>
     </style>
+    <!-- Светлая тема приложения: заставка при запуске и фон до загрузки страницы — светлые (MainActivity запоминает тему) -->
+    <style name="AppTheme.Light">
+        <item name="android:windowBackground">@color/bgLight</item>
+        <item name="android:statusBarColor">@color/bgLight</item>
+        <item name="android:navigationBarColor">@color/bgLight</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
     <color name="bg">#FF121212</color>
+    <color name="bgLight">#FFFFFFFF</color>
 </resources>

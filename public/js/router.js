@@ -1,6 +1,7 @@
 // Навигация как в мобильном приложении: у каждой вкладки нижнего меню свой стек экранов,
 // предыдущие экраны сохраняются вместе с прокруткой. Кнопка «Назад» браузера/мыши = pop.
 import { h, screenSkeleton, errorView, skeletonSettled, skRevealDelay, markAppeared, enterScreen, joinEnter } from './ui.js';
+import { forgetRecent } from './api.js';
 
 const screens = new Map();
 export const TABS = ['home', 'discover', 'bookmarks', 'feed', 'profile', 'ai'];
@@ -8,6 +9,8 @@ export const TABS = ['home', 'discover', 'bookmarks', 'feed', 'profile', 'ai'];
 const state = {
   current: '',
   stacks: Object.fromEntries(TABS.map((t) => [t, []])),
+  // вкладки в порядке посещения, без повторов: «Назад» на корне вкладки — на прошлую (как в приложении Anixart)
+  visited: [],
 };
 
 let viewport; let onTabChange = () => {};
@@ -64,6 +67,7 @@ function makeEntry(name, params) {
     put(node, await skeletonSettled(wrap));
   }).catch(async (e) => {
     console.error(e);
+    entry.failed = true;
     const instant = await skeletonSettled(wrap);
     put(errorView(e, () => {
       const fresh = makeEntry(name, params);
@@ -126,6 +130,8 @@ function render(direction = 'fade') {
   e.shown = true;
   e.onShow && e.onShow({ returning });
   document.body.dataset.depth = String(state.stacks[state.current].length);
+  document.body.dataset.screen = e.name; // какой экран показан (android.css: экраны без нижнего меню)
+  window.dispatchEvent(new CustomEvent('screen-shown'));
 }
 
 export function navigate(name, params = {}) {
@@ -153,7 +159,7 @@ function popInternal() {
   old.dispose && old.dispose();
   // экран ещё не успел показаться — на месте и так прежний
   if (old.shown) render('back');
-  else document.body.dataset.depth = String(st.length);
+  else { document.body.dataset.depth = String(st.length); document.body.dataset.screen = st[st.length - 1].name; }
   return true;
 }
 
@@ -177,6 +183,7 @@ export function switchTab(tab, { reset = false } = {}) {
   }
   saveScroll();
   state.current = tab;
+  state.visited = [...state.visited.filter((t) => t !== tab), tab];
   const st = state.stacks[tab];
   if (reset) { st.forEach((e) => e.dispose && e.dispose()); st.length = 0; }
   onTabChange(tab);
@@ -192,3 +199,39 @@ export function resetAllTabs() {
 }
 
 export function currentTab() { return state.current; }
+// дождаться, пока закончится идущий переход (новый navigate() во время него не открывает экран)
+export async function settled() { while (pending) await new Promise((ok) => setTimeout(ok, 50)); }
+
+// Обновить экран (свайп вниз на телефоне, pull.js). Видимые списки — тихо, на месте (pagedList refresh); экран без
+// списков строится заново со свежими данными: прежний виден, пока новый не готов, и подменяется без въезда.
+// Не с сервера (память недавних экранов, api.js) — ни то, ни другое. Ввод, вход, настройки — не обновляются
+const NO_REFRESH = /^(auth|signup|verify|restore|restore-verify|social-register|search|feed-search|filter|settings|notification-settings|collection-editor|profile-settings|profile-blocklist|tab:ai)$/;
+export const canRefresh = () => { const e = topEntry(); return !!e && e.shown && !pending && !NO_REFRESH.test(e.name); };
+export async function refreshCurrent() {
+  const old = topEntry();
+  if (!canRefresh()) return true;
+  forgetRecent();
+  const lists = [...old.node.querySelectorAll('.paged')].filter((p) => p.refresh && p.offsetParent);
+  if (lists.length) { await Promise.all(lists.map((p) => p.refresh())); return true; }
+  const entry = makeEntry(old.name, old.params);
+  await entry.ready;
+  for (const t0 = Date.now(); entry.node.querySelector('.sk-root, .sk, .spinner-wrap, .load-reveal') && Date.now() - t0 < 10000;) await new Promise((ok) => setTimeout(ok, 100));
+  const st = state.stacks[state.current];
+  if (entry.failed || topEntry() !== old) { entry.dispose && entry.dispose(); return !entry.failed; } // не загрузилось — прежний вид
+  st[st.length - 1] = entry;
+  old.dispose && old.dispose();
+  viewport.replaceChildren(markAppeared(entry.node));
+  viewport.scrollTop = 0;
+  entry.shown = true;
+  entry.onShow && entry.onShow({ returning: false });
+  return true;
+}
+
+// «Назад» на корне вкладки (системная кнопка на телефоне): на прошлую посещённую; false — вкладок позади нет
+export function backTab() {
+  const prev = state.visited.at(-2);
+  if (!prev) return false;
+  state.visited.pop();
+  switchTab(prev);
+  return true;
+}

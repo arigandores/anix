@@ -100,6 +100,8 @@ try {
   check('«Пропустить эту версию» — при запуске окна нет', !(await js(`!!document.querySelector('.update-dialog')`)));
   // «Проверить обновления» в настройках предлагает и пропущенную
   await tap('[title="Настройки"]', { after: 900 });
+  // под нагрузкой нажатие сразу после запуска бывает раньше, чем экран готов принимать нажатия — ещё раз
+  if (!(await until(`!!document.querySelector('.settings-tab')`, 5000))) await tap('[title="Настройки"]', { after: 900 });
   await tap('.settings-tab[data-section="about"]');
   await tap('.settings-body .menu-item', { text: 'Проверить обновления', after: 300 });
   check('«Проверить обновления» — окно с пропущенной версией', !!(await until(`/99\\.0\\.0/.test(document.querySelector('.update-dialog')?.textContent || '')`, 15000)));

@@ -135,11 +135,11 @@ function myFeed() {
     await skeletonSettled(holder);
     const listHolder = h('div');
     const rebuild = () => listHolder.replaceChildren(feedList((page) => A.feed(page, channelId, date)));
-    const chips = h('div', { class: 'hscroll', style: { padding: '10px 20px' } },
+    const chips = h('div', { class: 'hscroll', style: { padding: '10px var(--gutter)' } },
       (subs.content || []).map((ch) => { const b = h('button', { class: 'chip', title: ch.title }, img(ch.avatar, '', ''), ch.title); b.querySelector('img').style.cssText = 'width:22px;height:22px;border-radius:50%'; b.onclick = () => { channelId = channelId === ch.id ? null : ch.id; [...chips.children].forEach((x) => x.classList.remove('on')); if (channelId) b.classList.add('on'); rebuild(); }; return b; }));
     const dateSel = h('select', { class: 'input', style: { width: 'auto', height: '36px' } }, DATES.map(([v, l]) => h('option', { value: v }, l)));
     dateSel.onchange = () => { date = Number(dateSel.value); rebuild(); };
-    holder.replaceChildren(h('div', { class: 'row', style: { padding: '10px 20px 0' } }, dateSel, h('div', { class: 'grow' }), h('button', { class: 'btn btn-text', onclick: () => navigate('channels', { subscribed: true }) }, 'Все')), chips, listHolder);
+    holder.replaceChildren(h('div', { class: 'row', style: { padding: '10px var(--gutter) 0' } }, dateSel, h('div', { class: 'grow' }), h('button', { class: 'btn btn-text', onclick: () => navigate('channels', { subscribed: true }) }, 'Все')), chips, listHolder);
     rebuild();
   })().catch((e) => holder.replaceChildren(emptyView(String(e.message || e))));
   return holder;
@@ -219,13 +219,13 @@ registerScreen('channel', ({ id, preload }) => {
     head.replaceChildren(
       ch.cover ? h('div', { class: 'poster', style: { width: '100%', aspectRatio: '3/1', borderRadius: 0 } }, img(ch.cover)) : null,
       channelRow(ch),
-      ch.description ? h('div', { class: 'muted', style: { padding: '0 20px 10px', whiteSpace: 'pre-line' } }, ch.description) : null);
+      ch.description ? h('div', { class: 'muted', style: { padding: '0 var(--gutter) 10px', whiteSpace: 'pre-line' } }, ch.description) : null);
   };
   if (preload) paint(preload);
   else {
     const { block, line } = skParts;
     head.append(h('div', { class: 'skeleton sk-root' }, block({ width: '100%', aspectRatio: '3/1', borderRadius: 0 }), skeleton('channels', 1),
-      h('div', { style: { padding: '0 20px 10px', display: 'flex', flexDirection: 'column', gap: '8px' } }, line('86%'), line('54%'))));
+      h('div', { style: { padding: '0 var(--gutter) 10px', display: 'flex', flexDirection: 'column', gap: '8px' } }, line('86%'), line('54%'))));
   }
   const root = h('div', null, bar, h('div', { class: 'container', style: { maxWidth: '820px', padding: 0 } },
     head, h('div', { class: 'sep' }), feedList((page) => A.channelArticles(id, page))));

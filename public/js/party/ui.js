@@ -4,7 +4,7 @@ import { h, icon, dialog, confirmDialog, containScroll, flySend, nudge } from '.
 import { copyIcon } from '../lottie.js';
 import { normCode } from './net.js';
 import { navigate, switchTab } from '../router.js';
-import { APP_NAME } from '../platform.js';
+import { APP_NAME, launchLink } from '../platform.js';
 
 const INVITE_URL = 'https://arigandores.github.io/anix-desktop/watch/'; // GitHub Pages репозитория, docs/watch/index.html
 import { party, present, sendChat, setControl, openContent, isHost, canControl, queueAdd, queuePlay, queueRemove, queueMove, giveHost, memberName, roomSkip, setRoomSkip } from './room.js';
@@ -395,4 +395,4 @@ async function onInvite(url) {
   try { await party.join(code); partyInfo('Вы в комнате'); } catch (e) { partyInfo(e.message || 'Не удалось войти'); }
 }
 const native = window.anixartNative;
-if (native && native.onDeepLink) { native.onDeepLink(onInvite); native.pendingDeepLink().then(onInvite, () => {}); }
+if (native && native.onDeepLink) { native.onDeepLink(onInvite); launchLink().then(onInvite); }

@@ -5,13 +5,14 @@ import { t, prefs, theme, setTheme } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
 import { backToolbar } from './common.js';
 import { homeTabTitles } from './home.js';
+import { exportBookmarks, importBookmarks } from './bookmarks-data.js';
 import { AI_MODELS, AI_EFFORTS } from './ai.js';
 import { SPEEDS, speedName } from '../player.js';
 import { trtStatus, trtInstall, benchRunDialog, benchResultsDialog, benchInfo, SHARPNESS, SHARP_LABEL } from '../upscale/index.js';
 import { AUDIO_OPTS } from '../audio.js';
 import { clearPresence, discordStatus } from '../discord.js';
 import { canUpdate, checkUpdate, lastCheck, updateDialog, whatsNewDialog, releaseNotes } from '../update.js';
-import { has, APP_NAME, touch } from '../platform.js';
+import { has, APP_NAME, touch, ANDROID } from '../platform.js';
 
 function item(ic, title, sub, onClick) {
   return h('div', { class: 'menu-item', onclick: onClick }, icon(ic), h('div', { class: 'grow' }, h('div', null, title), sub ? h('div', { class: 'sub' }, sub) : null));
@@ -62,6 +63,13 @@ function lookSection() {
       () => prefs.get('HOME_DEFAULT_PAGE') ?? 1, (v) => prefs.set('HOME_DEFAULT_PAGE', v)),
     choice('ic_bookmarks', 'Вкладка в закладках по умолчанию', ['Коллекции', 'История', 'Избранное', 'Смотрю', 'В планах', 'Просмотрено', 'Отложено', 'Брошено'].map((l, i) => [i, l]),
       () => prefs.get('BOOKMARKS_DEFAULT_PAGE') ?? 2, (v) => prefs.set('BOOKMARKS_DEFAULT_PAGE', v)),
+    choice('ic_history', 'Время просмотра в профиле', [['days', 'Дни и часы'], ['hours', 'Часы']], () => prefs.get('WATCHED_TIME_FORMAT'), (v) => prefs.set('WATCHED_TIME_FORMAT', v)),
+    // нижнее меню без подписей — ниже, больше места списку (как «Компактное нижнее меню» в Anixart)
+    // значок на рабочем столе (как в Anixart — несколько на выбор); сменяется через несколько секунд
+    window.anixartNative?.appIcon ? choice('ic_home', 'Значок приложения', [['default', 'Основной'], ['light', 'Светлый'], ['carmine', 'Карминовый']],
+      () => window.anixartNative.appIcon.get(), (v) => { window.anixartNative.appIcon.set(v); toast('Значок на рабочем столе сменится через несколько секунд'); }) : null,
+    ANDROID ? toggle('ic_preference_appearance', 'Компактное нижнее меню', 'Только значки, без подписей', 'COMPACT_NAV',
+      (on) => document.documentElement.classList.toggle('compact-nav', on)) : null,
   ];
 }
 
@@ -91,6 +99,10 @@ function playbackSection() {
     toggle('ic_player_next', t('pref_autoplay_title'), t('pref_autoplay_summary'), 'AUTO_PLAY'),
     toggle('ic_player_rewind_fast', 'Пропускать опенинг', 'Сам, после короткого отсчёта; иначе — кнопка «Пропустить»', skip('SKIP_OPENING')),
     toggle('ic_player_rewind_fast', 'Пропускать эндинг', 'Сам, после короткого отсчёта; иначе — кнопка «Пропустить»', skip('SKIP_ENDING')),
+    // серия без меток опенинга — кнопка «⏩» в плеере перематывает на это время (как в Anixart)
+    choice('ic_player_rewind_fast', 'Перемотка опенинга без меток', [[60, '1:00'], [75, '1:15'], [85, '1:25 — рекомендуется'], [90, '1:30'], [105, '1:45'], [120, '2:00']],
+      () => prefs.get('PLAYER_REWIND_TIME'), (v) => prefs.set('PLAYER_REWIND_TIME', v)),
+    ANDROID ? toggle('ic_player_fill', 'Только горизонтально', 'Выключите — плеер поворачивается вместе с телефоном', 'PLAYER_LANDSCAPE_ONLY') : null,
     toggle('ic_player_next', 'Пропускать филлеры', '«Следующая серия» перескакивает филлеры; в плеере покажем, сколько пропущено', 'SKIP_FILLERS'),
   ];
 }
@@ -134,6 +146,9 @@ function aiSection() {
 
 function advancedSection() {
   return [
+    // как «Данные» в настройках Anixart: экспорт списков в файл и перенос закладок с Shikimori (bookmarks-data.js)
+    auth.loggedIn ? item('ic_export_variant', 'Экспорт закладок', 'Списки — в таблицу CSV или текстовый файл', () => exportBookmarks()) : null,
+    auth.loggedIn ? item('ic_preference_data', 'Импорт закладок', 'Перенести списки с Shikimori', () => importBookmarks()) : null,
     restartToggle('ic_preference_data', t('alternative_connection'), t('alternative_connection_summary'), 'FORCE_SHOULD_USE_MIRROR_URLS',
       t('alternative_connection_enable_text'), t('alternative_connection_disable_text')),
     restartToggle('ic_preference_update', t('economy_mode'), t('economy_mode_summary'), 'ECONOMY_MODE', t('economy_mode_enable_text'), t('economy_mode_disable_text')),
@@ -142,12 +157,17 @@ function advancedSection() {
       toast(t('clearing_cache_progress'));
       try { const n = await window.anixartNative.clearWebCache(); toast(n ? t('cache_cleared_size', fmtBytes(n)) : t('cache_cleared')); } catch { toast(t('cache_clear_error')); }
     }) : null,
+    // Android: ссылки anixart.tv открывает браузер, пока их не разрешили приложению (домены не наши, links.js)
+    window.anixartNative?.openLinkSettings ? item('ic_open_in_new', 'Открывать ссылки Anixart здесь',
+      'Ссылки anixart.tv на аниме, коллекции и профили — в этом приложении: «Добавить ссылку» в настройках Android', () => window.anixartNative.openLinkSettings()) : null,
   ];
 }
 
 function accountSection() {
   if (!auth.loggedIn) return [item('ic_profile', t('log_in'), 'Закладки, история и комментарии — с аккаунтом Anixart', () => navigate('auth'))];
   return [
+    // фото, ник, приватность, блоклист, значок, соцсети, Email, привязки, удаление — как «Профиль» в настройках Anixart
+    item('ic_profile', 'Настройки профиля', 'Фото, никнейм, приватность, блоклист, соцсети', () => navigate('profile-settings')),
     item('ic_bell', 'Уведомления', 'Какие уведомления присылать', () => navigate('notification-settings')),
     item('ic_pencil', 'Изменить статус', null, async () => {
       const v = await prompt('Изменить статус', { placeholder: 'Ваш статус…', okLabel: 'Сохранить' });
@@ -168,7 +188,10 @@ function aboutSection() {
   }).catch(() => {});
   return [about, ...updateItems(),
     item('ic_open_in_new', 'Исходный код', 'github.com/arigandores/anix-desktop', () => window.open('https://github.com/arigandores/anix-desktop', '_blank')),
-    h('div', { class: 'muted3', style: { fontSize: '12px', padding: '8px 24px 16px' } },
+    // правила сообщества Anixart (комментарии, коллекции) — страница на сайте, как в его настройках
+    item('ic_info_outline', 'Правила сообщества', 'Комментарии, коллекции, профиль — на сайте Anixart',
+      () => window.open(`${(window.__toggles && window.__toggles.baseUrl) || 'https://anixart-app.com/'}rules`, '_blank')),
+    h('div', { class: 'muted3', style: { fontSize: '12px', padding: '8px var(--page-pad) 16px' } },
       `${APP_NAME} не связан с разработчиками Anixart. Аккаунт, каталог и комментарии — сервис Anixart, видео — сторонние источники.`)];
 }
 

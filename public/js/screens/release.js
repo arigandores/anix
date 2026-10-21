@@ -9,6 +9,7 @@ import {
 } from './common.js';
 import { prefetchWatch, watchBlock, typesOf, typeLogo } from './episodes.js';
 import { partyWatchButton } from '../party/ui.js';
+import { haptic } from '../platform.js';
 import { heartIcon, lottieIcon, copyIcon } from '../lottie.js';
 
 const AGE = ['', '0+', '6+', '12+', '16+', '18+'];
@@ -272,7 +273,7 @@ registerScreen('release', ({ id, random, profileId, status, collectionId, preloa
         h('div', { class: 'head' },
           h('h1', { class: 'rel-title' }, title),
           sub ? h('div', { class: 'rel-orig' }, sub) : null,
-          h('div', { class: 'row', style: { gap: '6px', marginTop: '4px', flexWrap: 'wrap' } },
+          h('div', { class: 'row rel-badges', style: { gap: '6px', marginTop: '4px', flexWrap: 'wrap' } },
             rel.age_rating > 0 ? h('button', { class: 'badge', onclick: () => dialog({ title: t('information'), content: h('p', { style: { whiteSpace: 'pre-line' } }, t('age_rating_info')), actions: [{ label: t('close'), primary: true }] }) }, AGE[rel.age_rating]) : null,
             rel.title_alt || rel.title_original ? h('button', { class: 'badge', onclick: () => titleInfo(rel) }, icon('ic_info_outline', 'xs'), 'Названия') : null),
           rel.note ? h('div', { class: 'rel-note', html: rel.note, style: noteStyle(rel) }) : null,
@@ -360,6 +361,8 @@ function moreSheet(rel) {
   sheet(null, [
     { label: 'Поделиться', icon: 'ic_export_variant', onClick: () => { const text = `${rel.title_ru}\n${link}`; if (navigator.share) navigator.share({ text }).catch(() => {}); else { navigator.clipboard?.writeText(text); toast('Скопировано', { ok: true }); } } },
     { label: 'Скопировать ссылку', icon: 'ic_link', onClick: () => { navigator.clipboard?.writeText(link); toast('Скопировано', { ok: true }); } },
+    // ярлык аниме на рабочем столе телефона (как в Anixart): открывает его страницу (anixart://release?id=…)
+    window.anixartNative?.pinShortcut ? { label: 'На рабочий стол', icon: 'ic_home', onClick: () => window.anixartNative.pinShortcut(`release-${rel.id}`, rel.title_ru || rel.title_original || 'Аниме', `anixart://release?id=${rel.id}`, rel.image || '') } : null,
     { label: 'Пожаловаться', icon: 'ic_alert', onClick: () => report('release', rel.id) },
   ]);
 }
@@ -370,7 +373,7 @@ async function typeNotifications(rel) {
     // озвучки этого релиза (как на экране серий), а не весь справочник type/all; уже включённые, которых у релиза
     // больше нет, тоже в списке — чтобы их можно было снять
     const [types, cur] = await Promise.all([typesOf(rel.id), api.get(`profile/preference/notification/release/type/${rel.id}`)]);
-    const selected = new Set((cur.profile_release_type_notification_preferences || cur.types || []).map((x) => (typeof x === 'object' ? x.id : x)));
+    const selected = new Set((cur.profile_release_type_notification_preferences || cur.types || []).map((x) => (typeof x === 'object' ? x.type?.id ?? x.id : x)));
     let list = types;
     const gone = [...selected].filter((id) => !types.some((ty) => ty.id === id));
     if (gone.length) list = list.concat(((await A.types_all()).types || []).filter((ty) => gone.includes(ty.id)));
@@ -440,7 +443,7 @@ function ratingBlock(rel, { grow = true } = {}) {
         onClick: async () => {
           try {
             const r = await A.vote(rel.id, n); if (r.code !== 0) throw 0;
-            rel.your_vote = n; paint(true);
+            rel.your_vote = n; paint(true); haptic();
             afterVote(rel);
           } catch { toast('Произошла ошибка при отправке голоса.'); }
         },
@@ -513,6 +516,8 @@ async function addToCollection(rel) {
   try {
     const r = await A.profileCollections(auth.profileId, 0);
     list.replaceChildren();
+    // как в Anixart: создать коллекцию прямо отсюда — этот релиз уже в её списке (collection-editor.js)
+    list.append(h('button', { class: 'sheet-item', onclick: () => { d.close(); navigate('collection-editor', { releases: [rel] }); } }, icon('ic_plus'), 'Новая коллекция'));
     if (!r.content?.length) list.append(h('div', { class: 'muted', style: { padding: '12px 24px' } }, 'У вас нет коллекций'));
     for (const c of r.content || []) {
       list.append(h('button', {
@@ -647,7 +652,7 @@ registerScreen('related', ({ related, currentId }) => {
   });
   return h('div', null,
     backToolbar(related.name_ru || related.name || 'Связанные релизы'),
-    related.description ? h('div', { class: 'muted', style: { padding: '0 20px 10px' } }, related.description) : null,
+    related.description ? h('div', { class: 'muted', style: { padding: '0 var(--gutter) 10px' } }, related.description) : null,
     list);
 });
 

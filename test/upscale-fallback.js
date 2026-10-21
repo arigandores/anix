@@ -145,8 +145,10 @@ async function main() {
     const so = (await A.sources(2487, ty.id)).sources.find((s) => /kodik/i.test(s.name));
     (await import('/js/router.js')).navigate('episodes', { release: { id: 2487, title_ru: 'Атака титанов 3' }, type: ty, source: so });
   })(); 1`);
-  await sleep(3500);
-  await js(`document.querySelector('#viewport .screen:last-child .ep-row').click(); 1`);
+  // серии — через источник (Kodik): бывает дольше 3,5 с — ждём строку, а не фиксированное время
+  const realRow = `[...document.querySelectorAll('#viewport .screen:last-child .ep-row')].find((r) => !r.closest('.skeleton, .sk-root'))`;
+  for (let i = 0; i < 120 && !(await js(`!!${realRow}`)); i++) await sleep(250);
+  await js(`${realRow}.click(); 1`);
   for (let i = 0; i < 60 && !(await js(`!!document.querySelector('.player-overlay video') && document.querySelector('.player-overlay video').readyState >= 2`)); i++) await sleep(250);
   await js(`document.querySelectorAll('.backdrop').forEach((b) => b.querySelector('.sheet-item')?.click()); 1`);
   await js(`(() => { const v = document.querySelector('.player-overlay video'); v.muted = true; v.currentTime = 300; v.play(); })(); 1`);

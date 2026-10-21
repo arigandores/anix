@@ -1,5 +1,5 @@
 // Навигация пальцем и системная «Назад»: вкладки нижнего меню, экраны, нижний лист «Ещё», выпадающее меню, поиск с
-// клавиатурой, веб-плеер; на корневом экране «Назад» сворачивает приложение, а возврат — на тот же экран
+// клавиатурой, веб-плеер; на корне вкладки «Назад» — прошлые вкладки, потом сворачивает приложение, а возврат — на тот же экран
 import { ensureDevice, install, launch, js, until, check, skip, done, REAL, tap, back, sleep, screenshot, topActivity, sh, PKG, typeText, pageErrors, windowState } from './_device.mjs';
 
 const depth = () => js('Number(document.body.dataset.depth || 1)');
@@ -17,9 +17,15 @@ for (const t of ['discover', 'bookmarks', 'feed', 'profile', 'home']) {
   await tap(`#bottomnav .nav-item[data-tab="${t}"]`, { after: 700 });
   check(`вкладка «${t}» открылась`, await tab() === t);
 }
-check('«Назад» на корне вкладки — приложение свернулось', (await back(), !topActivity().startsWith(PKG)), topActivity());
+// «Назад» на корне вкладки — прошлые вкладки по порядку (Главная была первой, но открыта последней), потом — свернуть
+for (const t of ['profile', 'feed', 'bookmarks', 'discover']) {
+  await back();
+  check(`«Назад» на корне вкладки — прошлая вкладка «${t}»`, await tab() === t);
+}
+check('«Назад» на корне последней вкладки — приложение свернулось', (await back(), !topActivity().startsWith(PKG)), topActivity());
 sh(`am start -W -n ${PKG}/.MainActivity`); await sleep(1500);
-check('вернулись — та же вкладка, без перезапуска', topActivity().startsWith(PKG) && await tab() === 'home' && await js('!!document.querySelector(".nav-item")'));
+check('вернулись — та же вкладка, без перезапуска', topActivity().startsWith(PKG) && await tab() === 'discover' && await js('!!document.querySelector(".nav-item")'));
+await tap('#bottomnav .nav-item[data-tab="home"]', { after: 700 });
 
 // Экран → «Назад»
 await tap('[title="Настройки"]', { after: 900 });

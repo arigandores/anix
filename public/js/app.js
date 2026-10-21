@@ -1,13 +1,17 @@
 import { h, icon, centerEmpties } from './ui.js';
 import { A, auth } from './api.js';
 import { loadStrings, t, prefs, applyTheme } from './store.js';
-import { initRouter, switchTab, TABS, resetAllTabs } from './router.js';
+import { initRouter, switchTab, TABS, resetAllTabs, backTab } from './router.js';
 import './screens/index.js';
 import { initDragScroll } from './dragscroll.js';
 import { preloadLottie, navIcon } from './lottie.js';
 import { startupUpdateCheck } from './update.js';
 import { initTitlebar } from './titlebar.js';
-import { has } from './platform.js';
+import { has, touch, haptic, ANDROID } from './platform.js';
+import { pullToRefresh } from './pull.js';
+import { initLinks } from './links.js';
+import { initPush } from './push.js';
+import { hideBarOnScroll } from './hidebar.js';
 
 const NAV = [
   { tab: 'home', title: 'home', icon: 'ic_home', iconOn: 'ic_home_filled' },
@@ -72,11 +76,22 @@ async function main() {
   await loadStrings();
   buildNav(document.getElementById('rail'), true);
   buildNav(document.getElementById('bottomnav'), false);
+  // высота нижнего меню (с отступом под системную полосу; скрыто — 0): тост и мини-плеер — над ним, не поверх
+  new ResizeObserver(([e]) => document.documentElement.style.setProperty('--bottomnav-h', `${e.target.offsetHeight}px`)).observe(document.getElementById('bottomnav'));
   initRouter(document.getElementById('viewport'), onTabChange);
+  window.__anixTabBack = backTab; // системная «Назад» на корне вкладки (android/web/shim.js)
+  if (touch) pullToRefresh(document.getElementById('viewport')); // обновление свайпом вниз (телефон)
+  document.documentElement.classList.toggle('compact-nav', !!prefs.get('COMPACT_NAV')); // нижнее меню без подписей
+  if (ANDROID) window.addEventListener('screen-shown', hideBarOnScroll(document.getElementById('viewport'))); // шапка прячется при прокрутке
+  // долгое нажатие открыло меню (обработчик отменил системное) — отклик вибрацией. С перехватом и после обработки:
+  // меню комментария останавливает всплытие
+  document.addEventListener('contextmenu', (e) => setTimeout(() => { if (e.defaultPrevented) haptic('long'); }), true);
   centerEmpties(document.getElementById('viewport')); // пустые экраны — по центру окна (ui.js)
   // config/toggles при старте
   A.toggles().then((tg) => { prefs.applyToggles(tg); window.__toggles = tg; }).catch(() => {});
   switchTab(TABS[0]);
+  initLinks(); // ссылки на Anixart — в приложении (links.js)
+  initPush(); // телефон: уведомления Anixart системными (push.js)
   refreshNotifBadge();
   preloadLottie(); // анимации интерфейса — заранее, в простое
   preloadIcons(); // иконки страницы аниме и шапок — заранее: иначе маска подгружалась при первом показе и иконка появлялась на кадр позже текста

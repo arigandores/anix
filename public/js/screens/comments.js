@@ -5,6 +5,7 @@ import { t, tp } from '../store.js';
 import { registerScreen } from '../router.js';
 import { backToolbar, commentItem, commentComposer } from './common.js';
 import { commentAddError } from './release.js';
+import { ANDROID } from '../platform.js';
 
 const LOADERS = {
   release: { list: A.releaseComments, add: A.releaseCommentAdd, replies: A.releaseCommentReplies, one: (id) => api.get(`release/comment/${id}`) },
@@ -36,11 +37,13 @@ registerScreen('comments', ({ kind = 'release', id, release }) => {
       render: (c) => commentItem(c, { kind, release, ownerId: id }),
       empty: () => emptyView('Еще никто не оставлял комментарии. Будьте первыми!', null, 'ic_comment_outline'),
     });
-    holder.replaceChildren(h('div', { class: 'row', style: { padding: '8px 20px' } }, countEl, h('div', { class: 'grow' }),
+    holder.replaceChildren(h('div', { class: 'row', style: { padding: '8px var(--gutter)' } }, countEl, h('div', { class: 'grow' }),
       h('button', { class: 'chip', onclick: () => sheet('Сортировка', SORTS.map(([v, l]) => ({ label: l, checked: v === sort, onClick: () => { sort = v; build(); } }))) }, actionIcon('ic_sort', 'sm'), SORTS.find((s) => s[0] === sort)[1])), list);
   }
   composer = commentComposer({
-    top: true, sticky: true, // над списком и закреплено под шапкой: написать, не листая наверх
+    // над списком и закреплено под шапкой: написать, не листая наверх. Телефон — внизу, под большим пальцем и над
+    // клавиатурой (как в Anixart)
+    top: !ANDROID, sticky: !ANDROID,
     onSend: async (body) => {
       const r = await L.add(id, body);
       if (r.code === 0) { build(); return true; }
@@ -49,7 +52,8 @@ registerScreen('comments', ({ kind = 'release', id, release }) => {
     },
   });
   build();
-  return h('div', { style: { display: 'flex', flexDirection: 'column', minHeight: '100%' } }, backToolbar('Комментарии'), composer, h('div', { style: { flex: 1 } }, holder));
+  return h('div', { style: { display: 'flex', flexDirection: 'column', minHeight: '100%' } }, backToolbar('Комментарии'),
+    ANDROID ? null : composer, h('div', { style: { flex: 1 } }, holder), ANDROID ? composer : null);
 });
 
 // «Ответы» (переход из уведомлений): исходный комментарий с открытой веткой — те же ответы и поле ответа,

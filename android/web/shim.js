@@ -37,7 +37,8 @@
 
   // ключ /__relay (LocalServer.relayKey): без него сервер отвечает 403 — другие приложения телефона им не воспользуются
   let key = null;
-  const relayKey = () => key || (key = window.anixAndroid ? anixAndroid.relayKey() : '');
+  // окно приложения — anixAndroid, фоновая проверка уведомлений (NotifyJob.kt) — anixBackground
+  const relayKey = () => key || (key = (window.anixAndroid || window.anixBackground)?.relayKey() || '');
 
   // Как fetch, но без CORS и с любыми заголовками. Ответ — похожий на Response (Set-Cookie в настоящий не положить)
   async function relayFetch(url, opts = {}) {
@@ -200,7 +201,8 @@
     return nativeFetch(input, init);
   };
 
-  // Системная «Назад» (MainActivity.back): true — обработали здесь, false — корневой экран, приложение сворачивается.
+  // Системная «Назад» (MainActivity.back): true — обработали здесь, false — позади ни экранов, ни вкладок, приложение
+  // сворачивается. На корне другой вкладки — на прошлую посещённую (router.js backTab).
   // history.length не годится: на корне router.js снова кладёт запись в history, и WebView всегда «может назад».
   // Окна, меню, плеер закрываются по Escape (как на ПК); закрылось ли что-то — видно по изменениям DOM сразу после него
   window.__anixBack = function () {
@@ -212,7 +214,7 @@
     mo.disconnect();
     if (closed) return true;
     if (Number(document.body.dataset.depth || 1) > 1) { history.back(); return true; }
-    return false;
+    return !!(window.__anixTabBack && window.__anixTabBack());
   };
 
   const bridge = window.anixAndroid;
@@ -234,7 +236,32 @@
     pendingDeepLink: async () => bridge.pendingDeepLink() || null,
     onDeepLink: (cb) => { linkListeners.push(cb); },
     focusWindow: () => bridge.focusWindow(),
+    openLinkSettings: () => bridge.openLinkSettings(),
+    lockOrientation: (on) => bridge.lockOrientation(!!on), // блокировка плеера — ориентация текущая
+    haptic: (kind) => bridge.haptic(String(kind || 'tap')),
+    // сохранить файл (экспорт закладок): системный «Сохранить как»; true — сохранили
+    saveFile: (name, mime, text) => new Promise((ok) => { savedWait = ok; bridge.saveFile(String(name), String(mime), String(text)); }),
+    appIcon: { get: () => bridge.icon(), set: (name) => bridge.setIcon(String(name)) }, // значок на рабочем столе
+    // ярлык на рабочем столе (аниме, коллекция): система спрашивает, куда положить
+    pinShortcut: (id, label, link, image) => bridge.pinShortcut(String(id), String(label), String(link), String(image || '')),
+    // голосовой поиск (search.js): распознавание речи Android; null — отменили или не расслышали
+    voice: {
+      available: () => bridge.voiceAvailable(),
+      listen: () => new Promise((ok) => { voiceWait = ok; bridge.voiceListen(); }),
+    },
+    // уведомления на телефоне (push.js, NotifyJob.kt)
+    notify: {
+      permission: () => bridge.notifyPermission(),
+      request: () => new Promise((ok) => { notifyWait = ok; bridge.requestNotifyPermission(); }),
+      set: (on) => bridge.setNotify(!!on),
+      openSettings: () => bridge.openNotifySettings(),
+    },
   };
+  let notifyWait = null; let voiceWait = null; let savedWait = null;
+  window.__anixSaved = (ok) => { const f = savedWait; savedWait = null; if (f) f(!!ok); };
+  window.__anixToast = (text) => import('/js/ui.js').then(({ toast }) => toast(text)); // сообщение от MainActivity
+  window.__anixVoice = (text) => { const f = voiceWait; voiceWait = null; if (f) f(text || null); };
+  window.__anixNotifyPermission = (granted) => { const f = notifyWait; notifyWait = null; if (f) f(granted); };
   // Обновление (update.js — то же окно «Вышла новая версия», что на ПК): последний релиз GitHub с Anix-<версия>.apk,
   // скачивание и установка — Updater.kt. Адрес релизов в тестах подменяется (anix.test.updateFeed)
   const FEED = 'https://api.github.com/repos/arigandores/anix-desktop/releases';
@@ -281,7 +308,12 @@
     const open = !!ov && !ov.classList.contains('mini');
     const v = playerVideo();
     const playing = !!v && !v.paused && !v.ended;
-    if (open !== lastOpen) { lastOpen = open; bridge.setPlayer(open); }
+    if (open !== lastOpen) {
+      lastOpen = open;
+      // «Только горизонтально» (настройки → Воспроизведение): выключено — плеер поворачивается за телефоном
+      if (open) { let only = true; try { only = localStorage.getItem('anixart.pref.PLAYER_LANDSCAPE_ONLY') !== 'false'; } catch { /* по умолчанию */ } bridge.setPlayerRotate(!only); }
+      bridge.setPlayer(open);
+    }
     if (playing !== lastPlaying) { lastPlaying = playing; bridge.setPlaying(playing); }
   };
   new MutationObserver(syncPlayer).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
@@ -289,6 +321,31 @@
   window.__anixPip = (on) => { document.documentElement.classList.toggle('android-pip', !!on); };
   // приложение скрыто (ушли без PiP, закрыли окно PiP, погас экран — MainActivity.onStop): вход в PiP onStop не вызывает
   window.__anixPause = () => { const v = playerVideo(); if (v && !v.paused) v.pause(); };
+  // Кнопки окна PiP, гарнитуры и Bluetooth (MainActivity.media): пауза — у видео, ∓10 с и серии — обработчики
+  // navigator.mediaSession, которые ставит плеер (player.js). В WebView Media Session API нет — здесь его замена,
+  // которая только запоминает обработчики (медиасессия Android — в MainActivity)
+  const mediaActions = new Map();
+  if (!navigator.mediaSession) {
+    Object.defineProperty(navigator, 'mediaSession', { configurable: true, value: {
+      metadata: null, playbackState: 'none', setPositionState() {},
+      setActionHandler: (a, f) => { if (f) mediaActions.set(a, f); else mediaActions.delete(a); },
+    } });
+  }
+  const MEDIA = { rew: 'seekbackward', fwd: 'seekforward', next: 'nexttrack', prev: 'previoustrack' };
+  window.__anixMedia = (cmd) => {
+    const v = playerVideo();
+    if (!v) return;
+    if (cmd === 'play') v.play().catch(() => {});
+    else if (cmd === 'pause') v.pause();
+    else mediaActions.get(MEDIA[cmd])?.({ action: MEDIA[cmd] });
+  };
+  window.anixartNative.enterPip = () => bridge.enterPip();
+  // Вырез камеры в плеере (MainActivity: видео под ним) — кнопки плеера отодвигаются от него (android.css)
+  window.__anixInsets = () => {
+    const c = JSON.parse(bridge.cutout());
+    for (const [k, v] of Object.entries(c)) document.documentElement.style.setProperty(`--cut-${k}`, `${v}px`);
+  };
+  window.__anixInsets();
 
   // Цвет системных полос — по теме приложения (index.html и store.js ставят data-theme)
   const theme = () => bridge.setTheme(document.documentElement.dataset.theme !== 'light');

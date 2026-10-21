@@ -32,7 +32,7 @@ export function bookmarkReleaseTab(def, { profileId = null } = {}) {
     const grid = viewType() === 1;
     const totalEl = h('span', { class: 'muted' });
     const sortLabel = SORTS.find((s) => s[0] === sort);
-    const header = h('div', { class: 'row', style: { padding: '10px 20px', gap: '10px' } },
+    const header = h('div', { class: 'row', style: { padding: '10px var(--gutter)', gap: '10px' } },
       totalEl, h('div', { class: 'grow' }),
       h('button', { class: 'chip', onclick: () => sheet('Сортировка', SORTS.map(([v, g, l]) => ({ label: `${t(g)}: ${t(l)}`, checked: v === sort, onClick: () => { sort = v; prefs.set(def.sortKey, v); build(); } }))) },
         icon(sort % 2 ? 'sort_desc' : 'sort_asc', 'sm'), `${t(sortLabel[1])}`),

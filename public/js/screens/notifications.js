@@ -1,9 +1,12 @@
 // Уведомления: единый список с фильтром (без вкладок)
-import { h, icon, actionIcon, iconButton, img, pagedList, emptyView, sheet, toast, confirmDialog, esc, skeleton } from '../ui.js';
-import { api, prefetchRead } from '../api.js';
+import { h, icon, actionIcon, iconButton, img, pagedList, emptyView, sheet, dialog, toast, confirmDialog, esc, skeleton, plural } from '../ui.js';
+import { api, A, prefetchRead, notifStatusEdit, notifTypeEdit, notifSelectedReleasesToggle, notifReleases, notifReleaseTypes, notifReleaseTypesEdit } from '../api.js';
 import { t } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
-import { backToolbar, relTime } from './common.js';
+import { backToolbar, relTime, releaseRow } from './common.js';
+import { typesOf } from './episodes.js';
+import { pushSupported, pushOn, pushPermission, askPush, syncPush, openPushSettings } from '../push.js';
+import { prefs } from '../store.js';
 
 const FILTERS = [
   [1, 'Все уведомления', ['notification/all']],
@@ -157,7 +160,22 @@ async function loadNotifs(filter, page) {
 // первая страница — в памяти и с нажатия колокольчика (common.js notifButton): открывается без мелькания скелетона
 export function prefetchNotifications() { return prefetchRead('notifications:1', () => loadNotifs(1, 0)); }
 
-registerScreen('notifications', () => {
+// Телефон: уведомления Anixart не приходят — плашка с тем, как включить (как в Anixart). Нет плашки — всё включено
+function pushBanner(repaint) {
+  if (!pushSupported() || pushOn()) return null;
+  const perm = pushPermission();
+  const [sub, label, act] = !prefs.get('PHONE_NOTIFY')
+    ? ['Сейчас они выключены в настройках приложения', 'Включить', async () => { prefs.set('PHONE_NOTIFY', true); await askPush(); }]
+    : perm === 'ask' ? ['Разрешите приложению их показывать', 'Разрешить', () => askPush()]
+      : ['Сейчас они выключены в настройках Android', 'Открыть настройки', () => openPushSettings()];
+  return h('div', { class: 'rel-note push-off', style: { margin: '8px var(--card-inset) 0', padding: '14px 16px' } },
+    h('div', { class: 'row', style: { gap: '10px' } }, icon('ic_bell'), h('b', null, 'Push-уведомления отключены')),
+    h('div', { class: 'muted', style: { marginTop: '4px' } }, `Включите их, чтобы ничего не пропускать. ${sub}.`),
+    h('button', { class: 'btn btn-tonal', style: { width: '100%', marginTop: '12px' }, onclick: async () => { await act(); repaint(); } }, label));
+}
+let pushAsked = false; // за запуск спрашиваем разрешение сами один раз — при первом открытии уведомлений
+
+registerScreen('notifications', (_, ctx) => {
   let filter = 1;
   let markedRead = false;
   const holder = h('div');
@@ -179,7 +197,7 @@ registerScreen('notifications', () => {
       empty: () => emptyView('Уведомлений нет', null, 'ic_bell'),
     });
     holder.replaceChildren(
-      h('div', { class: 'row', style: { padding: '8px 20px' } },
+      h('div', { class: 'row', style: { padding: '8px var(--gutter)' } },
         h('div', { class: 'grow' }),
         h('button', {
           class: 'chip',
@@ -189,6 +207,13 @@ registerScreen('notifications', () => {
   }
 
   build();
+  const banner = h('div');
+  const paintBanner = () => banner.replaceChildren(...[pushBanner(paintBanner)].filter(Boolean));
+  paintBanner();
+  if (!pushAsked && pushSupported() && prefs.get('PHONE_NOTIFY') && pushPermission() === 'ask') { pushAsked = true; askPush().then(paintBanner); }
+  ctx.setOnShow?.(() => paintBanner()); // вернулись из настроек Android
+  window.addEventListener('focus', paintBanner);
+  ctx.setDispose?.(() => window.removeEventListener('focus', paintBanner));
   return h('div', null,
     backToolbar('Уведомления', [
       iconButton('ic_trash_outline', 'Очистить все', async () => {
@@ -197,6 +222,7 @@ registerScreen('notifications', () => {
       }),
       iconButton('ic_settings', 'Настройки уведомлений', () => navigate('notification-settings')),
     ]),
+    banner,
     holder);
 });
 
@@ -212,18 +238,213 @@ const NOTIF_PREFS = [
   ['is_report_process_notifications_enabled', 'Обработка жалоб', 'profile/preference/notification/report/process/edit'],
 ];
 
+// Списки для уведомлений о сериях (profile_lists: 0 — избранное, 1–5 — статусы)
+const LISTS = ['Избранное', 'Смотрю', 'В планах', 'Просмотрено', 'Отложено', 'Брошено'];
+// Статус в ответе — перечисление ProfileStatusNotificationPreference.Status: числом (оно же порядковый номер) или именем
+const STATUS_ENUM = ['FAVORITE_STATUS', 'STATUS_WATCHING', 'STATUS_PLAN', 'STATUS_COMPLETED', 'STATUS_HOLD_ON', 'STATUS_DROPPED'];
+const statusOf = (x) => {
+  const s = x && typeof x === 'object' ? x.status : x;
+  const v = s && typeof s === 'object' ? s.value : s;
+  return typeof v === 'number' ? v : STATUS_ENUM.indexOf(v);
+};
+// озвучка в ответе — { type: { id, name } } (ProfileTypeNotificationPreference), на всякий случай и просто id
+const typeIdOf = (x) => (x && typeof x === 'object' ? (x.type?.id ?? x.id) : x);
+const EP_MODES = [['all', 'Из всех моих списков'], ['some', 'Из выбранных списков…'], ['releases', 'По выбранным релизам']];
+
+// Диалог с галочками («Выберите списки»): выбранные номера по порядку или null (отмена)
+function checkDialog(title, labels, selected, emptyText) {
+  return new Promise((resolve) => {
+    const on = new Set(selected);
+    const box = h('div', { class: 'pick-list' }, labels.map((l, i) => {
+      const cb = h('input', { type: 'checkbox' }); cb.checked = on.has(i);
+      cb.onchange = () => { if (cb.checked) on.add(i); else on.delete(i); };
+      return h('label', { class: 'sheet-item' }, cb, l);
+    }));
+    let done = false;
+    dialog({
+      title, content: box,
+      actions: [{ label: 'Отмена' }, {
+        label: 'Выбрать', primary: true,
+        onClick: () => { if (!on.size) { toast(emptyText); return true; } done = true; resolve([...on].sort((a, b) => a - b)); },
+      }],
+      onClose: () => { if (!done) resolve(null); },
+    });
+  });
+}
+
+// Выбор озвучек (ChooseTypeDialogFragment): «От всех», «От выбранных…» (список галочек), у релиза ещё «Не получать».
+// Возвращает id озвучек или null (отмена)
+function chooseTypes(title, types, selected, { nothing = false } = {}) {
+  return new Promise((resolve) => {
+    const on = new Set(selected);
+    let mode = nothing && !on.size ? 'none' : types.length && types.every((ty) => on.has(ty.id)) ? 'all' : 'some';
+    const boxes = types.map((ty) => {
+      const cb = h('input', { type: 'checkbox' }); cb.checked = on.has(ty.id);
+      cb.onchange = () => { if (cb.checked) on.add(ty.id); else on.delete(ty.id); mode = 'some'; paint(); };
+      return { id: ty.id, cb, el: h('label', { class: 'sheet-item' }, cb, ty.name) };
+    });
+    const modes = [['all', 'От всех озвучек'], ['some', 'От выбранных озвучек…'], nothing ? ['none', 'Не получать'] : null].filter(Boolean);
+    const opts = h('div', { class: 'pick-list' });
+    const scroll = types.length
+      ? h('div', { class: 'pick-list scroll' }, boxes.map((b) => b.el))
+      : h('div', { class: 'muted', style: { padding: '8px 0' } }, 'У релиза пока нет озвучек');
+    const pick = (v) => {
+      mode = v;
+      if (v !== 'some') for (const b of boxes) { b.cb.checked = v === 'all'; if (v === 'all') on.add(b.id); else on.delete(b.id); }
+      paint();
+    };
+    // список галочек — только для «От выбранных»: при «всех» и «не получать» он ничего не добавляет
+    function paint() {
+      opts.replaceChildren(...modes.map(([v, l]) => h('button', { class: `sheet-item ${mode === v ? 'checked' : ''}`, onclick: () => pick(v) },
+        h('span', null, l), mode === v ? icon('ic_check', 'end') : null)));
+      scroll.style.display = mode === 'some' ? '' : 'none';
+    }
+    paint();
+    let done = false;
+    dialog({
+      title, content: h('div', null, opts, scroll),
+      actions: [{ label: 'Отмена' }, {
+        label: 'Сохранить', primary: true,
+        onClick: () => {
+          if (mode === 'some' && !on.size && !nothing) { toast('Вы не выбрали ни одного варианта'); return true; }
+          done = true;
+          resolve(mode === 'none' ? [] : mode === 'all' ? types.map((ty) => ty.id) : [...on]);
+        },
+      }],
+      onClose: () => { if (!done) resolve(null); },
+    });
+  });
+}
+
+// Откуда присылать уведомления о сериях (NotificationsPreferenceFragment): из всех списков, из выбранных или только по
+// выбранным релизам, и от каких озвучек. В режиме «По выбранным релизам» озвучки и «только одно уведомление» задаются
+// у каждого релиза отдельно — эти пункты неактивны, а активен переход к релизам
+function episodeFilters(my, allTypes, firstRow) {
+  const st = {
+    statuses: new Set((my.profileStatusNotificationPreferences || my.profile_status_notification_preferences || []).map(statusOf).filter((v) => v >= 0)),
+    types: new Set((my.profileTypeNotificationPreferences || my.profile_type_notification_preferences || []).map(typeIdOf)),
+    byRelease: !!my.is_release_type_notifications_enabled,
+  };
+  const mode = () => (st.byRelease ? 'releases' : st.statuses.size === LISTS.length ? 'all' : 'some');
+  const row = (ic, title, sub, onClick) => h('div', { class: 'menu-item', onclick: onClick }, icon(ic), h('div', { class: 'grow' }, h('div', null, title), sub));
+  const modeSub = h('div', { class: 'sub' }); const listsSub = h('div', { class: 'sub' }); const typesSub = h('div', { class: 'sub' });
+  const modeRow = row('ic_bookmarks', 'Уведомления о новых сериях', modeSub,
+    () => sheet('Уведомления о новых сериях', EP_MODES.map(([v, l]) => ({ label: l, checked: v === mode(), onClick: () => pickMode(v) }))));
+  const listsRow = row('ic_checklist', 'Уведомления из списков', listsSub, () => chooseLists());
+  const typesRow = row('ic_voice', 'Уведомления от озвучек', typesSub, () => chooseAllTypes());
+  const releasesRow = row('ic_tune', 'Настроить уведомления по отдельным релизам', h('div', { class: 'sub' }, 'Свои озвучки для каждого релиза'),
+    () => navigate('notification-releases'));
+
+  function paint() {
+    const m = mode();
+    modeSub.textContent = EP_MODES.find((x) => x[0] === m)[1];
+    listsRow.style.display = m === 'some' ? '' : 'none';
+    listsSub.textContent = [...st.statuses].sort((a, b) => a - b).map((i) => LISTS[i]).join(', ') || 'Ни одного списка';
+    const names = allTypes.filter((ty) => st.types.has(ty.id)).map((ty) => ty.name);
+    typesSub.textContent = !allTypes.length ? 'Список озвучек не загрузился'
+      : names.length === allTypes.length ? 'От всех озвучек'
+        : !names.length ? 'Не выбрано ни одной озвучки'
+          : names.length > 3 ? `${names.slice(0, 3).join(', ')} и ещё ${names.length - 3}` : names.join(', ');
+    typesRow.classList.toggle('off', st.byRelease || !allTypes.length);
+    firstRow.classList.toggle('off', st.byRelease);
+    releasesRow.classList.toggle('off', !st.byRelease);
+  }
+  // как l1II11lIll в Anixart: сначала режим «по релизам» (GET-переключатель — только если он меняется), затем списки
+  async function apply(statuses, byRelease) {
+    try {
+      if (st.byRelease !== byRelease) {
+        const r = await notifSelectedReleasesToggle(); if (r.code !== 0) throw new Error();
+        st.byRelease = byRelease;
+      }
+      if (statuses) {
+        const r = await notifStatusEdit(statuses); if (r.code !== 0) throw new Error();
+        st.statuses = new Set(statuses);
+      }
+    } catch { toast(t('error_load')); }
+    paint();
+  }
+  function pickMode(v) {
+    if (v === 'all') apply(LISTS.map((_, i) => i), false);
+    else if (v === 'releases') apply(null, true);
+    else chooseLists();
+  }
+  async function chooseLists() {
+    // как в Anixart: из «всех списков» выбор начинается с пустого
+    const picked = await checkDialog('Выберите списки', LISTS, st.statuses.size === LISTS.length ? [] : [...st.statuses], 'Вы не выбрали ни одного варианта');
+    if (picked) apply(picked, false);
+  }
+  async function chooseAllTypes() {
+    const picked = await chooseTypes('Уведомления от озвучек', allTypes, st.types);
+    if (!picked) return;
+    try { const r = await notifTypeEdit(picked); if (r.code !== 0) throw new Error(); st.types = new Set(picked); } catch { toast(t('error_load')); }
+    paint();
+  }
+  paint();
+  return [modeRow, listsRow, typesRow, releasesRow];
+}
+
 registerScreen('notification-settings', async () => {
   const root = h('div', null, backToolbar('Уведомления'));
-  const my = await api.get('profile/preference/notification/my');
+  // справочник озвучек (TypeApi) — как в Anixart, вместе с настройками; не загрузился — пункт озвучек неактивен
+  const [my, allTypes] = await Promise.all([api.get('profile/preference/notification/my'), A.types_all().then((r) => r.types || []).catch(() => [])]);
   const list = h('div', { class: 'menu-list', style: { maxWidth: '760px' } });
-  for (const [key, label, path] of NOTIF_PREFS) {
+  if (pushSupported()) { // телефон: присылать ли уведомления системными (NotifyJob.kt)
+    const cb = h('input', { type: 'checkbox' });
+    cb.checked = !!prefs.get('PHONE_NOTIFY');
+    cb.onchange = async () => {
+      prefs.set('PHONE_NOTIFY', cb.checked);
+      if (!cb.checked) { syncPush(); return; }
+      if (!(await askPush()) && pushPermission() !== 'ask') { toast('Уведомления выключены в настройках Android'); openPushSettings(); }
+    };
+    list.append(h('label', { class: 'menu-item' }, icon('ic_bell'), h('div', { class: 'grow' }, h('div', null, 'Уведомления на телефоне'),
+      h('div', { class: 'sub' }, 'Новые серии, ответы и друзья — уведомлениями телефона, даже когда приложение закрыто')), h('span', { class: 'switch' }, cb, h('span'))));
+  }
+  const rows = NOTIF_PREFS.map(([key, label, path]) => {
     const cb = h('input', { type: 'checkbox' });
     cb.checked = !!my[key];
     cb.onchange = async () => {
       try { const r = await api.get(path); if (r.code !== 0) throw new Error(); } catch { cb.checked = !cb.checked; toast(t('error_load')); }
     };
-    list.append(h('label', { class: 'menu-item' }, icon('ic_bell'), h('div', { class: 'grow' }, label), h('span', { class: 'switch' }, cb, h('span'))));
-  }
+    return h('label', { class: 'menu-item' }, icon('ic_bell'), h('div', { class: 'grow' }, label), h('span', { class: 'switch' }, cb, h('span')));
+  });
+  // как в Anixart: «О выходе новых серий», откуда и от каких озвучек, затем «Получать только одно уведомление»
+  list.append(rows[0], ...episodeFilters(my, allTypes, rows[1]), ...rows.slice(1));
   root.append(list);
   return root;
-}, () => [backToolbar('Уведомления'), skeleton('switches', NOTIF_PREFS.length)]);
+}, () => [backToolbar('Уведомления'), skeleton('switches', NOTIF_PREFS.length + 3)]);
+
+// Количество выбранных озвучек у релиза (plurals release_types)
+const typesCount = (n) => (n ? `${plural(n, 'Выбрана', 'Выбрано', 'Выбрано')} ${n} ${plural(n, 'озвучка', 'озвучки', 'озвучек')}` : 'Не выбрано ни одной озвучки');
+
+// Строка релиза с озвучками для уведомлений (ReleaseNotificationPreferenceModel): обычная строка списка, снизу — сколько
+// выбрано и «Выбрать озвучки». В выборе — озвучки этого релиза (как на экране серий) и уже включённые, которых у
+// релиза больше нет, — чтобы их можно было снять
+function releaseTypesRow(rel) {
+  const row = releaseRow(rel);
+  const count = h('span', { class: 'muted grow' }, typesCount(rel.profile_release_type_notification_preference_count || 0));
+  const btn = h('button', {
+    class: 'btn btn-tonal',
+    onclick: async (e) => {
+      e.stopPropagation();
+      try {
+        const [types, cur] = await Promise.all([typesOf(rel.id), notifReleaseTypes(rel.id)]);
+        const sel = (cur.profile_release_type_notification_preferences || []).map(typeIdOf);
+        let list = types;
+        const gone = sel.filter((id) => !types.some((ty) => ty.id === id));
+        if (gone.length) list = list.concat(((await A.types_all()).types || []).filter((ty) => gone.includes(ty.id)));
+        const picked = await chooseTypes(rel.title_ru || rel.title_original || t('unnamed'), list, sel, { nothing: true });
+        if (!picked) return;
+        const r = await notifReleaseTypesEdit(rel.id, picked); if (r.code !== 0) throw new Error();
+        rel.profile_release_type_notification_preference_count = picked.length;
+        count.textContent = typesCount(picked.length);
+      } catch { toast(t('error_load')); }
+    },
+  }, 'Выбрать озвучки');
+  row.querySelector('.info')?.append(h('div', { class: 'row', style: { marginTop: '8px', gap: '12px' } }, count, btn));
+  return row;
+}
+
+// Уведомления по отдельным релизам (ProfileReleaseNotificationPreferencesFragment) — для режима «По выбранным релизам»
+registerScreen('notification-releases', () => h('div', null,
+  backToolbar('Уведомления по релизам'),
+  pagedList({ load: (page) => notifReleases(page), render: releaseTypesRow, empty: () => emptyView('Релизов нет') })));

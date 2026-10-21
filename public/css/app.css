@@ -37,6 +37,9 @@
   --shadow: 0 1px 3px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.08);
   --rail-w: 88px;
   --appbar-h: 64px;
+  /* отступы от края экрана: --gutter — текст, строки, заголовки, карусели; --card-inset — карточка; --card-pad — внутри
+     карточки. На телефоне — меньше (как в Anixart: ~16 px до текста), иначе на узком экране полосы пустоты по бокам */
+  --gutter: 20px; --card-inset: 20px; --card-pad: 16px; --page-pad: 24px; /* --page-pad — поля страниц (аниме, профиль, настройки) */
   color-scheme: light;
 }
 :root[data-theme="dark"] {
@@ -166,7 +169,7 @@ img { display: block; }
 .empty:not(.inline), .center-gate { flex: 1; justify-content: center; padding-top: 24px; padding-bottom: var(--empty-pb, 72px); }
 /* --empty-pb считает ui.js (centerEmpties): содержимое — по центру всей области экрана, чуть выше середины,
    а не по центру места под шапкой (под высокой шапкой оно смотрелось ниже середины окна) */
-.container { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+.container { max-width: 1180px; margin: 0 auto; padding: 0 var(--gutter); }
 
 /* ---------- App bar ---------- */
 .appbar { position: sticky; top: 0; z-index: 20; height: var(--appbar-h); display: flex; align-items: center; gap: 8px;
@@ -192,7 +195,7 @@ img { display: block; }
 @media (max-width: 600px) { .searchbar + .grow { flex-grow: .001; } }
 
 /* ---------- Вкладки ---------- */
-.tabbar { display: flex; align-items: center; gap: 0; border-bottom: 1px solid var(--sep); position: sticky; top: var(--appbar-h); z-index: 15;
+.tabbar { display: flex; align-items: center; gap: 0; border-bottom: 1px solid var(--sep); position: sticky; top: var(--stick-top, var(--appbar-h)); z-index: 15;
   background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(14px); padding: 0 8px; }
 /* иконка настройки вкладок (ic_tune) — на одной линии с текстом вкладок */
 .tabbar > .icon-btn { flex: none; margin-top: 2px; }
@@ -253,11 +256,11 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 
 /* ---------- Секции ---------- */
 .section { padding: 8px 0 16px; }
-.section-head { display: flex; align-items: center; gap: 8px; padding: 14px 20px 10px; }
+.section-head { display: flex; align-items: center; gap: 8px; padding: 14px var(--gutter) 10px; }
 .section-title { flex: 1; font-family: 'Google Sans', 'Roboto', sans-serif; font-size: 20px; font-weight: 500; }
 .section-more { color: var(--text2); display: inline-flex; align-items: center; gap: 2px; font-size: 14px; }
 .section-more:hover { color: var(--text); }
-.hscroll { display: flex; gap: 12px; overflow-x: auto; padding: 0 20px 6px; scroll-snap-type: x proximity; scrollbar-width: thin; }
+.hscroll { display: flex; gap: 12px; overflow-x: auto; padding: 0 var(--gutter) 6px; scroll-snap-type: x proximity; scrollbar-width: thin; }
 .hscroll > * { scroll-snap-align: start; }
 /* точка прилипания — с учётом отступа, иначе первая карточка прижимается к краю экрана */
 .hscroll, .banners { scroll-padding-inline: 20px; }
@@ -272,9 +275,9 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 
 /* ---------- Карточки релизов ---------- */
 .list { display: flex; flex-direction: column; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 14px; padding: 14px 20px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 14px; padding: 14px var(--gutter); }
 /* строки списков: подсветка при наведении — скруглённая и с отступом от краёв экрана (margin + padding = прежние 20px) */
-.release-row { display: flex; gap: 14px; margin: 0 8px; padding: 10px 12px; border-radius: 14px; cursor: pointer; transition: background .12s; position: relative; }
+.release-row { display: flex; gap: 14px; margin: 0 calc(var(--gutter) - 12px); padding: 10px 12px; border-radius: 14px; cursor: pointer; transition: background .12s; position: relative; }
 .release-row:hover { background: var(--block); }
 .poster { position: relative; flex: none; width: 104px; aspect-ratio: 2 / 3; border-radius: 10px; overflow: hidden; background: linear-gradient(135deg, var(--ph1), var(--ph2)); }
 .poster img { width: 100%; height: 100%; object-fit: cover; }
@@ -314,7 +317,7 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .poster .ep-badge { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 8px 6px; font-size: 12px; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.75)); }
 
 /* ---------- Баннеры «Интересное» ---------- */
-.banners { display: flex; gap: 14px; overflow-x: auto; padding: 4px 20px 10px; scroll-snap-type: x mandatory; }
+.banners { display: flex; gap: 14px; overflow-x: auto; padding: 4px var(--gutter) 10px; scroll-snap-type: x mandatory; }
 .banner { flex: none; width: min(520px, 82vw); aspect-ratio: 16 / 8; border-radius: 16px; overflow: hidden; position: relative; cursor: pointer; scroll-snap-align: start; background: var(--ph1); }
 .banner img { width: 100%; height: 100%; object-fit: cover; }
 .banner .cap { position: absolute; inset: auto 0 0 0; padding: 40px 18px 14px; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.8)); }
@@ -322,7 +325,7 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .banner .cap span { font-size: 13px; opacity: .85; }
 
 /* ---------- Плитки «Обзор» ---------- */
-.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; padding: 4px 20px 12px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; padding: 4px var(--gutter) 12px; }
 .tile { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 14px; background: var(--bg2); box-shadow: var(--shadow); cursor: pointer; font-family: 'Google Sans','Roboto',sans-serif; font-size: 15px; }
 :root[data-theme="dark"] .tile { box-shadow: none; }
 .tile .ic { color: var(--carmine); }
@@ -347,7 +350,7 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
    Chromium размывал под ними другой фон — после въезда кнопки и бейджи заметно темнели */
 .rel-hero .badge:not(.rating) { border: 1px solid var(--hero-line); color: var(--text2); }
 .rel-hero .btn-tonal { border: 1px solid var(--hero-line); }
-.rel-hero .inner { position: relative; display: flex; align-items: flex-start; gap: 24px; padding: 8px 24px 28px; }
+.rel-hero .inner { position: relative; display: flex; align-items: flex-start; gap: 24px; padding: 8px var(--page-pad) 28px; }
 /* постер не растягивается по высоте колонки — держит пропорцию 2:3 */
 .rel-hero .poster { flex: none; align-self: flex-start; width: 200px; border-radius: 14px; box-shadow: 0 8px 28px rgba(0,0,0,.25); cursor: zoom-in; }
 .rel-hero .head { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding-top: 6px; }
@@ -365,10 +368,10 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .sheet-item .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; margin: 0 6px; }
 .fav-btn { width: 40px; height: 40px; border-radius: 20px; display: grid; place-items: center; background: var(--btn2); color: var(--btn2-text); }
 .fav-btn.on { color: #ff4d6d; }
-.rel-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; padding: 16px 24px 40px; align-items: start; }
+.rel-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; padding: 16px var(--page-pad) 40px; align-items: start; }
 @media (max-width: 980px) { .rel-body { grid-template-columns: minmax(0, 1fr); } }
-@media (max-width: 640px) { .rel-hero .inner { flex-direction: column; align-items: center; text-align: center; } .rel-hero .poster { width: 170px; } .rel-actions { justify-content: center; } }
-.card { background: var(--bg2); border-radius: 16px; padding: 16px; box-shadow: var(--shadow); }
+@media (max-width: 640px) { .rel-hero .inner { flex-direction: column; align-items: center; text-align: center; } .rel-hero .poster { width: 170px; align-self: center; } .rel-badges { justify-content: center; } .rel-actions { justify-content: center; } }
+.card { background: var(--bg2); border-radius: 16px; padding: var(--card-pad); box-shadow: var(--shadow); }
 :root[data-theme="dark"] .card { box-shadow: none; }
 .card + .card { margin-top: 16px; }
 .card-title { font-family: 'Google Sans','Roboto',sans-serif; font-size: 18px; font-weight: 500; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
@@ -424,19 +427,19 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 
 /* ---------- Эпизоды ---------- */
 .ep-list { display: flex; flex-direction: column; }
-.ep-row { display: flex; align-items: center; gap: 14px; margin: 0 8px; padding: 12px; border-radius: 14px; cursor: pointer; }
+.ep-row { display: flex; align-items: center; gap: 14px; margin: 0 calc(var(--gutter) - 12px); padding: 12px; border-radius: 14px; cursor: pointer; }
 .ep-row:hover { background: var(--block); }
 .ep-row .num { width: 42px; height: 42px; border-radius: 12px; background: var(--btn2); display: grid; place-items: center; font-weight: 500; flex: none; }
 /* серия запускается: спиннер на месте номера */
 .ep-row .num .spinner { width: 20px; height: 20px; border-width: 2.5px; }
 .ep-row.watched .num { background: color-mix(in srgb, var(--green) 20%, transparent); color: var(--green); }
 .ep-row.last .num { outline: 2px solid var(--carmine); }
-.type-row { display: flex; align-items: center; gap: 14px; margin: 0 8px; padding: 12px; border-radius: 14px; cursor: pointer; }
+.type-row { display: flex; align-items: center; gap: 14px; margin: 0 calc(var(--gutter) - 12px); padding: 12px; border-radius: 14px; cursor: pointer; }
 .type-row:hover { background: var(--block); }
 .type-row img, .type-row .ph { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; background: var(--btn2); flex: none; display: grid; place-items: center; }
 
 /* ---------- Комментарии ---------- */
-.comment { display: flex; gap: 12px; padding: 12px 20px; }
+.comment { display: flex; gap: 12px; padding: 12px var(--gutter); }
 .avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; background: var(--ph1); flex: none; cursor: pointer; }
 .avatar.lg { width: 96px; height: 96px; }
 .comment .body { flex: 1; min-width: 0; }
@@ -450,10 +453,10 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .comment .tools button.on { color: var(--carmine); }
 /* Поле комментария (common.js commentComposer): одна плашка — текст сам подрастает, справа «Спойлер» и
    «Отправить» значками, по строке ввода (раньше — отдельное поле с ручкой и крупной кнопкой «Спойлер» не по центру) */
-.comment-input { padding: 10px 20px; position: sticky; bottom: 0; background: var(--bg); border-top: 1px solid var(--sep); }
+.comment-input { padding: 10px var(--gutter); position: sticky; bottom: 0; background: var(--bg); border-top: 1px solid var(--sep); }
 .comment-input.top { position: static; border-top: 0; border-bottom: 1px solid var(--sep); background: transparent; padding-top: 4px; padding-bottom: 12px; }
 /* экран комментариев: поле закреплено под шапкой — написать, не листая наверх (фон сплошной: без backdrop-filter) */
-.comment-input.top.sticky { position: sticky; top: var(--appbar-h); z-index: 14; background: var(--bg); padding-top: 8px; }
+.comment-input.top.sticky { position: sticky; top: var(--stick-top, var(--appbar-h)); z-index: 14; background: var(--bg); padding-top: 8px; }
 .comment-input.inline { position: static; border: 0; background: transparent; padding: 8px 0 4px; }
 .composer-box { display: flex; align-items: flex-end; gap: 2px; padding: 4px 4px 4px 16px; border-radius: 22px; border: 1px solid var(--input-border);
   background: var(--input-bg); transition: border-color .18s var(--ease-std); }
@@ -480,7 +483,7 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .verified { color: #42a5f5; }
 
 /* ---------- Профиль ---------- */
-.profile-head { display: flex; gap: 20px; align-items: center; padding: 16px 24px; }
+.profile-head { display: flex; gap: 20px; align-items: center; padding: 16px var(--page-pad); }
 .profile-head .name { font-family: 'Google Sans','Roboto',sans-serif; font-size: 26px; font-weight: 500; display: flex; align-items: center; gap: 8px; }
 .online { color: var(--green); font-size: 13px; }
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
@@ -493,13 +496,13 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 
 /* ---------- Настройки / меню-списки ---------- */
 .menu-list { display: flex; flex-direction: column; }
-.menu-item { display: flex; align-items: center; gap: 16px; margin: 0 8px; padding: 14px 16px; border-radius: 12px; cursor: pointer; }
+.menu-item { display: flex; align-items: center; gap: 16px; margin: 0 calc(var(--gutter) - 12px); padding: 14px max(12px, calc(var(--gutter) - 4px)); border-radius: 12px; cursor: pointer; }
 /* пункт внутри карточки или диалога: подсветка выходит за текст на 12px и скруглена (поля карточки 16px) */
 .menu-item.inset { margin: 0 -12px; padding: 10px 12px; }
 .menu-item:hover { background: var(--block); }
 .menu-item .ic { color: var(--icon); }
 .menu-item .sub { color: var(--text2); font-size: 13px; }
-.menu-cat { padding: 18px 24px 6px; color: var(--carmine); font-size: 14px; font-weight: 500; }
+.menu-cat { padding: 18px var(--page-pad) 6px; color: var(--carmine); font-size: 14px; font-weight: 500; }
 :root[data-theme="dark"] .menu-cat { color: var(--text); }
 /* Экран настроек: разделы слева (прилипают под шапкой), пункты выбранного раздела справа. Узкое окно — разделы
    полосой-лентой под шапкой, как вкладки (settings.js) */
@@ -512,10 +515,10 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .settings-tab:hover { background: var(--block); color: var(--text); }
 .settings-tab.active, .settings-tab.active:hover { background: var(--nav-ind); color: var(--text); font-weight: 500; }
 .settings-tab.active .ic { color: var(--nav-icon-on); }
-.settings-title { margin: 8px 24px 4px; font-family: 'Google Sans', 'Roboto', sans-serif; font-size: 22px; font-weight: 500; }
+.settings-title { margin: 8px var(--page-pad) 4px; font-family: 'Google Sans', 'Roboto', sans-serif; font-size: 22px; font-weight: 500; }
 @container (max-width: 640px) {
   .settings-in { grid-template-columns: minmax(0, 1fr); padding: 0 0 32px; }
-  .settings-nav { top: var(--appbar-h); z-index: 15; flex-direction: row; gap: 6px; padding: 6px 12px 10px; overflow-x: auto; scrollbar-width: none;
+  .settings-nav { top: var(--stick-top, var(--appbar-h)); z-index: 15; flex-direction: row; gap: 6px; padding: 6px 12px 10px; overflow-x: auto; scrollbar-width: none;
     background: var(--bg); border-bottom: 1px solid var(--sep); }
   .settings-nav::-webkit-scrollbar { display: none; }
   .settings-tab { flex: none; height: 36px; padding: 0 14px; border-radius: 18px; font-size: 14px; }
@@ -562,7 +565,8 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 :root[data-theme="dark"] .sheet-item.checked, :root[data-theme="dark"] .sheet-item.checked .ic { color: var(--text); }
 .sheet-item.danger { color: var(--red); }
 .sheet-item .end { margin-left: auto; }
-#toast { position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 20px); z-index: 200; background: #323232; color: #fff; padding: 12px 20px; border-radius: 8px;
+/* над нижним меню телефона (--bottomnav-h — app.js), а не поверх него */
+#toast { position: fixed; left: 50%; bottom: calc(var(--bottomnav-h, 0px) + 28px); transform: translate(-50%, 20px); z-index: 200; background: #323232; color: #fff; padding: 12px 20px; border-radius: 8px;
   font-size: 14px; opacity: 0; pointer-events: none; transition: .2s; max-width: 90vw; box-shadow: 0 4px 14px rgba(0,0,0,.3); }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 /* Просмотр картинок (imageViewer в common.js): всегда тёмный; шапка, сцена, стрелки по бокам, лента миниатюр */
@@ -684,6 +688,11 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
   padding: 8px 12px; border-radius: 32px; background: rgba(0,0,0,.5); color: #fff; pointer-events: none;
   opacity: 0; transform: translate(-50%, -50px); transition: opacity .2s cubic-bezier(.4,0,1,1), transform .2s cubic-bezier(.4,0,1,1); }
 .speed-ind.show { opacity: 1; transform: translate(-50%, 0); transition: opacity .2s cubic-bezier(0,0,.2,1), transform .2s cubic-bezier(0,0,.2,1); }
+/* Плашка посреди кадра (player.js hint): режим кадра, перемотка свайпом «+0:35 · 12:40» */
+.p-hint { position: absolute; left: 50%; top: 50%; z-index: 5; transform: translate(-50%, -50%); padding: 10px 18px; border-radius: 32px;
+  background: rgba(0,0,0,.6); color: #fff; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
+  pointer-events: none; opacity: 0; transition: opacity .2s cubic-bezier(.4,0,1,1); }
+.p-hint.show { opacity: 1; transition: none; }
 /* «Продолжить» посреди экрана на паузе (player.js paintCenter). Без backdrop-filter: плеер открывается с анимацией
    прозрачности, под ней он меняет цвет */
 .p-center { position: absolute; left: 50%; top: 50%; z-index: 4; width: 76px; height: 76px; margin: -38px 0 0 -38px; border-radius: 50%;
@@ -751,7 +760,7 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .bench-table .trt { color: #3fae2a; font-size: 12px; }
 
 /* ---------- Статьи ленты ---------- */
-.article { padding: 14px 20px; border-bottom: 1px solid var(--sep); }
+.article { padding: 14px var(--gutter); border-bottom: 1px solid var(--sep); }
 .article .head { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
 .article .content { display: flex; flex-direction: column; gap: 10px; word-break: break-word; }
 .article .content img { max-width: 100%; border-radius: 12px; max-height: 520px; object-fit: contain; background: var(--block); }
@@ -766,16 +775,16 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .article .foot button.on { color: var(--carmine); }
 
 /* ---------- Расписание ---------- */
-.day-title { padding: 16px 20px 6px; font-family: 'Google Sans','Roboto',sans-serif; font-size: 18px; }
+.day-title { padding: 16px var(--gutter) 6px; font-family: 'Google Sans','Roboto',sans-serif; font-size: 18px; }
 .day-title.today { color: var(--carmine); }
 
 /* ---------- Фильтр ---------- */
-.filter-form { padding: 10px 24px 100px; max-width: 760px; }
+.filter-form { padding: 10px var(--page-pad) 100px; max-width: 760px; }
 .filter-form h4 { margin: 18px 0 8px; font-weight: 500; color: var(--text2); font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
-.filter-actions { position: sticky; bottom: 0; padding: 12px 24px; display: flex; gap: 10px; background: var(--bg); border-top: 1px solid var(--sep); }
+.filter-actions { position: sticky; bottom: 0; padding: 12px var(--page-pad); display: flex; gap: 10px; background: var(--bg); border-top: 1px solid var(--sep); }
 
 /* ---------- Авторизация ---------- */
-.auth-wrap { max-width: 420px; margin: 0 auto; padding: 30px 24px 60px; display: flex; flex-direction: column; align-items: stretch; }
+.auth-wrap { max-width: 420px; margin: 0 auto; padding: 30px var(--page-pad) 60px; display: flex; flex-direction: column; align-items: stretch; }
 .auth-wrap .logo-big { width: 84px; height: 84px; margin: 10px auto 18px; color: var(--carmine); }
 .auth-wrap h1 { text-align: center; font-family: 'Google Sans','Roboto',sans-serif; font-weight: 500; margin: 0 0 6px; }
 .auth-wrap .sub { text-align: center; color: var(--text2); margin-bottom: 24px; }
@@ -1083,8 +1092,8 @@ html:not(.in-party) .party-btn.only-in-room { display: none; }
 
 /* Чипы над списком серий — прилипают под шапкой: при прокрутке озвучка, источник и плеер видны. Это часть шапки:
    въезд экрана их не двигает (enterParts в ui.js); фон сплошной — backdrop-filter под въездом экрана менял цвет */
-.wchips { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 2px 20px 12px;
-  position: sticky; top: var(--appbar-h); z-index: 14; background: var(--bg); }
+.wchips { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 2px var(--gutter) 12px;
+  position: sticky; top: var(--stick-top, var(--appbar-h)); z-index: 14; background: var(--bg); }
 /* узкое окно: одна строка с прокруткой вбок, а не три (полоса прилипает — списку нужна высота) */
 @media (max-width: 720px) {
   .wchips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
@@ -1240,3 +1249,81 @@ button:focus-visible, a:focus-visible, .menu-item:focus-visible, .release-card:f
    перезапускалась бы при каждом возврате на вкладку) */
 .notif-badge { position: absolute; top: 4px; right: 4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--carmine);
   color: #fff; font-size: 10px; line-height: 16px; text-align: center; }
+
+/* Обновление свайпом вниз (pull.js, телефон): кружок выезжает из-под шапки, стрелка крутится по мере натяжения;
+   дальше порога (.go) — ярче, при обновлении (.spin) — крутится сам */
+.ptr { position: fixed; left: 50%; z-index: 110; width: 40px; height: 40px; border-radius: 50%; display: none; place-items: center;
+  background: var(--bg2); box-shadow: 0 2px 8px rgba(0,0,0,.28); pointer-events: none; will-change: transform; }
+.ptr.show { display: grid; }
+.ptr.anim { transition: transform .2s var(--ease-std), opacity .2s; }
+.ptr-ring { width: 22px; height: 22px; border-radius: 50%; border: 2.5px solid var(--carmine); border-right-color: transparent; opacity: .55; }
+.ptr-ring.go { opacity: 1; }
+.ptr-ring.spin { opacity: 1; animation: spin .8s linear infinite; }
+:root[data-theme="dark"] .ptr-ring { border-color: var(--accent); border-right-color: transparent; }
+
+/* Блокировка плеера (player.js setLock, телефон): кнопок нет, по тапу — замок слева, снимает блокировку */
+.player-overlay.locked .player-top, .player-overlay.locked .player-controls, .player-overlay.locked .skip-row,
+.player-overlay.locked .p-center { display: none !important; }
+.p-unlock { position: absolute; left: calc(28px + var(--cut-l, 0px)); top: 50%; z-index: 6; width: 56px; height: 56px; margin-top: -28px;
+  border: 0; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff; display: none; place-items: center;
+  opacity: 0; pointer-events: none; transition: opacity .2s; }
+.p-unlock .ic { width: 26px; height: 26px; }
+.player-overlay.locked .p-unlock { display: grid; }
+.p-unlock.show { opacity: 1; pointer-events: auto; }
+
+/* Разовая подсказка (ui.js hintOnce): облачко со стрелкой к элементу */
+.hint-tip { position: fixed; z-index: 150; max-width: min(300px, calc(100vw - 24px)); padding: 10px 14px; border-radius: 12px;
+  background: #323232; color: #fff; font-size: 14px; line-height: 1.35; box-shadow: 0 4px 14px rgba(0,0,0,.35); pointer-events: none;
+  opacity: 0; transform: translateY(var(--hint-dy, 6px)); transition: opacity .2s, transform .2s var(--ease-std); }
+.hint-tip.above { --hint-dy: -6px; }
+.hint-tip.show { opacity: 1; transform: none; }
+.hint-tip::before { content: ''; position: absolute; left: calc(var(--arrow-x, 50%) - 7px); width: 14px; height: 14px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
+.hint-tip.below::before { top: -6px; }
+.hint-tip.above::before { bottom: -6px; }
+
+/* Динамика просмотра в профиле (profile.js watchDynamics), как в Anixart: 8 узких столбцов с промежутками и скруглённым
+   верхом, число над каждым (и «0»), дата под каждым наискосок; ноль — короткий столбик */
+.wdyn { display: grid; grid-template-columns: repeat(8, 1fr); align-items: end; margin-top: 14px; padding-bottom: 4px; }
+.wdyn-col { display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.wdyn-n { font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--text2); margin-bottom: 6px; line-height: 1; }
+.wdyn-bar { width: min(40px, 62%); border-radius: 12px 12px 0 0; background: var(--text); opacity: .86; }
+.wdyn-bar.zero { height: 12px; opacity: .5; }
+/* дата наискосок, верхним правым углом — под серединой столбца */
+.wdyn-d { margin-top: 8px; height: 38px; font-size: 13px; color: var(--text3, var(--text2)); white-space: nowrap; font-variant-numeric: tabular-nums;
+  transform: translateX(-35%) rotate(-55deg); transform-origin: 100% 0; }
+
+/* Настройки профиля (screens/profile-settings.js): кадрирование фото профиля и обложки (cropImage) — рамка,
+   за которой затемнено всё, что не попадёт в кадр (у фото профиля — круг); значки профиля */
+.crop-box { position: relative; margin: 0 auto; overflow: hidden; border-radius: 12px; background: #000; touch-action: none; cursor: grab; user-select: none; }
+.crop-box.dragging { cursor: grabbing; }
+.crop-box canvas { display: block; width: 100%; height: 100%; }
+.crop-mask { position: absolute; inset: 0; pointer-events: none; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(255,255,255,.35); }
+.crop-box.round .crop-mask { border-radius: 50%; box-shadow: 0 0 0 9999px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,.35); }
+.crop-zoom { display: block; width: 100%; margin-top: 14px; accent-color: var(--carmine); }
+.badge-img { width: 40px; height: 40px; object-fit: contain; flex: none; }
+.badge-img.sm { width: 28px; height: 28px; }
+
+/* Уведомления о сериях по спискам и озвучкам, экспорт и импорт закладок (screens/notifications.js, bookmarks-data.js):
+   неактивный пункт настроек (режим «По выбранным релизам»), списки выбора в диалоге — до краёв окна, как в меню;
+   длинный (озвучки) — со своей прокруткой, чтобы кнопки диалога оставались рядом; подзаголовки разделов */
+.menu-item.off { opacity: .45; pointer-events: none; }
+.pick-list { display: flex; flex-direction: column; margin: 0 -24px; }
+.pick-list.scroll { max-height: min(46vh, 420px); overflow: auto; }
+.pick-list label.sheet-item { cursor: pointer; }
+.pick-list input[type="checkbox"] { width: 18px; height: 18px; margin: 0; flex: none; accent-color: var(--carmine); }
+:root[data-theme="dark"] .pick-list input[type="checkbox"] { accent-color: var(--accent); }
+.pick-cat { margin: 18px 0 8px; color: var(--text2); font-size: 13px; font-weight: 500; }
+.pick-cat:first-child { margin-top: 0; }
+
+/* Окно с длинным списком (поиск релизов в редакторе коллекции): прокручивается только содержимое, кнопки внизу видны
+   всегда — иначе «Готово» уезжало под конец списка */
+.dialog.scroll-body { display: flex; flex-direction: column; overflow: hidden; }
+.dialog.scroll-body .dialog-content { flex: 1; min-height: 0; overflow: auto; }
+
+/* Узкий экран (телефон): отступы как в Anixart — текст ~16 px от края, карточки — 8 px от края (--gutter и др. выше) */
+@media (max-width: 600px) {
+  :root { --gutter: 16px; --card-inset: 8px; --card-pad: 12px; --page-pad: 16px; }
+  :is(.container, .rel-body) .card { margin-inline: calc(var(--card-inset) - var(--gutter)); }
+  /* записи блога внутри колонки профиля — без второго отступа (у колонки он уже есть) */
+  .container .article { padding-inline: 0; }
+}

@@ -122,6 +122,31 @@ export function esc(s) {
 // --- Toast ---
 let toastTimer;
 // toast(текст, { ok }) — ok: действие удалось, слева прорисовывается галочка в круге
+// Разовая подсказка (как в Anixart): облачко со стрелкой у элемента, один раз за установку (anix.hint.<ключ>);
+// закрывается любым касанием или само через 7 с. target — элемент или функция (к показу его может не быть на экране)
+export function hintOnce(key, target, text, { delay = 600 } = {}) {
+  const k = `anix.hint.${key}`;
+  try { if (localStorage.getItem(k)) return; } catch { return; }
+  setTimeout(() => {
+    const el = typeof target === 'function' ? target() : target;
+    if (!el || !el.isConnected || !el.getClientRects().length || document.querySelector('.backdrop:not(.closing), .player-overlay:not(.mini)')) return;
+    try { localStorage.setItem(k, '1'); } catch { /* storage */ }
+    const r = el.getBoundingClientRect();
+    const tip = h('div', { class: 'hint-tip', role: 'status' }, text);
+    document.body.append(tip);
+    const below = r.top < innerHeight / 2;
+    const x = Math.min(Math.max(12, r.left + r.width / 2 - tip.offsetWidth / 2), innerWidth - tip.offsetWidth - 12);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${below ? r.bottom + 10 : r.top - tip.offsetHeight - 10}px`;
+    tip.style.setProperty('--arrow-x', `${r.left + r.width / 2 - x}px`);
+    tip.classList.add(below ? 'below' : 'above');
+    requestAnimationFrame(() => tip.classList.add('show'));
+    const close = () => { document.removeEventListener('pointerdown', close, true); tip.classList.remove('show'); setTimeout(() => tip.remove(), 200); };
+    document.addEventListener('pointerdown', close, true);
+    setTimeout(close, 7000);
+  }, delay);
+}
+
 export function toast(msg, { ms = 2600, ok = false } = {}) {
   let el = document.getElementById('toast');
   if (!el) el = h('div', { id: 'toast', role: 'status' });
@@ -376,7 +401,7 @@ export function skeleton(kind = 'rows', n, { recs = false } = {}) {
       // profileView: шапка (аватар, ник, статус, строка с репутацией, кнопка) → карточки «Друзья» и «Статистика»
       h('div', { class: 'profile-head' }, h('div', { class: 'avatar lg sk' }),
         col('8px', line('200px', 'big'), line('150px'), line('300px'), h('div', { class: 'row', style: { marginTop: '8px' } }, pill('170px')))),
-      h('div', { class: 'container', style: { padding: '0 24px 40px' } },
+      h('div', { class: 'container', style: { padding: '0 var(--page-pad) 40px' } },
         h('div', { class: 'card' }, h('div', { class: 'row' }, circle('24px'), col('0', line('120px', 'title')), times(3, () => circle('40px')))),
         h('div', { class: 'card' }, line('130px', 'title', { height: '20px' }), block({ height: '10px', borderRadius: '5px', margin: '14px 0 12px' }),
           h('div', { class: 'stat-grid' }, times(5, () => block({ height: '64px', borderRadius: '12px' }))),
@@ -470,10 +495,12 @@ export function enterScreen(screen, direction) {
 const STICKY_HEAD = '.appbar, .tabbar:not(.static), .wchips';
 function enterParts(node) {
   if (!node || node.matches(STICKY_HEAD)) return [];
-  const bar = node.querySelector(':scope > .appbar, :scope > .tabbar:not(.static), :scope > .wchips');
+  const bar = node.querySelector(':scope > .appbar, :scope > .tabbar:not(.static), :scope > .wchips, :scope > * > .wchips');
   if (!bar) return [node];
+  // чипы серий — и глубже: в скелетоне экрана серий они внутри заготовки (.sk-root > .container > .wchips) — без
+  // этого при медленной загрузке серий чипы въезжали и проявлялись вместе с содержимым (шапка мигала)
   return [...node.children].flatMap((el) => (el.matches(STICKY_HEAD) ? []
-    : el.querySelector(':scope > .tabbar:not(.static), :scope > .wchips') ? enterParts(el) : [el]));
+    : el.querySelector(':scope > .tabbar:not(.static), :scope > .wchips, :scope > * > .wchips') ? enterParts(el) : [el]));
 }
 // страховка: окно не рисует кадры (скрыто, свёрнуто посреди въезда) — анимация стоит в первом кадре со сдвигом и
 // полупрозрачностью; таймер идёт и без кадров — по нему въезд снимается, контент встаёт на место

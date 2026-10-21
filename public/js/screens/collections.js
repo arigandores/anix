@@ -14,7 +14,7 @@ registerScreen('collections', ({ sort: initSort }) => {
   function build() {
     // Pagination: первая страница 0 (или -1 для случайных), далее (cur+1)%N с пропуском посещённых
     let N = 0; let cur = -1; const visited = new Set(); let first = true;
-    const sortRow = h('div', { class: 'row', style: { padding: '8px 20px', gap: '10px' } },
+    const sortRow = h('div', { class: 'row', style: { padding: '8px var(--gutter)', gap: '10px' } },
       auth.loggedIn ? h('button', { class: 'chip', onclick: () => navigate('my-collections') }, icon('ic_collection', 'sm'), 'Мои коллекции') : null,
       h('div', { class: 'grow' }),
       h('button', { class: 'chip', onclick: () => sheet('Сортировка', SORTS.map(([v, l]) => ({ label: l, checked: v === sort, onClick: () => { sort = v; build(); } }))) }, actionIcon('ic_sort', 'sm'), SORTS.find((s) => s[0] === sort)[1]));
@@ -39,22 +39,48 @@ registerScreen('collections', ({ sort: initSort }) => {
   return h('div', null, backToolbar(t('title_collections') !== 'title_collections' ? t('title_collections') : 'Коллекции'), holder);
 });
 
-registerScreen('my-collections', () => h('div', null, backToolbar('Мои коллекции'),
-  pagedList({ skeleton: 'collections', grid: true, load: (page) => A.profileCollections(auth.profileId, page), render: collectionCard, empty: () => emptyView('У вас пока нет коллекций') })));
+registerScreen('my-collections', (params, ctx) => {
+  const list = pagedList({ skeleton: 'collections', grid: true, load: (page) => A.profileCollections(auth.profileId, page), render: collectionCard, empty: () => emptyView('У вас пока нет коллекций') });
+  // создали, изменили или удалили коллекцию (collection-editor.js) — список обновляется на месте; экран скрыт — при возврате
+  let stale = false;
+  const onChanged = () => { if (list.isConnected) list.refresh(); else stale = true; };
+  window.addEventListener('collection-changed', onChanged);
+  ctx.setDispose(() => window.removeEventListener('collection-changed', onChanged));
+  ctx.setOnShow(() => { if (stale) { stale = false; list.refresh(); } });
+  return h('div', null, backToolbar('Мои коллекции'),
+    h('div', { class: 'row', style: { padding: '8px var(--gutter)' } },
+      h('button', { class: 'chip', onclick: () => navigate('collection-editor') }, icon('ic_plus', 'sm'), 'Создать коллекцию')),
+    list);
+});
 
 registerScreen('profile-collections', ({ profileId }) => h('div', null, backToolbar('Коллекции'),
   pagedList({ skeleton: 'collections', grid: true, load: (page) => A.profileCollections(profileId, page), render: collectionCard, empty: () => emptyView('Коллекций нет') })));
 
-registerScreen('collection', async ({ id }) => {
+registerScreen('collection', async ({ id }, ctx) => {
   const root = h('div');
   // повторный заход — сразу из памяти; свежие данные фоном: изменились — экран пересобирается (api.js remembered)
   // изменилось — правим на месте и плавно (ui.js morph): то же данные-объект, новое дерево вливается в показанное
-  const r = await remembered(`collection:${id}`, () => A.collection(id), (fresh) => {
+  const apply = (fresh) => {
     if (!root.isConnected) return;
     if (r.collection && fresh.collection) Object.assign(r.collection, fresh.collection); else Object.assign(r, fresh);
     const next = h('div'); paint(r, next); morph(root, markAppeared(next));
-  });
+  };
+  const r = await remembered(`collection:${id}`, () => A.collection(id), apply);
   paint(r);
+  // коллекцию изменили в редакторе (collection-editor.js) — при показе экрана данные и релизы обновляются на месте
+  // (память свежая — тем же фоновым обновлением, устарела — сразу свежим ответом); удалили — заглушка «удалена»
+  let changed = null;
+  // удалили из меню этого экрана (он и так закрывается) — без заглушки на кадр перед «Назад»
+  const onChanged = (e) => { if (Number(e.detail?.id) === Number(id)) { changed = e.detail; if (root.isConnected && !changed.deleted) refreshChanged(); } };
+  function refreshChanged() {
+    const d = changed; changed = null;
+    if (d.deleted) { r.code = 4; paint(r); return; }
+    remembered(`collection:${id}`, () => A.collection(id), apply).then((fresh) => { if (fresh !== r) apply(fresh); }, () => {});
+    root.querySelector('.paged')?.refresh?.();
+  }
+  window.addEventListener('collection-changed', onChanged);
+  ctx.setDispose(() => window.removeEventListener('collection-changed', onChanged));
+  ctx.setOnShow(() => { if (changed) refreshChanged(); });
   return root;
 
   // target — куда собрать: при фоновом обновлении — в отдельное дерево для morph
@@ -93,13 +119,18 @@ registerScreen('collection', async ({ id }) => {
     avatarEl(c.creator, 'avatar'),
     h('div', { class: 'grow' }, h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Автор коллекции'), profileName(c.creator)),
     iconButton('ic_more', 'Ещё', () => sheet(null, [
-      { label: 'Поделиться', icon: 'ic_export_variant', onClick: () => { navigator.clipboard?.writeText(`Рекомендую ознакомиться с коллекцией: «${c.title}»\n${base}collection/${c.id}`); toast('Скопировано', { ok: true }); } },
+      // как на странице релиза: системное «Поделиться» (на Android — меню приложений), без него — в буфер
+      { label: 'Поделиться', icon: 'ic_export_variant', onClick: () => { const text = `Рекомендую ознакомиться с коллекцией: «${c.title}»\n${base}collection/${c.id}`; if (navigator.share) navigator.share({ text }).catch(() => {}); else { navigator.clipboard?.writeText(text); toast('Скопировано', { ok: true }); } } },
       { label: 'Скопировать ссылку', icon: 'ic_link', onClick: () => { navigator.clipboard?.writeText(`${base}collection/${c.id}`); toast('Скопировано', { ok: true }); } },
-      mine ? { label: 'Удалить', icon: 'ic_trash_outline', danger: true, onClick: async () => { if (await confirmDialog('Удалить коллекцию?', 'Вы уверены, что хотите удалить коллекцию?', 'Удалить')) { const { api } = await import('../api.js'); const d = await api.get(`collectionMy/delete/${c.id}`).catch(() => null); toast(d && d.code === 0 ? 'Коллекция удалена' : 'Не удалось удалить коллекцию'); if (d && d.code === 0) history.back(); } } } : null,
+      // ярлык коллекции на рабочем столе телефона (как в Anixart)
+      window.anixartNative?.pinShortcut ? { label: 'На рабочий стол', icon: 'ic_home', onClick: () => window.anixartNative.pinShortcut(`collection-${c.id}`, c.title || 'Коллекция', `anixart://collection?id=${c.id}`, c.image || '') } : null,
+      mine ? { label: 'Редактировать', icon: 'ic_pencil', onClick: () => navigate('collection-editor', { id: c.id }) } : null,
+      // удалили — «Мои коллекции» обновятся (то же событие, что из редактора)
+      mine ? { label: 'Удалить', icon: 'ic_trash_outline', danger: true, onClick: async () => { if (await confirmDialog('Удалить коллекцию?', 'Вы уверены, что хотите удалить коллекцию?', 'Удалить')) { const d = await A.collectionDelete(c.id).catch(() => null); toast(d && d.code === 0 ? 'Коллекция удалена' : 'Не удалось удалить коллекцию'); if (d && d.code === 0) { window.dispatchEvent(new CustomEvent('collection-changed', { detail: { id: c.id, deleted: true } })); history.back(); } } } } : null,
       !mine ? { label: 'Пожаловаться', icon: 'ic_alert', onClick: () => report('collection', c.id) } : null,
     ])));
   const statsHolder = h('div', { 'data-keep': '' }); // заполняет список (onFirst) — при фоновом обновлении не трогаем
-  const header = h('div', { class: 'container', style: { padding: '0 20px' } },
+  const header = h('div', { class: 'container', style: { padding: '0 var(--gutter)' } },
     h('div', { class: 'poster', style: { width: '100%', aspectRatio: '16/7', borderRadius: '16px', cursor: 'zoom-in' }, onclick: () => imageViewer(c.image) }, img(c.image)),
     h('h1', { class: 'rel-title', style: { margin: '14px 0 4px' } }, c.title),
     h('div', { class: 'muted' }, relTime(c.creation_date), c.last_update_date > c.creation_date ? ` • Ред. ${relTime(c.last_update_date)}` : ''),
@@ -133,7 +164,7 @@ registerScreen('collection', async ({ id }) => {
   const bar = h('div', { class: 'appbar' }, iconButton('ic_back', 'Назад', () => history.back()),
     c?.creator?.avatar ? avatarEl(c.creator, 'avatar') : circle('40px'),
     h('div', { class: 'grow' }, h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Автор коллекции'), c?.creator ? profileName(c.creator) : line('110px', '', { marginTop: '4px' })));
-  return [bar, h('div', { class: 'container', style: { padding: '0 20px' } },
+  return [bar, h('div', { class: 'container', style: { padding: '0 var(--gutter)' } },
     c?.image ? h('div', { class: 'poster', style: { width: '100%', aspectRatio: '16/7', borderRadius: '16px' } }, img(c.image)) : block({ width: '100%', aspectRatio: '16/7', borderRadius: '16px' }),
     c?.title ? h('h1', { class: 'rel-title', style: { margin: '14px 0 4px' } }, c.title) : line('50%', 'big', { margin: '14px 0 8px' }),
     line('140px'),

@@ -15,6 +15,8 @@ check('сторонний плеер из старой настройки → в
 
 // Настройки: разделы
 await tap('[title="Настройки"]');
+// под нагрузкой (4 эмулятора) нажатие сразу после запуска бывает раньше, чем Главная готова принимать нажатия — ещё раз
+if (!(await until(`${REAL('.settings-tab')} > 3`, 5000))) await tap('[title="Настройки"]');
 check('настройки открылись', !!(await until(`${REAL('.settings-tab')} > 3`, 10000)));
 const sections = await js(`[...document.querySelectorAll('.settings-tab')].map((b) => b.dataset.section + ':' + b.textContent.trim())`);
 check('разделы без AI-помощника и Discord', !sections.some((s) => /^(ai|discord):/.test(s)), sections);
@@ -40,7 +42,13 @@ if (api >= 500) { skip('экран серий и плеер', `бекенд Anix
 await tapWatchable({ wait: 25000 });
 await tap('.btn-watch', { wait: 20000 });
 // серии — через источник (relay): на эмуляторе под нагрузкой (4 параллельно) бывает дольше 20 с
-check('экран серий: озвучки или серии загрузились', !!(await until(`${REAL('.type-row, .ep-row')} > 0`, 45000)));
+let loaded = await until(`${REAL('.type-row, .ep-row')} > 0`, 45000);
+if (!loaded) { // источник не ответил — «Повторить» на экране ошибки, иначе открыть серии заново (одна попытка)
+  if (await js(`!!document.querySelector('#viewport .screen:last-child .empty .btn')`)) await tap('#viewport .screen:last-child .empty .btn');
+  else { await back(); await tap('.btn-watch', { wait: 20000 }); }
+  loaded = await until(`${REAL('.type-row, .ep-row')} > 0`, 45000);
+}
+check('экран серий: озвучки или серии загрузились', !!loaded);
 if (await js(`${REAL('.type-row')} > 0`)) await tap('.type-row', { index: 0 });
 check('экран серий: серии загрузились', !!(await until(`${REAL('.ep-row')} > 0`, 45000)));
 await tap('.wchip-player');

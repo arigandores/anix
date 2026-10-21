@@ -188,6 +188,8 @@ const html = fs.readFileSync(indexFile, 'utf8');
 if (!html.includes('<meta charset="utf-8">')) throw new Error('sync-web: в index.html нет <meta charset="utf-8">');
 if (!html.includes('<link rel="stylesheet" href="/css/app.css">')) throw new Error('sync-web: в index.html нет app.css');
 fs.copyFileSync(path.join(root, 'android', 'web', 'android.css'), path.join(out, 'android', 'android.css'));
+// фоновая проверка уведомлений (NotifyJob.kt): страница без интерфейса
+for (const f of ['background.html', 'background.js']) fs.copyFileSync(path.join(root, 'android', 'web', f), path.join(out, 'android', f));
 fs.writeFileSync(indexFile, html
   .replace('<meta charset="utf-8">', '<meta charset="utf-8">\n  <script src="/android/server.js"></script>')
   .replace('<link rel="stylesheet" href="/css/app.css">', '<link rel="stylesheet" href="/css/app.css">\n  <link rel="stylesheet" href="/android/android.css">'));

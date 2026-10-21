@@ -1,10 +1,11 @@
 // Общие элементы интерфейса: релизы, карточки, комментарии и т. п.
-import { h, icon, bump, rollTo, flySend, nudge, iconButton, img, toast, dialog, sheet, prompt, confirmDialog } from '../ui.js';
+import { h, icon, bump, rollTo, flySend, nudge, iconButton, img, toast, dialog, sheet, prompt, confirmDialog, hintOnce } from '../ui.js';
 import { bellIcon, eyeIcon } from '../lottie.js';
 import { A, auth, prefetchRelease, dropPrefetchedRelease, patchCachedRelease } from '../api.js';
 import { t, tp } from '../store.js';
 import { navigate } from '../router.js';
 import { partyEntryButton } from '../party/ui.js';
+import { haptic, touch } from '../platform.js';
 
 // ---------- Форматирование ----------
 export function gradeText(g) {
@@ -235,6 +236,8 @@ export async function toggleFavorite(rel, onChanged, onTry) {
       await A.favAdd(rel.id);
       rel.is_favorite = true; rel.favorites_count = (rel.favorites_count || 0) + 1;
       toast(t('toast_added_to_favorites') !== 'toast_added_to_favorites' ? t('toast_added_to_favorites') : 'Добавлено в Избранное', { ok: true });
+      // первое избранное — где его потом найти (как в Anixart: подсказка у вкладки «Закладки» через 3 с)
+      if (touch) hintOnce('favorites-where', () => document.querySelector('#bottomnav .nav-item[data-tab="bookmarks"]'), 'Избранное и списки — во вкладке «Закладки»', { delay: 3000 });
     }
     dropPrefetchedRelease(rel.id);
     releaseChanged(rel); // сердце в строках списков
@@ -357,6 +360,7 @@ export function commentItem(c, { kind = 'release', release, onReply, onChanged, 
   const plus = h('button', { class: c.vote === 2 ? 'on' : '', title: 'Плюс' }, icon('ic_arrow_upward', 'sm'));
   async function vote(v) {
     if (!requireAuth()) return;
+    haptic();
     const old = c.vote || 0;
     const voteFn = kind === 'collection' ? A.collectionCommentVote : kind === 'article' ? A.articleCommentVote : A.releaseCommentVote;
     try {

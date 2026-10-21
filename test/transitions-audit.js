@@ -90,6 +90,7 @@ app.whenReady().then(async () => {
     ['notifications', '{}'], ['settings', '{}'], ['filter', '{}'], ['channels', '{}'],
     ['comments', '{ kind: "release", id: 40 }'], ['release-collections', '{ release: { id: 40 } }'], ['feed-search', '{}'],
     ['auth', '{}'], ['signup', '{}'], ['restore', '{}'],
+    ['collection-editor', '{}'], ['profile-settings', '{}'], ['notification-settings', '{}'], ['notification-releases', '{}'],
   ].filter(([n]) => !ONLY.length || ONLY.includes(n));
   const TABS = ['discover', 'bookmarks', 'feed', 'profile', 'ai', 'home'].filter((n) => !ONLY.length || ONLY.includes(n) || ONLY.includes('tabs'));
 

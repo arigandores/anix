@@ -6,12 +6,18 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Обновление приложения из релиза GitHub (Updater.kt): система спрашивает подтверждение -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Уведомления Anixart на телефоне (NotifyJob.kt): показывать и проверять после перезагрузки телефона -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- Ссылки наружу и «Поделиться» (Android 11+ видит только объявленные приложения) -->
     <queries>
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
         </intent>
         <intent>
             <action android:name="android.intent.action.SEND" />
@@ -34,10 +40,6 @@
             android:resizeableActivity="true"
             android:supportsPictureInPicture="true"
             android:windowSoftInputMode="adjustResize">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
             <!-- Приглашение в совместный просмотр: anixdesktop://watch/<код> (страница docs/watch) -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -45,6 +47,62 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="anixdesktop" />
             </intent-filter>
+            <!-- Ссылки на Anixart (public/js/links.js): аниме, коллекция, профиль, канал, статья — те же адреса, что
+                 открывает приложение Anixart. Без autoVerify: домены не наши — система предложит выбрать приложение
+                 (или «Открывать поддерживаемые ссылки» в настройках приложения) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:scheme="http" />
+                <data android:host="anixart.tv" />
+                <data android:host="mirror.anixart.tv" />
+                <data android:host="beta.anixart.tv" />
+                <data android:host="anixart.app" />
+                <data android:host="mirror.anixart.app" />
+                <data android:host="anixartapp.com" />
+                <data android:host="mirror.anixartapp.com" />
+                <data android:host="anixart-app.com" />
+                <data android:host="mirror.anixart-app.com" />
+                <data android:pathPrefix="/release/" />
+                <data android:pathPrefix="/collection/" />
+                <data android:pathPrefix="/profile/" />
+                <data android:pathPrefix="/channel/" />
+                <data android:pathPrefix="/article/" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="anixart" />
+            </intent-filter>
         </activity>
+        <!-- Значок на рабочем столе (настройки → Внешний вид → Значок приложения, MainActivity.setIcon): включён один -->
+        <activity-alias android:name=".IconDefault" android:targetActivity=".MainActivity" android:exported="true"
+            android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:enabled="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".IconLight" android:targetActivity=".MainActivity" android:exported="true"
+            android:icon="@mipmap/ic_launcher_light" android:roundIcon="@mipmap/ic_launcher_light" android:enabled="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".IconCarmine" android:targetActivity=".MainActivity" android:exported="true"
+            android:icon="@mipmap/ic_launcher_carmine" android:roundIcon="@mipmap/ic_launcher_carmine" android:enabled="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <service
+            android:name=".NotifyJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
     </application>
 </manifest>

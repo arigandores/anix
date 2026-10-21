@@ -142,7 +142,8 @@ async function googleBrowserLogin(label) {
 }
 
 // Токен соцсети: окно Electron (Google — системный браузер) → обмен на сервере → { field, token, email? }
-async function socialToken(provider, label) {
+// (и привязка соцсети к аккаунту в настройках профиля, profile-settings.js)
+export async function socialToken(provider, label) {
   if (provider === 'google') return googleBrowserLogin(label);
   const loading = dialog({
     title: `Вход через ${label}`,

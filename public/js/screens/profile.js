@@ -1,7 +1,7 @@
 // Профиль и подэкраны (друзья, списки, оценки, комментарии)
 import { h, icon, actionIcon, iconButton, growBars, img, toast, tabs, pagedList, emptyView, sheet, confirmDialog, skeleton, markAppeared, morph } from '../ui.js';
 import { A, api, auth, remembered } from '../api.js';
-import { t, tp } from '../store.js';
+import { t, tp, prefs } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
 import { mainToolbar, backToolbar, relTime, digits, needAuthView, releaseRow, commentItem, collectionCard, avatarEl, profileName, report, openRelease } from './common.js';
 import { BOOKMARK_TABS, bookmarkReleaseTab } from './bookmarks.js';
@@ -9,9 +9,34 @@ import { articleCard } from './feed.js';
 
 function watchedTime(min) {
   if (!min) return '0 мин.';
+  if (prefs.get('WATCHED_TIME_FORMAT') === 'hours' && min >= 60) { const all = Math.floor(min / 60); return `~ ${all} ${['час', 'часа', 'часов'][pl(all)]}`; }
   const d = Math.floor(min / 1440); const hh = Math.floor((min % 1440) / 60);
   if (!d && !hh) return `${min} мин.`;
   return `~ ${d ? `${d} ${['день', 'дня', 'дней'][pl(d)]} ` : ''}${hh} ${['час', 'часа', 'часов'][pl(hh)]}`;
+}
+// Динамика просмотра (как в Anixart): серий за день — 8 дней подряд по последний день с просмотрами, дни без
+// просмотров — «0» и короткий столбик (а не пропуск: один день не висит посреди пустой карточки). Число — над каждым
+// столбцом (на телефоне нет наведения), дата — под ним наискосок; столбцы узкие, со скруглённым верхом, с промежутками
+const DYN_DAYS = 8;
+const BAR_MAX = 120; // px — самый высокий столбец
+export function watchDynamics(dyn) {
+  const dayStart = (ts) => { const d = new Date(ts * 1000); d.setHours(0, 0, 0, 0); return d; };
+  const counts = new Map();
+  for (const d of dyn) { const k = dayStart(d.timestamp).getTime(); counts.set(k, (counts.get(k) || 0) + (d.count || 0)); }
+  const last = new Date(Math.max(...counts.keys()));
+  const days = Array.from({ length: DYN_DAYS }, (_, i) => {
+    const d = new Date(last); d.setDate(d.getDate() - (DYN_DAYS - 1 - i));
+    return { date: d, count: counts.get(d.getTime()) || 0 };
+  });
+  const max = Math.max(1, ...days.map((d) => d.count));
+  const label = (d) => `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const episodes = (n) => `${n} ${['серия', 'серии', 'серий'][pl(n)]}`;
+  return h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Динамика просмотра серий'),
+    h('div', { class: 'wdyn', role: 'img', 'aria-label': days.map((d) => `${label(d.date)}: ${episodes(d.count)}`).join(', ') },
+      days.map((d) => h('div', { class: 'wdyn-col', title: `${label(d.date)}: ${episodes(d.count)}` },
+        h('span', { class: 'wdyn-n' }, String(d.count)),
+        h('div', { class: `wdyn-bar ${d.count ? '' : 'zero'}`, style: d.count ? { height: `${Math.max(16, Math.round((d.count / max) * BAR_MAX))}px` } : null }),
+        h('span', { class: 'wdyn-d' }, label(d.date))))));
 }
 function pl(n) { const a = n % 100; const b = n % 10; if (a > 10 && a < 20) return 2; if (b > 1 && b < 5) return 1; if (b === 1) return 0; return 2; }
 
@@ -97,7 +122,7 @@ async function profileView(id, { fromMain = false, blog = null } = {}) {
     if (p.is_me_blocked) { target.append(h('div', { class: 'rel-note', style: { margin: '0 24px' } }, 'Пользователь внес Вас в свой блоклист. Вы не можете просматривать информацию этого профиля.')); return; }
     if (p.is_private && !p.is_my_profile) target.append(h('div', { class: 'rel-note', style: { margin: '0 24px 10px' } }, 'У пользователя установлены настройки приватности. Некоторая информация для Вас может быть недоступна.'));
 
-    const body = h('div', { class: 'container', style: { padding: '0 24px 40px' } });
+    const body = h('div', { class: 'container', style: { padding: '0 var(--page-pad) 40px' } });
     // Друзья
     body.append(h('div', { class: 'card', style: { cursor: 'pointer' }, onclick: () => navigate('friends', { profile: p }) },
       h('div', { class: 'row' }, icon('ic_person_add'), h('b', { class: 'grow' }, p.friend_count ? `${p.friend_count} ${tp('friends', p.friend_count)}` : 'Нет друзей'),
@@ -123,6 +148,8 @@ async function profileView(id, { fromMain = false, blog = null } = {}) {
           h('button', { class: 'btn btn-tonal', onclick: () => navigate('profile-comments', { profile: p }) }, `Комментарии ${p.comment_count ?? ''}`),
           h('button', { class: 'btn btn-tonal', onclick: () => navigate('profile-collections', { profileId: p.id }) }, `Коллекции ${p.collection_count ?? ''}`))));
     }
+    const dyn = (p.watch_dynamics || []).filter((d) => d && d.timestamp);
+    if (dyn.length && !p.is_stats_hidden) body.append(watchDynamics(dyn));
     if ((p.votes || []).length) {
       body.append(h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Оценки релизов'),
         h('div', { class: 'screens', style: { gap: '12px' } }, p.votes.map((rel) => h('div', { class: 'release-card', style: { width: '110px', flex: 'none' }, onclick: () => openRelease(rel) },
@@ -152,6 +179,9 @@ function moreSheet(p) {
   const base = (window.__toggles && window.__toggles.baseUrl) || 'https://anixart-app.com/';
   sheet(p.login, [
     { label: 'История никнейма', icon: 'ic_history', onClick: () => navigate('login-history', { profile: p }) },
+    // «Поделиться» — системное меню (телефон), как на странице аниме; без него — в буфер
+    navigator.share ? { label: 'Поделиться', icon: 'ic_export_variant', onClick: () => navigator.share({ text: `${p.login}
+${base}profile/${p.id}` }).catch(() => {}) } : null,
     { label: 'Скопировать ссылку', icon: 'ic_link', onClick: () => { navigator.clipboard?.writeText(`${base}profile/${p.id}`); toast('Скопировано', { ok: true }); } },
     !p.is_my_profile ? { label: 'Пожаловаться', icon: 'ic_alert', onClick: () => report('profile', p.id) } : null,
     !p.is_my_profile && auth.loggedIn ? (p.is_blocked
@@ -216,7 +246,7 @@ const VOTE_SORTS = [[1, 'Сначала последние'], [2, 'Сначал�
 registerScreen('profile-votes', ({ profile }) => {
   let sort = 1; const holder = h('div');
   const build = () => holder.replaceChildren(
-    h('div', { class: 'row', style: { padding: '8px 20px' } }, h('div', { class: 'grow' }),
+    h('div', { class: 'row', style: { padding: '8px var(--gutter)' } }, h('div', { class: 'grow' }),
       h('button', { class: 'chip', onclick: () => sheet('Сортировка', VOTE_SORTS.map(([v, l]) => ({ label: l, checked: v === sort, onClick: () => { sort = v; build(); } }))) }, actionIcon('ic_sort', 'sm'), VOTE_SORTS.find((x) => x[0] === sort)[1])),
     pagedList({ load: (page) => A.votedReleases(profile.id, page, sort), render: (r) => { const row = releaseRow(r); row.querySelector('.info').append(h('div', { style: { color: 'var(--orange)' } }, '★'.repeat(r.my_vote || 0), r.voted_at ? h('span', { class: 'muted', style: { marginLeft: '8px', fontSize: '12px' } }, relTime(r.voted_at)) : null)); return row; }, empty: () => emptyView('Оценённых релизов нет') }));
   build();

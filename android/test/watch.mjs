@@ -1,7 +1,7 @@
 // Главный сценарий, как пальцем: каталог → аниме → «Смотреть» → озвучка → серия → встроенный плеер играет.
 // В плеере: горизонталь без системных полос, экран не гаснет; тап показывает и прячет кнопки (не пауза), пауза — кнопкой;
 // «Назад» закрывает плеер — снова вертикаль, полосы на месте; место в серии запомнено и переживает перезапуск
-import { ensureDevice, install, launch, js, until, check, skip, done, REAL, tap, back, sleep, windowState, screenshot, sh, pageErrors, tapWatchable } from './_device.mjs';
+import { ensureDevice, install, launch, js, until, check, skip, done, REAL, tap, back, sleep, windowState, screenshot, sh, pageErrors, tapWatchable, persist } from './_device.mjs';
 
 await ensureDevice();
 install();
@@ -14,13 +14,17 @@ await tapWatchable();
 check('страница аниме: кнопка «Смотреть»', !!(await until(`${REAL('.btn-watch')}`, 20000)));
 const title = await js(`document.querySelector('.appbar')?.textContent || ''`);
 await tap('.btn-watch');
-check('первый просмотр: список озвучек', !!(await until(`${REAL('.type-row')} > 0`, 20000)));
+// первый просмотр: список озвучек; у аниме одна озвучка — сразу её серии (выбирать нечего)
+await until(`${REAL('.type-row, .ep-row')} > 0`, 20000);
+const single = await js(`${REAL('.type-row')} === 0 && ${REAL('.ep-row')} > 0`);
+check(single ? 'первый просмотр: озвучка одна — сразу серии' : 'первый просмотр: список озвучек', single || await js(`${REAL('.type-row')} > 0`));
 
 // Озвучка: первая, у которой серия запускается (источник бывает недоступен из этой страны — тогда следующая)
-const voices = await js(`document.querySelectorAll('.type-row').length`);
+const voices = single ? 1 : await js(`document.querySelectorAll('.type-row').length`);
 let played = null; let voice = '';
 for (let i = 0; i < Math.min(voices, 4) && !played; i++) {
-  if (i === 0) { voice = await js(`document.querySelectorAll('.type-row')[0].textContent`); await tap('.type-row', { index: 0 }); }
+  if (i === 0 && single) voice = await js(`document.querySelector('.wchip')?.textContent || ''`);
+  else if (i === 0) { voice = await js(`document.querySelectorAll('.type-row')[0].textContent`); await tap('.type-row', { index: 0 }); }
   else {
     await tap('.wchip', { index: 0 });
     if (!(await until(`${REAL('.pop-item')} > ${i}`, 8000))) break;
@@ -104,7 +108,7 @@ check('на экране серий — где остановились', !!(awa
 screenshot('watch-episodes-after');
 
 // Перезапуск (свернули → закрыли из «Недавних»): на странице аниме «Продолжить» с того же места
-sh('input keyevent 3'); await sleep(2000);
+await persist(); // свернули — позиция записана на диск (под нагрузкой 2 с не хватало)
 await launch();
 await tapWatchable({ wait: 25000 });
 const cont = await until(`(() => { const b = document.querySelector('.btn-watch'); return b && /Продолжить/.test(b.textContent) ? b.textContent : null; })()`, 20000);

@@ -11,7 +11,7 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 export const PKG = 'com.arigandores.anix';
 export const PORT = 38371; // LocalServer: постоянный порт (localStorage привязан к адресу)
 const SDK = process.env.ANDROID_HOME || path.join(process.env.LOCALAPPDATA || '', 'Android', 'Sdk');
-const ADB = fs.existsSync(path.join(SDK, 'platform-tools', 'adb.exe')) ? path.join(SDK, 'platform-tools', 'adb.exe') : 'adb';
+export const ADB = fs.existsSync(path.join(SDK, 'platform-tools', 'adb.exe')) ? path.join(SDK, 'platform-tools', 'adb.exe') : 'adb';
 const AVD = process.env.ANIX_AVD || 'Anix_Test';
 const APK = path.join(ROOT, 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
 export const SHOTS = path.join(ROOT, 'android', 'test', 'shots');
@@ -71,9 +71,12 @@ export async function ensureDevice() {
   const want = { font_scale: process.env.ANIX_FONT_SCALE || '1.0', user_rotation: process.env.ANIX_LANDSCAPE === '1' ? '1' : '0' };
   let changed = false;
   for (const [k, v] of Object.entries(want)) if (sh(`settings get system ${k}`).trim() !== v) { sh(`settings put system ${k} ${v}`); changed = true; }
+  // применилось — экран повёрнут как надо (а не «прошло 3 секунды»: медленный эмулятор не успевал). Настройка уже стоит,
+  // а экран не повёрнут (только что загруженный эмулятор её не применил) — поставить заново
+  const rotated = () => new RegExp(`mRotation=${want.user_rotation}\\b`).test(sh('dumpsys window | grep -E "mRotation="'));
+  if (!changed && !rotated()) { sh(`settings put system user_rotation ${want.user_rotation === '1' ? '0' : '1'}`); sh(`settings put system user_rotation ${want.user_rotation}`); changed = true; }
   if (changed) {
-    // применилось — экран повёрнут как надо (а не «прошло 3 секунды»: медленный эмулятор не успевал)
-    await waitFor(() => new RegExp(`mRotation=${want.user_rotation}\\b`).test(sh('dumpsys window | grep -E "mRotation="')), 15000, 500);
+    await waitFor(rotated, 30000, 500);
     await sleep(1500);
   }
   // Подсказка системы «Viewing full screen» при первом плеере без полос забирает касания и «Назад», пока не нажмут «Got it»:
@@ -150,7 +153,8 @@ async function connect() {
   devtoolsPort = Number(adb('forward', 'tcp:0', `localabstract:webview_devtools_remote_${p}`).trim());
   // страниц приложения бывает две (пересоздали окно — старая ещё в списке): берём ту, что отвечает, с конца списка
   const ok = await waitFor(async () => {
-    const list = (await (await fetch(`${devtools()}/json`)).json()).filter((t) => t.type === 'page' && t.url.startsWith(`http://127.0.0.1:${PORT}`));
+    // скрытая страница фоновой проверки уведомлений (NotifyJob.kt) — не окно приложения
+    const list = (await (await fetch(`${devtools()}/json`)).json()).filter((t) => t.type === 'page' && t.url.startsWith(`http://127.0.0.1:${PORT}`) && !t.url.includes('/android/background'));
     for (const target of list.reverse()) if (await attach(target)) return true;
     return false;
   }, 25000, 500);
@@ -179,7 +183,12 @@ export function cdp(method, params = {}, ms = 30000) {
 }
 // Выполнить выражение на странице (с await); исключение страницы — ошибка теста
 export async function js(expr) {
-  const r = await cdp('Runtime.evaluate', { expression: `(async () => (${expr}))()`, awaitPromise: true, returnByValue: true, userGesture: true });
+  // «Promise was collected» и т. п. — ошибка DevTools: в тексте — какое выражение ждали
+  const r = await cdp('Runtime.evaluate', { expression: `(async () => (${expr}))()`, awaitPromise: true, returnByValue: true, userGesture: true })
+    .catch((e) => {
+      const recent = events.slice(-8).map((m) => m.method + (m.params?.context?.origin ? ' ' + m.params.context.origin : '') + (m.params?.executionContextId ? ' #' + m.params.executionContextId : '')).join(', ');
+      throw new Error(`${e.message} — при ${String(expr).replace(/\s+/g, ' ').slice(0, 120)}; события: ${recent}`);
+    });
   if (r.exceptionDetails) throw new Error(`страница: ${r.exceptionDetails.exception?.description || r.exceptionDetails.text}`);
   return r.result.value;
 }
@@ -196,6 +205,9 @@ export async function launch({ fresh = false, link = null } = {}) {
   sh(link ? `am start -W -a android.intent.action.VIEW -d '${link}' ${PKG}` : `am start -W -n ${PKG}/.MainActivity`);
   await connect();
   await until('document.readyState === "complete" && document.querySelector(".nav-item")', 20000);
+  // первый экран показан и принимает нажатия: пока он ждёт показа, router.js держит viewport inert — под нагрузкой
+  // (4 эмулятора) дольше секунды, и нажатие сразу после запуска пропадало
+  await until('!!document.body.dataset.screen && !document.getElementById("viewport").inert', 20000);
 }
 // Переподключиться к той же странице (после поворота, PiP, возврата из фона)
 export async function reattach() { if (ws) { try { ws.close(); } catch { /* закрыт */ } } ws = null; await connect(); }

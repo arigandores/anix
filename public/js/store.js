@@ -57,6 +57,12 @@ const DEFAULTS = {
   AUDIO_SURROUND: false,
   DISCORD_PRESENCE: false, // статус «Смотрит …» в Discord (discord.js): включает сам пользователь в настройках
   SELECTED_PLAYER_SPEED: 3,
+  PHONE_NOTIFY: true, // телефон: уведомления Anixart системными (push.js, NotifyJob.kt)
+  PLAYER_REWIND_TIME: 85, // кнопка «перемотать опенинг», когда у серии нет меток (как в Anixart: рекомендуется 1:25)
+  PLAYER_LANDSCAPE_ONLY: true, // телефон: плеер только горизонтально; выкл — поворачивается за телефоном
+  WATCHED_TIME_FORMAT: 'days', // время просмотра в профиле: 'days' (~ 3 дня 4 часа) | 'hours' (~ 76 часов)
+  COMPACT_NAV: false, // телефон: нижнее меню без подписей
+  PLAYER_FIT: 'contain', // кадр во встроенном плеере на телефоне: 'contain' (вписать) | 'cover' (заполнить) | 'fill' (растянуть)
   AUTO_PLAY: false,
   SELECTED_VIDEO_QUALITY_V2: 0, // приоритет качества во встроенном плеере: 0 — максимально доступное
   IS_REMEMBERING_TYPE_SOURCE: true,

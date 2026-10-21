@@ -18,6 +18,8 @@
     "test:all": "node test/run-all.js",
     "test:e2e": "electron test/e2e.js",
     "test:ui": "electron test/ui-audit.js && electron test/contrast.js && electron test/skeleton-match.js && electron test/layout-audit.js",
+    "build:android": "cd android && gradlew assembleRelease",
+    "test:android": "node android/test/run-all.mjs",
     "test:ai": "electron test/ai-chat.js && electron test/ai-stream.js && electron test/ai-actions.js && electron test/ai-memory.js && electron test/ai-config.js && electron test/ai-scroll.js && electron test/ai-away.js && electron test/ai-stop.js"
   },
   "build": {

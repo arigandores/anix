@@ -25,14 +25,15 @@ app.whenReady().then(async () => {
     const router = await import('/js/router.js');
     const raf = () => new Promise((ok) => requestAnimationFrame(ok));
     const vis = (el) => { let o = 1; for (let n = el; n; n = n.parentElement) o *= Number(getComputedStyle(n).opacity); return o; };
-    const HEAD = '.appbar, .tabbar:not(.static)';
+    const HEAD = '.appbar, .tabbar:not(.static), .wchips'; // всё, что прилипает сверху (чипы над списком серий — тоже)
     const IGNORE = /^(sk-|lt-|spin|ai-dot|fade|pop|pm-in|bubble|seek)/;
     // снимает переход: kick() — действие, ms — сколько смотреть
     window.__watch = async (kick, ms = 1400, { same = false } = {}) => {
       const before = same ? null : document.querySelector('#viewport .screen:last-child');
       const r = { hdr: 1, hdrMove: 0, enterMin: 1, dip: 1, extra: new Set(), reenter: false, dir: null };
       const navAt = performance.now(); kick();
-      let hx = null; let entered = false; let full = false; let enterStart = null;
+      // hx — где была шапка в первом кадре (у чипов серий свой левый край — отдельно); скелетон → экран — тот же ключ
+      const hx = new Map(); let entered = false; let full = false; let enterStart = null;
       while (performance.now() - navAt < ms) {
         await raf();
         const s = document.querySelector('#viewport .screen:last-child');
@@ -41,7 +42,7 @@ app.whenReady().then(async () => {
         for (const b of s.querySelectorAll(HEAD)) {
           if (!b.getClientRects().length) continue;
           r.hdr = Math.min(r.hdr, vis(b));
-          const x = b.getBoundingClientRect().left; if (hx === null) hx = x; r.hdrMove = Math.max(r.hdrMove, Math.abs(x - hx));
+          const x = b.getBoundingClientRect().left; const k = b.matches('.wchips') ? 'wchips' : 'bar'; if (!hx.has(k)) hx.set(k, x); r.hdrMove = Math.max(r.hdrMove, Math.abs(x - hx.get(k)));
         }
         const anims = s.getAnimations({ subtree: true }).filter((a) => !(a instanceof CSSTransition) && a.playState === 'running');
         let entering = false;
@@ -83,7 +84,7 @@ app.whenReady().then(async () => {
   const P1 = '{ id: 1 }';
   const prof = '{ profile: { id: 1 } }';
   const FWD = [
-    ['release', '{ id: 40 }'], ['search', '{ query: "Мастер Муси" }'], ['profile', P1], ['profile-lists', prof],
+    ['release', '{ id: 40 }'], ['episodes', '{ release: { id: 40 } }'], ['search', '{ query: "Мастер Муси" }'], ['profile', P1], ['profile-lists', prof],
     ['profile-comments', prof], ['profile-votes', prof], ['friends', prof], ['profile-collections', '{ profileId: 1 }'],
     ['collections', '{}'], ['top', '{}'], ['watching', '{}'], ['recommendations', '{}'], ['schedule', '{}'],
     ['notifications', '{}'], ['settings', '{}'], ['filter', '{}'], ['channels', '{}'],

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Буква «A» с треугольником — как build/icon.svg. Видимая часть адаптивной иконки (72 dp из 108) = квадрат 512 из SVG:
+     область 768×768 со сдвигом 128 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp" android:viewportWidth="768" android:viewportHeight="768">
+    <group android:translateX="204" android:translateY="204" android:scaleX="0.703" android:scaleY="0.703">
+        <path android:pathData="M108,444 L256,76 L404,444" android:strokeWidth="76"
+            android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000">
+            <aapt:attr name="android:strokeColor">
+                <gradient android:type="linear" android:startX="108" android:startY="76" android:endX="404" android:endY="444">
+                    <item android:offset="0" android:color="#FFFF7A59" />
+                    <item android:offset="0.55" android:color="#FFF04E5C" />
+                    <item android:offset="1" android:color="#FFB9387E" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <path android:pathData="M226,300 L226,386 L296,343 Z" android:fillColor="#FFFFFFFF"
+            android:strokeColor="#FFFFFFFF" android:strokeWidth="28" android:strokeLineJoin="round" />
+    </group>
+</vector>

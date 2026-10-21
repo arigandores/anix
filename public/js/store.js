@@ -1,6 +1,8 @@
 // Строки приложения (strings.json), настройки (localStorage)
 // и локальная БД просмотра: отметки серий и последняя просмотренная серия.
 
+import { has } from './platform.js';
+
 let R = { strings: {}, plurals: {}, arrays: {} };
 export async function loadStrings() {
   const r = await fetch('/strings.json');
@@ -109,6 +111,8 @@ try {
     for (const k of ['IS_REMEMBERING_SKIP_THIRD_PARTY_PLATFORM', 'IS_ASKED_SKIP_THIRD_PARTY_PLATFORM', 'SEARCH_VIDEO_TPP', 'COUNT_SKIP_STREAMING_PLATFORM']) localStorage.removeItem(PREFIX + k);
   }
 } catch { /* storage недоступен */ }
+// Стороннего плеера на Android нет (platform.js) — вместо него встроенный
+if (!has.externalPlayer) for (const k of ['SELECTED_PLAYER', 'LAST_SELECTED_PLAYER']) if (prefs.get(k) === 3) prefs.set(k, 2);
 
 // по умолчанию — тёмная; светлую или «как в системе» выбирают в настройках (выбор хранится в anixart.theme)
 export const DEFAULT_THEME = 'dark';
@@ -160,6 +164,19 @@ export const db = {
     const out = {};
     for (const e of Object.values(this.episodes())) if (e.releaseId === r && e.sourceId === s && e.isWatched) out[e.position] = e.playbackPosition || 0;
     return out;
+  },
+  // Самая дальняя серия после pos, отмеченная просмотренной не здесь — пришла с сервера (смотрели на телефоне) или
+  // отмечена вручную — и не раньше since (сек: время последней серии; отметку старше её — пересмотр с начала — не
+  // берём). Серии, которые запускали здесь (startedAt, место, savedAt), не в счёт. Отметки без времени (до markedAt) —
+  // только в источнике последней серии (sourceId): так приходят отметки с сервера, а свои в другой озвучке — нет
+  markedAfter(r, pos, since, sourceId) {
+    let best = 0;
+    for (const e of Object.values(this.episodes())) {
+      if (e.releaseId !== r || !e.isWatched || e.position <= pos || e.startedAt || e.savedAt || e.playbackPosition || e.finished) continue; // место или −1 («до конца») — смотрели здесь
+      if (e.markedAt != null ? e.markedAt < since : e.sourceId !== sourceId) continue;
+      if (e.position > best) best = e.position;
+    }
+    return best || null;
   },
   // Отметки всего аниме — в любой озвучке и источнике (номер серии один и тот же)
   watchedOfRelease(r) {

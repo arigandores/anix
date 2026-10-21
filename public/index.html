@@ -13,10 +13,16 @@
       try { t = localStorage.getItem('anixart.theme') || 'dark'; } catch (e) {}
       var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
       document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      // своя шапка окна (electron/main.js, js/titlebar.js): место под кнопки окна — с первого кадра, без сдвига
+      if (window.anixartNative && window.anixartNative.titlebar) {
+        document.documentElement.classList.add('tb');
+        if (!matchMedia('(max-width: 720px)').matches) document.documentElement.classList.add('tb-inline');
+      }
     })();
   </script>
 </head>
 <body>
+  <div id="titlebar" aria-hidden="true"></div>
   <div id="app">
     <nav id="rail" aria-label="Навигация"></nav>
     <div id="main">

@@ -1,10 +1,11 @@
-// Обновление приложения (только Electron, electron/updater.js). При запуске — проверка; вышла новая версия — окно
+// Обновление приложения (Electron — electron/updater.js; Android — Updater.kt через android/web/shim.js). При запуске — проверка; вышла новая версия — окно
 // с «Что нового» из текста релиза. «Обновить» — скачивание с прогрессом, затем приложение закрывается, ставит новую
 // версию поверх и запускается снова. «Пропустить эту версию» — при запуске её больше не предлагаем (следующую —
 // снова; «Проверить обновления» в настройках предлагает и пропущенную). Первый запуск новой версии — тост.
 import { h, toast, dialog } from './ui.js';
 import { prefs } from './store.js';
 import { markdown } from './screens/ai.js';
+import { ANDROID, APP_NAME } from './platform.js';
 
 const U = () => window.anixartNative?.update || null;
 const RELEASES = 'https://github.com/arigandores/anix-desktop/releases/latest';
@@ -71,7 +72,8 @@ export function updateDialog(info) {
     d.box.querySelector('.dialog-title').textContent = `Обновление до ${info.version}`;
     const fill = h('div', { class: 'bench-fill' });
     const label = h('div', { class: 'bench-label' }, 'Подключение…');
-    body.replaceChildren(h('p', null, `Скачиваем новую версию. Потом приложение закроется, установит новую версию и откроется снова — вход и настройки сохранятся.`),
+    body.replaceChildren(h('p', null, ANDROID ? 'Скачиваем новую версию. Потом Android спросит, обновить ли приложение, — вход и настройки сохранятся.'
+      : 'Скачиваем новую версию. Потом приложение закроется, установит новую версию и откроется снова — вход и настройки сохранятся.'),
       h('div', { class: 'bench-bar' }, fill), label);
     actions.replaceChildren(button('Отмена', () => U().cancel()));
     off = U().onProgress((p) => {
@@ -81,9 +83,17 @@ export function updateDialog(info) {
     const r = await U().download().catch((e) => ({ ok: false, error: e.message }));
     off(); off = null; downloading = false;
     if (r.ok) {
-      fill.style.width = '100%'; label.textContent = 'Устанавливаем — приложение перезапустится…';
-      actions.replaceChildren();
-      U().install();
+      fill.style.width = '100%'; label.textContent = ANDROID ? 'Подтвердите обновление в окне Android…' : 'Устанавливаем — приложение перезапустится…';
+      // Android: отказались в системном окне или установка не прошла — сказать и дать повторить (на ПК приложение уже закрылось)
+      const installNow = async () => {
+        actions.replaceChildren();
+        body.replaceChildren(h('div', { class: 'bench-bar' }, fill), label); // повтор — снова «подтвердите…», а не прошлая ошибка
+        const ir = await U().install();
+        if (!ir || ir.ok !== false) return;
+        body.replaceChildren(h('p', null, `Обновление не установлено${ir.error ? `: ${ir.error}` : ''}.`));
+        actions.replaceChildren(button('Закрыть', () => d.close()), button('Установить', installNow, true));
+      };
+      installNow();
       return;
     }
     if (r.canceled) { d.close(); toast('Обновление отменено'); return; }
@@ -91,7 +101,7 @@ export function updateDialog(info) {
     body.replaceChildren(h('p', null, `${failReason(r.error)} Попробуйте ещё раз или скачайте установщик со страницы релиза.`));
     actions.replaceChildren(button('Скачать вручную', () => { window.open(RELEASES, '_blank'); d.close(); }), button('Закрыть', () => d.close()), button('Повторить', download, true));
   };
-  body.append(h('div', { class: 'update-ver' }, `Anix Desktop ${info.version} · у вас ${info.current}`), notesView(info.notes),
+  body.append(h('div', { class: 'update-ver' }, `${APP_NAME} ${info.version} · у вас ${info.current}`), notesView(info.notes),
     h('label', { class: 'row update-skip' }, skip, 'Пропустить эту версию'));
   actions.append(button('Позже', () => d.close()), button('Обновить', download, true));
   return d;
@@ -110,7 +120,7 @@ export async function startupUpdateCheck() {
   try {
     const { appVersion } = await (await fetch('/__info')).json();
     const seen = prefs.get('APP_VERSION');
-    if (seen !== appVersion) { prefs.set('APP_VERSION', appVersion); if (seen) toast(`Anix Desktop обновлён до ${appVersion}`, { ok: true, ms: 4000 }); }
+    if (seen !== appVersion) { prefs.set('APP_VERSION', appVersion); if (seen) toast(`${APP_NAME} обновлён до ${appVersion}`, { ok: true, ms: 4000 }); }
   } catch { /* без тоста */ }
   let info;
   try { info = await checkUpdate(); } catch { return; } // нет сети или GitHub — молча, до следующего запуска

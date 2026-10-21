@@ -25,6 +25,11 @@ contextBridge.exposeInMainWorld('anixartNative', {
   clearWebCache: () => ipcRenderer.invoke('clear-web-cache'),
   // Окно приложения — развернуть и вперёд (возврат из «Картинки в картинке»)
   focusWindow: () => ipcRenderer.invoke('focus-window'),
+  // Своя шапка окна (electron/main.js): есть ли она, цвета системных кнопок окна, вход и выход из полноэкранного режима
+  titlebar: process.argv.includes('--anix-titlebar') ? {
+    setColors: (o) => ipcRenderer.invoke('titlebar-colors', o),
+    onFullscreen: (cb) => { ipcRenderer.on('fullscreen', (_e, on) => cb(on)); },
+  } : null,
   // Приглашения anixdesktop://watch/<код> (electron/main.js): та, с которой запустили приложение, и новые
   pendingDeepLink: () => ipcRenderer.invoke('deep-link-pending'),
   onDeepLink: (cb) => { ipcRenderer.on('deep-link', (_e, url) => cb(url)); },

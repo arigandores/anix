@@ -11,6 +11,7 @@
 // в отдельную программу, результат возвращается общей текстурой (VideoFrame). Если TensorRT не установлен или
 // сломался — те же модели считает WebGPU-движок.
 import { getGpu, loadModel, createUpscaler } from './engine.js';
+import { has } from '../platform.js';
 import { createPresenter } from './present.js';
 import { MODELS, LEVELS, TIER_LABEL, SECOND, styled, tierOf, autoList, modelName, sourceClass } from './catalog.js';
 import { native, trtStatus, trtInstall, trtEnabled, trtUsable, gpuKey, benchDone, measuredMs, learn } from './bench.js';
@@ -77,7 +78,7 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
 
   let gpu = null; let gpuError = null; let presenter = null; let key = '';
   let tput = 0; // MAC/с WebGPU-движка (прикидка до бенчмарка)
-  let mode = prefs.get('UPSCALE_MODE') || 'off';
+  let mode = has.upscale ? prefs.get('UPSCALE_MODE') || 'off' : 'off'; // на Android улучшения нет (platform.js)
   let target = prefs.get('UPSCALE_TARGET') || 'auto';
   let tier = null; // уровень текущей модели (для «Авто» — уровень выбранного пресета)
   let autoCap = 0; // «Авто»: не выше этого места в рейтинге (растёт, когда модель не успела на реальном видео)
@@ -215,7 +216,9 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
       stages = built; stagesKey = k; samples = []; lastMs = 0; overloadSince = 0;
       // старые буферы освобождаем после того, как видеокарта закончит с ними
       if (old.length) dropStages(old, built.some((s) => s.trt));
-      canvas.hidden = !stages.length || holdOriginal;
+      // показывает слой первая отрисовка (reveal): в скрытом холсте — старый кадр в старом месте (мини-плеер
+      // развернули — а TensorRT первый кадр ещё считает), показать его сразу — мелькнёт
+      if (!stages.length || holdOriginal) canvas.hidden = true;
       renderNow();
     } catch (e) {
       console.warn('[upscale] сборка', ids.join('+'), e && e.message);
@@ -338,6 +341,7 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
       const t0 = performance.now(); const solo = inflight === 0;
       inflight++;
       device.queue.submit([enc.finish()]); if (fromFrame) drawn++;
+      reveal();
       device.queue.onSubmittedWorkDone().then(() => {
         inflight--;
         if (fromFrame && solo) measure(performance.now() - t0, t0);
@@ -381,8 +385,13 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
       }
       presenter.draw(enc, video, { color, colorFrame, luma, split });
       device.queue.submit([enc.finish()]);
+      reveal();
       if (after) device.queue.onSubmittedWorkDone().then(after);
     } catch (e) { if (!noFrame(e)) fail(e); }
+  }
+  // слой виден только с кадром, нарисованным по текущему размеру
+  function reveal() {
+    if (canvas.hidden && stages.length && !holdOriginal) canvas.hidden = false;
   }
 
   // --- Замер и защита от рывков ---
@@ -474,6 +483,7 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
     get sharpness() { return sharpness(); },
     displayHeight,
     setMode(m) {
+      if (!has.upscale) return;
       mode = m; tier = null; resetCap(); prefs.set('UPSCALE_MODE', m);
       if (m === 'off') { split = 0; }
       update();
@@ -514,7 +524,7 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
     // размер области сменился не от окна (мини-плеер свернули/развернули): слой ставим по новому размеру сразу,
     // до отрисовки — иначе до следующего кадра видео он мелькает в старом месте
     relayout() { renderNow(); },
-    setHoldOriginal(v) { holdOriginal = v; canvas.hidden = v || !stages.length; if (!v) renderNow(); },
+    setHoldOriginal(v) { holdOriginal = v; if (v || !stages.length) canvas.hidden = true; else renderNow(); },
     // для меню: сколько уровень займёт при текущем исходнике. load: 'ok' — с запасом, 'heavy' — успевает, но
     // видеокарта почти без запаса, 'no' — не успеет (кадры будут пропадать), null — ещё не знаем
     tierInfo(t) {

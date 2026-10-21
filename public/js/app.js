@@ -6,6 +6,8 @@ import './screens/index.js';
 import { initDragScroll } from './dragscroll.js';
 import { preloadLottie, navIcon } from './lottie.js';
 import { startupUpdateCheck } from './update.js';
+import { initTitlebar } from './titlebar.js';
+import { has } from './platform.js';
 
 const NAV = [
   { tab: 'home', title: 'home', icon: 'ic_home', iconOn: 'ic_home_filled' },
@@ -14,7 +16,7 @@ const NAV = [
   { tab: 'feed', title: 'feed', icon: 'ic_feed', iconOn: 'ic_feed_filled' },
   { tab: 'profile', title: 'profile', icon: 'ic_profile', iconOn: 'ic_profile_filled' },
   { tab: 'ai', label: 'AI', icon: 'ic_ai', iconOn: 'ic_ai_filled' },
-];
+].filter((n) => n.tab !== 'ai' || has.ai);
 
 function buildNav(container, withLogo) {
   container.replaceChildren();
@@ -52,6 +54,7 @@ async function refreshNotifBadge() {
 
 async function main() {
   applyTheme();
+  initTitlebar(); // шапка окна в приложении для Windows: полоса и кнопки окна в цвет экрана
   if (prefs.get('ECONOMY_MODE')) document.documentElement.classList.add('economy'); // режим экономии: без анимаций
   initDragScroll(); // ЛКМ + движение = прокрутка, как пальцем в мобильном приложении
   // Двойной клик = одно нажатие: второй клик серии (detail > 1) до кнопок не доходит — иначе он повторяет

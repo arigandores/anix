@@ -1,9 +1,11 @@
-# Сборка установщика Windows и релиз на GitHub.
-#   Тег vX.Y.Z (версия = package.json) → установщик собирается и выкладывается в релиз; текст релиза — сообщение
-#   аннотированного тега (git tag -a v1.4.0 -F notes.md).
-#   Вручную (Actions → Release → Run workflow) → только сборка: установщик в артефактах запуска, релиз не создаётся.
-#   Вместе с установщиком в релиз идут latest.yml и .blockmap — по ним приложение находит и скачивает обновление.
+# Сборка установщика Windows и APK для Android, релиз на GitHub — оба файла в одном релизе.
+#   Тег vX.Y.Z (версия = package.json) → установщик и APK собираются параллельно и выкладываются в один релиз; текст
+#   релиза — сообщение аннотированного тега (git tag -a v1.4.0 -F notes.md).
+#   Вручную (Actions → Release → Run workflow) → только сборка: установщик и APK в артефактах запуска, релиз не создаётся.
+#   Вместе с установщиком в релиз идут latest.yml и .blockmap, вместе с APK — ничего: по ним и по Anix-X.Y.Z.apk
+#   приложения на ПК и на телефоне находят обновление.
 # Ключи источников, соцвхода и Discord (config.local.json) — из секрета CONFIG_LOCAL_JSON, в репозитории их нет.
+# Все секреты (и ключ подписи Android) — копией в приватном arigandores/anix-secrets, там же sync-secrets.sh.
 # anix-trt.exe (ускорение NVIDIA) собирается с CUDA Toolkit только при изменении trt/, иначе берётся из кэша.
 name: Release
 
@@ -97,3 +99,84 @@ jobs:
           git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
           v=$(node -p "require('./package.json').version")
           gh release create "$GITHUB_REF_NAME" "release/AnixDesktop-Setup-$v.exe" "release/AnixDesktop-Setup-$v.exe.blockmap" release/latest.yml --title "Anix Desktop $v" --notes-from-tag --verify-tag
+
+  # Android: подписанный APK — параллельно со сборкой для Windows (docs/TECHNICAL.md → «Android»).
+  # Ключ подписи — секреты ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+  # (копия — в приватном arigandores/anix-secrets). Другой ключ — и новая версия не встанет поверх установленной.
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3 # SDK; платформу compileSdk Gradle докачает сам
+
+      - name: Ключи из секрета CONFIG_LOCAL_JSON
+        env:
+          CONFIG_LOCAL_JSON: ${{ secrets.CONFIG_LOCAL_JSON }}
+        run: |
+          if [ -z "$CONFIG_LOCAL_JSON" ]; then
+            if [[ "$GITHUB_REF" == refs/tags/* ]]; then echo "::error::Нет секрета CONFIG_LOCAL_JSON — релиз без ключей не выпускаем"; exit 1; fi
+            echo "::warning::Нет секрета CONFIG_LOCAL_JSON — сборка без ключей"; exit 0
+          fi
+          printf '%s' "$CONFIG_LOCAL_JSON" > config.local.json
+          node -e "JSON.parse(require('fs').readFileSync('config.local.json','utf8'))"
+
+      - name: Ключ подписи
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PW: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PW: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE" ]; then
+            if [[ "$GITHUB_REF" == refs/tags/* ]]; then echo "::error::Нет секрета ANDROID_KEYSTORE_BASE64 — APK для релиза не подписать"; exit 1; fi
+            echo "::warning::Нет ключа подписи — APK подписан отладочным ключом"; exit 0
+          fi
+          printf '%s' "$KEYSTORE" | base64 -d > android/release.keystore
+          { echo "ANIX_KEYSTORE=release.keystore"; echo "ANIX_KEYSTORE_PASSWORD=$STORE_PW"; echo "ANIX_KEY_ALIAS=$KEY_ALIAS"; echo "ANIX_KEY_PASSWORD=$KEY_PW"; } >> "$GITHUB_ENV"
+
+      - name: Сборка APK
+        run: |
+          chmod +x android/gradlew
+          (cd android && ./gradlew assembleRelease --no-daemon)
+          v=$(node -p "require('./package.json').version")
+          cp android/app/build/outputs/apk/release/app-release.apk "Anix-$v.apk"
+          echo "APK=Anix-$v.apk" >> "$GITHUB_ENV"
+
+      - name: Подпись — наш ключ
+        if: env.ANIX_KEYSTORE != ''
+        run: |
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$apksigner" verify --print-certs "$APK" | tee cert.txt
+          grep -q 'CN=Anix' cert.txt || { echo "::error::APK подписан не ключом Anix"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Anix-Android
+          path: Anix-*.apk
+          retention-days: 14
+
+  # APK — в релиз, который создала сборка для Windows (по нему приложение на телефоне находит обновление)
+  android-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Anix-Android
+
+      - name: APK в релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" Anix-*.apk --clobber -R "$GITHUB_REPOSITORY"

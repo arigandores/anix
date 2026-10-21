@@ -10,6 +10,7 @@ import { resolveEpisode, prefetchEpisode, openBuiltinPlayer, openWebPlayer, open
 import { eyeIcon } from '../lottie.js';
 import { party, canControl, fillersText, roomSkip } from '../party/room.js';
 import { partyPick, queueAdd, suggestMode, partyInfo } from '../party/ui.js';
+import { has, touch } from '../platform.js';
 
 const epSort = () => Number(localStorage.getItem('anixart.pref.EPISODES_SORT') || 1);
 const sortIcon = (sort) => (sort === 1 ? 'ic_sort_ascending' : 'ic_sort_descending');
@@ -89,11 +90,27 @@ function autoType(release, types, pick) {
 }
 const pickSource = (sources, sourceId) => sources.find((s) => s.id === sourceId) || sortSources(sources)[0] || null;
 
+// Отметки «просмотрено» с сервера (по источнику: там же и отметки с телефона) — в локальную БД. Новая отметка
+// запоминает, когда пришла (markedAt): так resumeOf отличает «досмотрели на телефоне» от давних отметок
+export function mergeServerMarks(rid, sourceId, episodes) {
+  if (!auth.loggedIn) return;
+  const local = db.watchedOf(rid, sourceId);
+  const now = Math.floor(Date.now() / 1000);
+  for (const ep of episodes) {
+    if (ep.is_watched && !(ep.position in local)) db.putEpisode(rid, sourceId, ep.position, { isWatched: true, markedAt: now });
+    if (!ep.is_watched && ep.position in local) db.putEpisode(rid, sourceId, ep.position, { isWatched: false, playbackPosition: 0 });
+  }
+}
+
 // --- Прогресс: какую серию предлагать ---
-// Начатую — пока не досмотрена, досмотренную — следующую (db.progress: эндинг, конец файла или «⏭»)
+// Начатую — пока не досмотрена, досмотренную — следующую (db.progress: эндинг, конец файла или «⏭»).
+// Дальше последней серии есть отметки «просмотрено» не отсюда (досмотрели на телефоне в официальном приложении —
+// отметки приходят с сервера, а последнюю серию оно не обновляет) — следующую после самой дальней из них
 export function resumeOf(release) {
   const last = lastOf(release);
   if (!last) return null;
+  const ahead = db.markedAfter(release.id, last.position, last.timestamp || 0, last.sourceId);
+  if (ahead) return { last: { ...last, position: ahead, elsewhere: true }, progress: null, finished: true, target: ahead + 1 };
   const progress = db.progress(release.id, last.sourceId, last.position);
   const finished = !!progress?.finished;
   return { last, progress, finished, target: finished ? last.position + 1 : last.position };
@@ -118,12 +135,14 @@ const leftMin = (p) => Math.max(1, Math.round((p.dur - p.pos) / 60000));
 const watchedLine = (p) => (p.dur ? `остановились на ${fmtTime(p.pos)} из ${fmtTime(p.dur)}` : `остановились на ${fmtTime(p.pos)}`);
 
 // --- Плееры: от лучшего качества к худшему ---
-// Встроенный и сторонний получают одни и те же потоки источника; встроенный ещё и улучшает картинку до 4K
+// Встроенный и сторонний получают одни и те же потоки источника; встроенный ещё и улучшает картинку до 4K.
+// На Android нет ни улучшения картинки, ни стороннего плеера (platform.js)
 const PLAYERS = [
-  { id: 2, icon: 'ic_play_circle', name: () => t('player_embedded'), sub: 'Улучшение картинки нейросетью до 4K', badge: (q) => (q ? `${q} → 4K` : 'до 4K'), hi: true },
-  { id: 3, icon: 'ic_open_link', name: () => t('player_third_party'), sub: 'mpv или VLC, установленный на компьютере', badge: (q) => q },
+  has.upscale ? { id: 2, icon: 'ic_play_circle', name: () => t('player_embedded'), sub: 'Улучшение картинки нейросетью до 4K', badge: (q) => (q ? `${q} → 4K` : 'до 4K'), hi: true }
+    : { id: 2, icon: 'ic_play_circle', name: () => t('player_embedded'), sub: 'Плеер приложения: пропуски, скорость, звук', badge: (q) => q, hi: true },
+  has.externalPlayer ? { id: 3, icon: 'ic_open_link', name: () => t('player_third_party'), sub: 'mpv или VLC, установленный на компьютере', badge: (q) => q } : null,
   { id: 1, icon: 'ic_open_in_new', name: () => t('player_web'), sub: 'Плеер источника, качество выбирает сайт', badge: () => 'как на сайте' },
-];
+].filter(Boolean);
 const playerName = (id) => (PLAYERS.find((p) => p.id === id)?.name() || 'Спрашивать');
 
 // Логотип озвучки: картинка или круг с иконкой (субтитры — своя)
@@ -203,7 +222,7 @@ export async function startEpisode({ release, type, source, episodes, index, sor
     A.historyAdd(release.id, source.id, ep.position).then(() => { release.is_viewed = true; release.last_view_episode = ep; release.last_view_timestamp = Math.floor(Date.now() / 1000); }).catch(() => {});
     A.episodeWatch(release.id, source.id, ep.position).catch(() => {});
   }
-  db.putEpisode(release.id, source.id, ep.position, { isWatched: true });
+  db.putEpisode(release.id, source.id, ep.position, { isWatched: true, startedAt: Date.now() }); // запускали здесь — не «с другого устройства» (resumeOf)
   ep.is_watched = true;
   notify(release.id);
   if (player === 1) { openWebPlayer(ep, release, type.name); return; }
@@ -237,7 +256,7 @@ export function watchBlock(release, extra) {
     const key = `${ch.typeId}:${ch.sourceId}`;
     if (listKey === key && list) return list;
     listKey = key;
-    list = episodesOf(release.id, ch.typeId, ch.sourceId, sort).then((r) => ({
+    list = episodesOf(release.id, ch.typeId, ch.sourceId, sort).then((r) => (mergeServerMarks(release.id, ch.sourceId, r.episodes || []), { // отметки с телефона — и до экрана серий
       type: { id: ch.typeId, name: ch.typeName || '', icon: ch.typeIcon },
       source: { id: ch.sourceId, name: ch.sourceName || '' },
       episodes: r.episodes || [],
@@ -294,13 +313,13 @@ export function watchBlock(release, extra) {
       sub = [dubLine, p ? watchedLine(p) : r.last.remote ? 'смотрели на другом устройстве' : ''].filter(Boolean).join(' • ');
     } else if (has(r.target)) {
       main = h('button', { class: 'btn btn-primary lg btn-watch', onclick: (e) => go(e.currentTarget, r.target, 0) }, icon('ic_play'), `Смотреть ${r.target} серию`);
-      sub = [`${r.last.position} серия досмотрена`, skippedLine(nx.skipped), dubLine].filter(Boolean).join(' • ');
+      sub = [`${r.last.position} серия ${r.last.elsewhere ? 'просмотрена' : 'досмотрена'}`, skippedLine(nx.skipped), dubLine].filter(Boolean).join(' • ');
     } else {
       // всё вышедшее досмотрено: пока аниме выходит — ждём новую, иначе пересмотреть с первой
       const airing = (release.status?.id ?? release.status_id) === 2 || (release.episodes_total && release.episodes_released < release.episodes_total);
       if (airing) {
         main = h('button', { class: 'btn btn-primary lg btn-watch', onclick: toEpisodes }, icon('ic_episodes'), 'Все серии');
-        sub = `${r.last.position} серия досмотрена • следующая ещё не вышла`;
+        sub = `${r.last.position} серия ${r.last.elsewhere ? 'просмотрена' : 'досмотрена'} • следующая ещё не вышла`;
       } else {
         const first = known?.episodes.reduce((m, e) => Math.min(m, e.position), Infinity) ?? 1;
         main = h('button', { class: 'btn btn-primary lg btn-watch', onclick: (e) => go(e.currentTarget, first, 0) }, icon('ic_play'), `Смотреть заново · ${first} серия`);
@@ -409,7 +428,7 @@ registerScreen('episodes', async (params, ctx) => {
     const search = types.length > 6 ? h('input', { class: 'pop-search', placeholder: 'Найти озвучку', 'aria-label': 'Найти озвучку', oninput: (e) => fill(e.target.value) }) : null;
     fill('');
     const pop = popover(anchor, [search, listBox], { cls: 'pop-dub' });
-    if (pop && search) setTimeout(() => search.focus(), 30);
+    if (pop && search && !touch) setTimeout(() => search.focus(), 30);
   }
   function openSourceMenu(anchor) {
     const pop = popover(anchor, sortSources(sources).map((s) => h('button', {
@@ -476,14 +495,8 @@ registerScreen('episodes', async (params, ctx) => {
     episodes = r.episodes || [];
     instant = await skeletonSettled(listEl);
     // Слияние с локальной БД — для этого источника (сервер хранит отметки по источнику)
-    const local = db.watchedOf(rid, src.id);
-    for (const ep of episodes) {
-      ep.releaseId = rid; ep.sourceId = src.id;
-      if (auth.loggedIn) {
-        if (ep.is_watched && !(ep.position in local)) db.putEpisode(rid, src.id, ep.position, { isWatched: true });
-        if (!ep.is_watched && ep.position in local) db.putEpisode(rid, src.id, ep.position, { isWatched: false, playbackPosition: 0 });
-      }
-    }
+    for (const ep of episodes) { ep.releaseId = rid; ep.sourceId = src.id; }
+    mergeServerMarks(rid, src.id, episodes);
     paint({ first: true });
   }
 
@@ -545,7 +558,7 @@ registerScreen('episodes', async (params, ctx) => {
     const v = !ep.is_watched;
     if (v) {
       if (auth.loggedIn) A.episodeWatch(rid, source.id, ep.position).catch(() => {});
-      db.putEpisode(rid, source.id, ep.position, { isWatched: true });
+      db.putEpisode(rid, source.id, ep.position, { isWatched: true, markedAt: Math.floor(Date.now() / 1000) }); // вручную — «Продолжить» учтёт (resumeOf)
     } else {
       // снять во всех источниках, где она отмечена (и на сервере — там отметки по источнику)
       const srcs = new Set([source.id, ...db.unwatchEverywhere(rid, ep.position)]);

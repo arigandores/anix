@@ -4,6 +4,7 @@ import { h, icon, dialog, confirmDialog, containScroll, flySend, nudge } from '.
 import { copyIcon } from '../lottie.js';
 import { normCode } from './net.js';
 import { navigate, switchTab } from '../router.js';
+import { APP_NAME } from '../platform.js';
 
 const INVITE_URL = 'https://arigandores.github.io/anix-desktop/watch/'; // GitHub Pages репозитория, docs/watch/index.html
 import { party, present, sendChat, setControl, openContent, isHost, canControl, queueAdd, queuePlay, queueRemove, queueMove, giveHost, memberName, roomSkip, setRoomSkip } from './room.js';
@@ -52,6 +53,8 @@ function hostChanged({ host }) {
 // чужие действия в комнате: кто и что сделал
 function noticeBubble(n) {
   if (n.system) { partyInfo(n.text); return; }
+  // узкий экран (телефон): карточка легла бы на открытую панель комнаты — на поле чата, а кто вошёл и вышел, видно в ней же
+  if (chatVisible() && matchMedia('(max-width: 600px)').matches) return;
   const who = party.room ? present().find((p) => p.id === n.from) : null;
   const src = n.avatar ?? who?.avatar;
   const ava = src ? h('img', { src, referrerpolicy: 'no-referrer', alt: '' }) : h('span', { class: 'ava' }, (n.who || '?').slice(0, 1).toUpperCase());
@@ -98,7 +101,7 @@ export function roomView({ inPlayer = false, onClose } = {}) {
     const code = party.fmtCode(r.code);
     const copy = (text, msg) => navigator.clipboard?.writeText(text).then(() => partyInfo(msg), () => partyInfo(code));
     // https-ссылка: anixdesktop:// мессенджеры не делают кликабельной — страница-переходник (docs/watch) откроет приложение
-    const invite = () => copy(`Смотрим аниме вместе в Anix Desktop: ${INVITE_URL}#${r.code}\nКод комнаты: ${code}`, 'Приглашение скопировано — отправьте его друзьям');
+    const invite = () => copy(`Смотрим аниме вместе в ${APP_NAME}: ${INVITE_URL}#${r.code}\nКод комнаты: ${code}`, 'Приглашение скопировано — отправьте его друзьям');
     const people = present().map((p) => h('div', { class: 'party-member', dataset: { id: p.id } },
       p.avatar ? h('img', { src: p.avatar, referrerpolicy: 'no-referrer', alt: '' }) : h('span', { class: 'ava' }, (p.name || '?').slice(0, 1).toUpperCase()),
       h('span', { class: 'grow' }, p.me ? `${p.name} (вы)` : p.name),
@@ -117,6 +120,9 @@ export function roomView({ inPlayer = false, onClose } = {}) {
     if (amHost) dragSort(list);
     // перерисовка отсоединяет чат от страницы, а это сбрасывает его прокрутку — сохраняем её
     const chatTop = chatList.scrollTop; const chatBottom = !chatList.isConnected || chatList.scrollHeight - chatTop - chatList.clientHeight < 40;
+    // поле чата переставляется заново — а вынутый из страницы элемент теряет фокус: пишущему закрывало клавиатуру
+    // (телефон) и обрывало набор, стоило комнате обновиться (участник вошёл, связь, настройки)
+    const typing = document.activeElement === input ? [input.selectionStart, input.selectionEnd] : null;
     el.replaceChildren(...[
       h('div', { class: 'party-code' },
         h('div', { class: 'grow' }, h('small', null, 'Код комнаты'), h('b', null, code)),
@@ -140,6 +146,7 @@ export function roomView({ inPlayer = false, onClose } = {}) {
         h('button', { class: 'btn btn-tonal', onclick: () => { party.leave(); partyInfo('Вы вышли из комнаты'); } }, 'Выйти из комнаты')),
     ].filter(Boolean)); // null — пропуски (пустая очередь, не хост): replaceChildren вывел бы их текстом «null»
     chatList.scrollTop = chatBottom ? chatList.scrollHeight : chatTop;
+    if (typing && input.isConnected) { input.focus({ preventScroll: true }); input.setSelectionRange(...typing); }
     const ids = new Set();
     for (const row of el.querySelectorAll('.party-member')) {
       ids.add(row.dataset.id);

@@ -11,6 +11,18 @@ const updater = require('./updater'); // автообновление из GitHu
 let win;
 let serverInfo;
 
+// Своя шапка окна: системную полосу с названием убираем, кнопки окна — системные (меню раскладок Windows и
+// перетаскивание за край остаются), но в цветах приложения. Где и какой высоты кнопки, решает страница
+// (js/titlebar.js): в строке шапки экрана или над плеером полосой; она же перекрашивает их под экран.
+const TITLEBAR_H = 63; // в строке шапки экрана (64 px) — без её нижней линии
+const TITLEBAR_ARG = '--anix-titlebar'; // preload.js: окно со своей шапкой (в тестах и окне входа её нет)
+ipcMain.handle('titlebar-colors', (e, { color, symbolColor, height = TITLEBAR_H } = {}) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  if (!w || w.isDestroyed() || !/^#[0-9a-f]{6}$/i.test(color) || !/^#[0-9a-f]{6}$/i.test(symbolColor)) return false;
+  w.setTitleBarOverlay({ color, symbolColor, height: Math.max(24, Math.min(80, Math.round(height) || TITLEBAR_H)) });
+  return true;
+});
+
 // Порт должен быть постоянным: localStorage (вход, настройки, история серий) привязан к origin вместе с портом.
 // Запасные порты — на случай, если основной занят чужой программой; 0 — крайний вариант.
 const PORTS = [38371, 38372, 38373, 38374, 0];
@@ -33,14 +45,22 @@ async function createWindow() {
     icon,
     backgroundColor: '#121212',
     autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#121212', symbolColor: '#9e9e9e', height: TITLEBAR_H },
     webPreferences: {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
       preload: path.join(__dirname, 'preload.js'),
+      additionalArguments: [TITLEBAR_ARG],
     },
   });
   Menu.setApplicationMenu(null);
+  // во весь экран (F11, плеер) кнопок окна нет — полоса под них не нужна
+  // (isFullScreen() в момент события ещё прежний — состояние берём из самого события)
+  const sendFull = (on) => () => { if (!win.isDestroyed()) win.webContents.send('fullscreen', on); };
+  for (const ev of ['enter-full-screen', 'enter-html-full-screen']) win.on(ev, sendFull(true));
+  for (const ev of ['leave-full-screen', 'leave-html-full-screen']) win.on(ev, sendFull(false));
   attachWebQuality(win.webContents);
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith(serverInfo.url)) return { action: 'allow' };

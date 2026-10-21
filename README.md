@@ -4,11 +4,11 @@
 
 # Anix Desktop
 
-**Неофициальный клиент [Anixart](https://anixart.tv) для Windows и браузера — с AI-помощником на Claude**
+**Неофициальный клиент [Anixart](https://anixart.tv) для Windows, Android и браузера — с AI-помощником на Claude**
 
 [![Release](https://img.shields.io/github/v/release/arigandores/anix-desktop?style=flat-square&color=f04e5c)](https://github.com/arigandores/anix-desktop/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/arigandores/anix-desktop/total?style=flat-square&color=8b5cf6)](https://github.com/arigandores/anix-desktop/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Browser-0ea5e9?style=flat-square)](#скачать)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Android%20%7C%20Browser-0ea5e9?style=flat-square)](#скачать)
 [![License](https://img.shields.io/github/license/arigandores/anix-desktop?style=flat-square&color=22c55e)](LICENSE)
 
 [**Скачать**](https://github.com/arigandores/anix-desktop/releases/latest) · [Возможности](#возможности) · [Улучшение картинки](#улучшение-картинки) · [AI-помощник](#ai-помощник) · [Запуск из исходников](docs/TECHNICAL.md#запуск-из-исходников)
@@ -38,6 +38,17 @@ Anix Desktop — программа для компьютера, в которо
 
 **Обновлять вручную не нужно**: когда выйдет новая версия, программа сама покажет, что в ней нового, и обновится
 по кнопке «Обновить». Вход и настройки сохранятся.
+
+### На телефон (Android)
+
+1. На телефоне откройте [страницу последней версии](https://github.com/arigandores/anix-desktop/releases/latest) и
+   скачайте `Anix-….apk` (раздел **Assets**).
+2. Откройте скачанный файл. Если Android спросит, разрешить ли установку из браузера, — разрешите (один раз).
+3. Откройте **Anix** и войдите в аккаунт Anixart — те же закладки, история и отметки серий, что на компьютере.
+
+Нужен Android 11 или новее. Всё основное — как на компьютере: каталог, серии, встроенный плеер (с пропуском опенинга,
+«картинкой в картинке» при сворачивании), совместный просмотр с теми, кто смотрит на компьютере. Нет улучшения
+картинки, AI-помощника и статуса в Discord. Новые версии приложение предлагает само.
 
 ## Возможности
 

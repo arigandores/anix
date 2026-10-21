@@ -4,10 +4,11 @@
 // подтверждает его раз в минуту: закрыли вкладку, не убрав статус, — сервер уберёт его сам.
 // Включается в настройках (DISCORD_PRESENCE), по умолчанию выключено.
 import { prefs } from './store.js';
+import { has } from './platform.js';
 
 const KEEP_MS = 60000;
 let shown = null; let keep = 0;
-const on = () => prefs.get('DISCORD_PRESENCE') === true;
+const on = () => has.discord && prefs.get('DISCORD_PRESENCE') === true;
 
 function post(activity) {
   fetch('/discord/presence', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(activity), keepalive: true }).catch(() => {});

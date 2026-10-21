@@ -81,6 +81,13 @@ img { display: block; }
 #rail { width: var(--rail-w); flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px;
   padding: 12px 0; background: var(--bg); border-right: 1px solid var(--sep); }
 #rail .logo { width: 40px; height: 40px; margin: 6px 0 18px; color: var(--carmine); }
+/* низкое окно (телефон боком): вкладки рельса не помещались по высоте («Профиль» за краем) — без логотипа и плотнее,
+   а если и так не влезут — рельс листается */
+@media (max-height: 520px) {
+  #rail { overflow-y: auto; gap: 0; padding: 4px 0; }
+  #rail .logo { display: none; }
+  #rail .nav-item { padding: 2px 0 4px; }
+}
 .nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 80px; padding: 4px 0 8px;
   color: var(--nav-icon); font-size: 12px; font-family: 'Google Sans', 'Roboto', sans-serif; position: relative; }
 /* Выбор вкладки — мгновенно (фон и залитая иконка сразу): плавная смена в момент, когда строится новый
@@ -102,7 +109,49 @@ img { display: block; }
 #main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
 #viewport { flex: 1; overflow-y: auto; overflow-x: hidden; scroll-behavior: auto; }
 #bottomnav { display: none; }
+
+/* ---------- Шапка окна (приложение для Windows, electron/main.js, js/titlebar.js) ----------
+   Системной полосы с названием нет, кнопки окна — системные, в цветах экрана. На обычном экране они стоят в строке
+   шапки экрана (.tb-inline): у шапки справа место под них, за её пустое место окно перетаскивают. Над плеером и
+   просмотром картинки и в узком окне — полоса 32 px сверху (#titlebar): плеер и просмотр начинаются под ней (их
+   кнопки не уходят под кнопки окна), полоса — их цвета. Боковая панель идёт до верха, её логотип — тоже «за что
+   тянуть». Во весь экран кнопок окна нет — и места под них. В браузере — как раньше. */
+:root { --tb-h: 0px; }
+:root.tb:not(.tb-inline) { --tb-h: 32px; }
+:root.tb.fs { --tb-h: 0px; }
+/* выше этого всплывающие меню не заходят: под кнопками окна и в области перетаскивания их не нажать (ui.js) */
+:root { --tb-safe: var(--tb-h); }
+:root.tb-inline:not(.fs) { --tb-safe: var(--appbar-h); }
+/* Справа в шапке — место под кнопки окна и разделитель перед ними. Шапка кончается у полосы прокрутки (10 px), а
+   кнопки окна — у края окна: место под полосу прокрутки держим всегда (scrollbar-gutter), иначе на коротких экранах
+   без прокрутки значки шапки вставали на 10 px ближе к кнопкам окна, чем на длинных. Разделитель — вплотную к
+   кнопкам окна, от него до значка шапки и до значка «Свернуть» — поровну (≈18 px: у кнопок поля внутри) */
+:root.tb-inline:not(.fs) #viewport { scrollbar-gutter: stable; }
+:root.tb-inline:not(.fs) #viewport .appbar { padding-right: calc(var(--wc-w, 138px) - 10px + 1px + 8px); }
+/* разделитель — только когда справа в шапке видна своя кнопка (у шапки «Назад + название» его нет: не с чем
+   разделять). Скрытые не в счёт: [hidden] и «Смотреть вместе» вне комнаты (.only-in-room — она есть почти в каждой
+   шапке backToolbar, common.js) */
+:root.tb-inline:not(.fs) #viewport .appbar:is(:has(> button:not([hidden], .only-in-room):last-child),
+  :has(> .actions:last-child button:not([hidden], .only-in-room)))::after,
+:root.tb-inline.in-party:not(.fs) #viewport .appbar:has(> .actions:last-child .only-in-room:not([hidden]))::after { content: ''; position: absolute; right: calc(var(--wc-w, 138px) - 10px); top: 50%;
+  width: 1px; height: 24px; margin-top: -12px; background: var(--sep); pointer-events: none; }
+/* область перетаскивания Windows ловит нажатия поверх всего — под диалогом шапка окно не тянет */
+:root.tb-inline:not(.fs):not(.tb-dialog) #viewport .appbar { -webkit-app-region: drag; }
+/* тянут окно только пустое место, название и подпись; всё остальное в шапке нажимается — и не кнопки тоже
+   (аватар и имя автора в шапке коллекции открывают профиль по onclick) */
+#viewport .appbar *:not(.grow, .title, .muted, .actions) { -webkit-app-region: no-drag; }
+/* полоса прокрутки — ниже кнопок окна */
+:root.tb-inline:not(.fs) #viewport::-webkit-scrollbar-track { margin-top: var(--appbar-h); }
+#titlebar { display: none; }
+:root.tb #titlebar { display: block; position: fixed; top: 0; left: var(--rail-w); right: 0; height: var(--tb-h); z-index: 125;
+  background: var(--tb-bg, var(--bg)); -webkit-app-region: drag; }
+:root.tb.tb-over #titlebar { left: 0; }
+:root.tb #main { padding-top: var(--tb-h); }
+/* область перетаскивания Windows ловит нажатия поверх всего: под плеером, просмотром и диалогом логотип — не она
+   (иначе «Назад» плеера над ним тянул окно, а не нажимался) */
+:root.tb:not(.tb-over):not(.tb-dialog) #rail .logo { -webkit-app-region: drag; }
 @media (max-width: 720px) {
+  :root.tb #titlebar { left: 0; }
   #rail { display: none; }
   #bottomnav { display: flex; justify-content: space-around; background: var(--nav-bg); border-top: 1px solid var(--sep); padding: 8px 0 10px; }
   #bottomnav .nav-item { width: auto; flex: 1; }
@@ -138,7 +187,9 @@ img { display: block; }
   background: var(--bg2); color: var(--text2); box-shadow: var(--shadow); cursor: text; max-width: 720px; }
 :root[data-theme="dark"] .searchbar { box-shadow: none; }
 .searchbar input { flex: 1; border: 0; outline: 0; background: transparent; font-size: 16px; color: var(--text); min-width: 0; }
-.searchbar .placeholder { flex: 1; font-size: 16px; }
+.searchbar .placeholder { flex: 1; font-size: 16px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* узкое окно (телефон): строка поиска не делит ширину пополам с пустым местом справа — подсказка в одну строку */
+@media (max-width: 600px) { .searchbar + .grow { flex-grow: .001; } }
 
 /* ---------- Вкладки ---------- */
 .tabbar { display: flex; align-items: center; gap: 0; border-bottom: 1px solid var(--sep); position: sticky; top: var(--appbar-h); z-index: 15;
@@ -391,8 +442,8 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .comment .when { color: var(--text3); font-size: 12px; font-weight: 400; }
 .comment .msg { white-space: pre-wrap; word-break: break-word; margin: 4px 0 6px; }
 .comment .spoiler { filter: blur(5px); cursor: pointer; user-select: none; }
-.comment .tools { display: flex; align-items: center; gap: 6px; color: var(--text2); font-size: 13px; }
-.comment .tools button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px; border-radius: 6px; }
+.comment .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--text2); font-size: 13px; }
+.comment .tools button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px; border-radius: 6px; white-space: nowrap; } /* узко — кнопка целиком на новую строку, а не «Показать / 2 ответа» */
 .comment .tools button:hover { background: var(--block); }
 .comment .tools button.on { color: var(--carmine); }
 /* Поле комментария (common.js commentComposer): одна плашка — текст сам подрастает, справа «Спойлер» и
@@ -513,7 +564,7 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
   font-size: 14px; opacity: 0; pointer-events: none; transition: .2s; max-width: 90vw; box-shadow: 0 4px 14px rgba(0,0,0,.3); }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 /* Просмотр картинок (imageViewer в common.js): всегда тёмный; шапка, сцена, стрелки по бокам, лента миниатюр */
-.iv { position: fixed; inset: 0; z-index: 150; display: flex; flex-direction: column; color: #fff;
+.iv { position: fixed; inset: 0; top: var(--tb-h); z-index: 150; display: flex; flex-direction: column; color: #fff;
   background: rgba(8,8,10,.94); backdrop-filter: blur(14px); animation: fade .16s ease-out; user-select: none; }
 .iv.closing { animation: fade-out .16s ease-in forwards; }
 .iv-top { display: flex; align-items: center; gap: 6px; padding: 10px 14px 6px 22px; flex: none; }
@@ -540,7 +591,7 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 @media (max-width: 720px) { .iv-stage { padding: 8px 12px; } .iv-nav { display: none; } }
 
 /* ---------- Плеер ---------- */
-.player-overlay { position: fixed; inset: 0; z-index: 120; background: #000; display: flex; flex-direction: column; }
+.player-overlay { position: fixed; inset: 0; top: var(--tb-h); z-index: 120; background: #000; display: flex; flex-direction: column; }
 .player-top { position: absolute; top: 0; left: 0; right: 0; z-index: 3; display: flex; align-items: center; gap: 10px; padding: 10px 14px; color: #fff;
   background: linear-gradient(rgba(0,0,0,.7), transparent); transition: opacity .25s; }
 .player-top .icon-btn { color: #fff; }
@@ -631,6 +682,14 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
   padding: 8px 12px; border-radius: 32px; background: rgba(0,0,0,.5); color: #fff; pointer-events: none;
   opacity: 0; transform: translate(-50%, -50px); transition: opacity .2s cubic-bezier(.4,0,1,1), transform .2s cubic-bezier(.4,0,1,1); }
 .speed-ind.show { opacity: 1; transform: translate(-50%, 0); transition: opacity .2s cubic-bezier(0,0,.2,1), transform .2s cubic-bezier(0,0,.2,1); }
+/* «Продолжить» посреди экрана на паузе (player.js paintCenter). Без backdrop-filter: плеер открывается с анимацией
+   прозрачности, под ней он меняет цвет */
+.p-center { position: absolute; left: 50%; top: 50%; z-index: 4; width: 76px; height: 76px; margin: -38px 0 0 -38px; border-radius: 50%;
+  display: grid; place-items: center; color: #fff; background: rgba(0,0,0,.55); box-shadow: 0 0 0 1px rgba(255,255,255,.12);
+  opacity: 0; transform: scale(.85); pointer-events: none; transition: opacity .15s ease-in, transform .15s ease-in; }
+.p-center .ic { width: 40px; height: 40px; margin-left: 3px; } /* треугольник «плей» — на оптическом центре круга */
+.p-center.show { opacity: 1; transform: none; pointer-events: auto; transition: opacity .2s cubic-bezier(0,0,.2,1), transform .2s cubic-bezier(0,0,.2,1); }
+.p-center.show:hover { background: rgba(0,0,0,.7); }
 .speed-text { font-size: 14px; font-weight: 500; }
 .speed-ic { width: 20px; height: 20px; color: #fff; }
 /* Меню-шестерёнка: строки «Качество / Скорость» со значением и переключатели автопропуска;
@@ -916,7 +975,8 @@ html:not(.in-party) .party-btn.only-in-room { display: none; }
   transform-origin: 100% 0; animation: pm-in .16s var(--ease-out); overscroll-behavior: contain;
   --text: #fff; --text2: rgba(255,255,255,.62); --text3: rgba(255,255,255,.45); --block: rgba(255,255,255,.07); --btn2: rgba(255,255,255,.12); --btn2-text: #fff; --input-bg: rgba(255,255,255,.06); --input-border: rgba(255,255,255,.16); }
 .party-panel .party-head { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; padding: 0 8px 0 16px; font-size: 15px; }
-.party-panel .party-view { flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px; overscroll-behavior: contain; }
+.party-panel .party-view { flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px; overscroll-behavior: contain;
+  scroll-padding-bottom: 72px; } /* поле чата, прокрученное к себе (фокус, клавиатура телефона), — над закреплённым низом, а не под ним */
 .party-panel .party-view > * { flex-shrink: 0; } /* сжимается только чат — он листается */
 .party-panel .party-view > .party-chat { flex: 1 1 auto; min-height: 140px; max-height: none; }
 .party-panel .icon-btn { color: #fff; }
@@ -926,14 +986,14 @@ html:not(.in-party) .party-btn.only-in-room { display: none; }
 .party-panel:has(> .party-view.lobby) { height: auto; }
 .party-panel .party-view.lobby { padding-bottom: 16px; } /* вне комнаты нет закреплённого низа — отступ даёт сама панель */
 /* та же панель под кнопкой 👥 в шапке приложения (party/ui.js, partyDialog); в светлой теме — светлая */
-.party-popover { position: fixed; top: 64px; right: 16px; z-index: 125; height: min(720px, calc(100vh - 88px)); }
+.party-popover { position: fixed; top: calc(64px + var(--tb-h)); right: 16px; z-index: 125; height: min(720px, calc(100vh - 88px - var(--tb-h))); }
 :root[data-theme="light"] .party-popover { background: #fff; color: var(--text); box-shadow: 0 10px 34px rgba(0,0,0,.18);
   --text: #212121; --text2: rgba(0,0,0,.6); --text3: rgba(0,0,0,.45); --block: rgba(0,0,0,.045); --btn2: rgba(0,0,0,.07); --btn2-text: #212121;
   --input-bg: #fff; --input-border: rgba(0,0,0,.16); }
 :root[data-theme="light"] .party-popover .icon-btn, :root[data-theme="light"] .party-popover .input { color: var(--text); }
 :root[data-theme="light"] .party-popover .party-foot { background: #fff; border-top-color: rgba(0,0,0,.08); }
 :root[data-theme="light"] .party-popover .party-item.lifted { background: #fff; }
-@media (max-width: 720px) { .party-popover { right: 8px; left: 8px; width: auto; max-width: none; height: min(720px, calc(100vh - 150px)); } }
+@media (max-width: 720px) { .party-popover { right: 8px; left: 8px; width: auto; max-width: none; height: min(720px, calc(100vh - 150px - var(--tb-h))); } }
 @keyframes pm-out { to { opacity: 0; transform: translateY(-4px) scale(.97); } }
 /* «Выйти из комнаты» всегда видна: низ панели закреплён, прокручивается только содержимое */
 .party-panel .party-foot { position: sticky; bottom: 0; z-index: 1; margin: 4px -16px 0; padding: 10px 16px 14px; background: rgb(26,26,26); border-top: 1px solid rgba(255,255,255,.08); }
@@ -944,7 +1004,7 @@ html:not(.in-party) .party-btn.only-in-room { display: none; }
   border-radius: 14px; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,.55); animation: none; cursor: pointer; }
 .player-overlay.mini.idle { cursor: pointer; }
 .player-overlay.mini > .player-top, .player-overlay.mini > .player-controls, .player-overlay.mini > .skip-row, .player-overlay.mini .player-menu,
-.player-overlay.mini .party-panel, .player-overlay.mini .seek-ind, .player-overlay.mini .speed-ind, .player-overlay.mini .up-split { display: none !important; }
+.player-overlay.mini .party-panel, .player-overlay.mini .seek-ind, .player-overlay.mini .speed-ind, .player-overlay.mini .up-split, .player-overlay.mini .p-center { display: none !important; }
 .mini-bar { display: none; }
 .player-overlay.mini .mini-bar { display: flex; align-items: center; gap: 2px; position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; padding: 18px 6px 4px;
   color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.8)); opacity: 0; transition: opacity .2s; cursor: default; }
@@ -1019,8 +1079,16 @@ html:not(.in-party) .party-btn.only-in-room { display: none; }
 .btn-watch .spinner.sm { border-color: color-mix(in srgb, currentColor 30%, transparent); border-top-color: currentColor; width: 18px; height: 18px; }
 @media (max-width: 640px) { .rel-hero .watch { align-self: stretch; } }
 
-/* Чипы над списком серий */
-.wchips { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 2px 20px 12px; }
+/* Чипы над списком серий — прилипают под шапкой: при прокрутке озвучка, источник и плеер видны. Это часть шапки:
+   въезд экрана их не двигает (enterParts в ui.js); фон сплошной — backdrop-filter под въездом экрана менял цвет */
+.wchips { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 2px 20px 12px;
+  position: sticky; top: var(--appbar-h); z-index: 14; background: var(--bg); }
+/* узкое окно: одна строка с прокруткой вбок, а не три (полоса прилипает — списку нужна высота) */
+@media (max-width: 720px) {
+  .wchips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .wchips::-webkit-scrollbar { display: none; }
+  .wchips > * { flex: none; }
+}
 .wchips[hidden] { display: none; }
 .wchip { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 8px 0 12px; border-radius: 20px; max-width: 100%;
   border: 1px solid var(--sep); background: var(--btn2); color: var(--text); font-family: 'Google Sans', 'Roboto', sans-serif; font-size: 14px; white-space: nowrap; }

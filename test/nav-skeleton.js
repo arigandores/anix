@@ -97,7 +97,7 @@ app.whenReady().then(async () => {
       let min = 1; const t0 = Date.now();
       while (Date.now() - t0 < 700) {
         const s = document.querySelector('#viewport .screen:last-child');
-        for (const bar of s && s !== before ? s.querySelectorAll('.appbar, .tabbar:not(.static)') : []) {
+        for (const bar of s && s !== before ? s.querySelectorAll('.appbar, .tabbar:not(.static), .wchips') : []) {
           if (bar.getClientRects().length) { let o = 1; for (let n = bar; n; n = n.parentElement) o *= Number(getComputedStyle(n).opacity); min = Math.min(min, o); }
         }
         await new Promise((ok) => requestAnimationFrame(ok));

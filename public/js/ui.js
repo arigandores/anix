@@ -209,10 +209,11 @@ export function popover(anchor, content, { host, align = 'start', cls = '', onCl
     el.style.maxHeight = '';
     const w = el.offsetWidth; const hh = el.offsetHeight;
     const left = Math.max(8, Math.min(align === 'end' ? a.right - w : a.left, innerWidth - w - 8));
-    const below = innerHeight - a.bottom - 14; const above = a.top - 14;
+    const tb = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tb-safe')) || 0; // шапка окна: под кнопки окна не заходим
+    const below = innerHeight - a.bottom - 14; const above = a.top - 14 - tb;
     const up = hh > below && above > below;
     el.style.left = `${left}px`;
-    el.style.top = up ? `${Math.max(8, a.top - 6 - Math.min(hh, above))}px` : `${a.bottom + 6}px`;
+    el.style.top = up ? `${Math.max(8 + tb, a.top - 6 - Math.min(hh, above))}px` : `${a.bottom + 6}px`;
     el.style.maxHeight = `${up ? above : below}px`;
   };
   const onDown = (e) => { if (!el.contains(e.target) && !anchor.contains(e.target)) close(); };
@@ -464,12 +465,14 @@ export function enterScreen(screen, direction) {
 }
 // что двигает въезд: всё под шапкой, кроме самой шапки и прилипающей к ней полосы вкладок (.tabbar — часть шапки:
 // въезжая из полупрозрачного, она мигала, «Профиль → Комментарии», «Списки просмотра») — у вкладок едет содержимое
+// прилипает сверху — часть шапки: шапка, полоса вкладок, чипы над списком серий
+const STICKY_HEAD = '.appbar, .tabbar:not(.static), .wchips';
 function enterParts(node) {
-  if (!node || node.matches('.appbar, .tabbar:not(.static)')) return [];
-  const bar = node.querySelector(':scope > .appbar, :scope > .tabbar:not(.static)');
+  if (!node || node.matches(STICKY_HEAD)) return [];
+  const bar = node.querySelector(':scope > .appbar, :scope > .tabbar:not(.static), :scope > .wchips');
   if (!bar) return [node];
-  return [...node.children].flatMap((el) => (el.matches('.appbar, .tabbar:not(.static)') ? []
-    : el.querySelector(':scope > .tabbar:not(.static)') ? enterParts(el) : [el]));
+  return [...node.children].flatMap((el) => (el.matches(STICKY_HEAD) ? []
+    : el.querySelector(':scope > .tabbar:not(.static), :scope > .wchips') ? enterParts(el) : [el]));
 }
 // страховка: окно не рисует кадры (скрыто, свёрнуто посреди въезда) — анимация стоит в первом кадре со сдвигом и
 // полупрозрачностью; таймер идёт и без кадров — по нему въезд снимается, контент встаёт на место

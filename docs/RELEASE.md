@@ -1,6 +1,7 @@
 # Как выпустить релиз
 
-Установщик собирает GitHub Actions (`.github/workflows/release.yml`) — локально ничего собирать не нужно.
+Установщик для Windows и APK для Android собирает GitHub Actions (`.github/workflows/release.yml`) — локально ничего
+собирать не нужно.
 Релиз создаётся из **аннотированного тега** `vX.Y.Z`; текст релиза — сообщение этого тега.
 
 ## Шаги
@@ -26,7 +27,8 @@
 
 4. **Готово.** Через 5–10 минут (25–30, если менялся `trt/`) в
    [Releases](https://github.com/arigandores/anix-desktop/releases) появится «Anix Desktop 1.4.0» с
-   `AnixDesktop-Setup-1.4.0.exe`, `latest.yml` и `.blockmap` и текстом из тега. С этого момента установленные
+   `AnixDesktop-Setup-1.4.0.exe`, `latest.yml`, `.blockmap`, `Anix-1.4.0.apk` (Android — через минуту-две после
+   установщика) и текстом из тега. С этого момента установленные
    приложения (версии новее 1.5.0 — в 1.5.0 автообновления ещё нет) при запуске предложат обновиться. Ход сборки — во вкладке
    [Actions](https://github.com/arigandores/anix-desktop/actions/workflows/release.yml).
 
@@ -41,6 +43,21 @@
   По `latest.yml` приложение узнаёт о новой версии и проверяет скачанный файл (sha512), по `.blockmap` — докачивает
   только изменившиеся части. Без них автообновление новую версию не увидит.
 
+## Android
+
+Тот же тег — и та же команда: параллельно с установщиком для Windows собирается подписанный `Anix-X.Y.Z.apk`
+(задачи `android` и `android-release` в `release.yml`) и кладётся в тот же релиз — по нему приложение на телефоне
+находит обновление. Ничего отдельно запускать не нужно.
+
+Подпись — из секретов `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
+`ANDROID_KEY_PASSWORD` (уже заведены); без них релиз не выпускается. Сборка проверяет, что APK подписан ключом Anix.
+
+**Все секреты и ключ подписи — копией в приватном репозитории
+[arigandores/anix-secrets](https://github.com/arigandores/anix-secrets)**: что где лежит, как восстановить на новом
+компьютере, и `sync-secrets.sh` — выставить все секреты GitHub заново одной командой. Ключ подписи Android не терять и
+не менять: подписанная другим ключом версия не встанет поверх установленной, пользователям придётся удалить
+приложение (с данными) и поставить заново.
+
 ## Пробная сборка без релиза
 
 Actions → Release → **Run workflow** (ветка `main`). Установщик появится в артефактах запуска (хранится 14 дней),
@@ -49,7 +66,7 @@ Actions → Release → **Run workflow** (ветка `main`). Установщи
 ## Ключи (секрет `CONFIG_LOCAL_JSON`)
 
 Это весь `config.local.json` целиком (Kodik, StudioMir, VK Видео, соцвход, Discord). Поменяли ключи локально —
-обновите секрет:
+скопируйте файл в `anix-secrets`, закоммитьте там и выставьте секреты заново (`./sync-secrets.sh`) или только этот:
 
 ```
 gh secret set CONFIG_LOCAL_JSON -R arigandores/anix-desktop < config.local.json

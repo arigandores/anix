@@ -6,6 +6,7 @@ import { prefs, db, t } from './store.js';
 import { createUpscale, TIER_LABEL, TIERS, SHARPNESS, SHARP_LABEL, benchPrompt, benchRunDialog } from './upscale/index.js';
 import { createAudioFx, AUDIO_OPTS } from './audio.js';
 import { playerPresence, webPresence } from './discord.js';
+import { has, ANDROID } from './platform.js';
 import { party, bindPlayer, playerEpisode, partyEnded, partyWhy, roomSkip, setRoomSkip, partySkipAuto, isHost as partyIsHost, canControl, fillersText } from './party/room.js';
 import { partyPlayerButton, queueAdd, partyInfo } from './party/ui.js';
 
@@ -175,7 +176,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   const playBtn = h('button', { class: 'icon-btn', title: 'Пауза (Пробел)' }, playIcon);
   const prevBtn = h('button', { class: 'icon-btn', title: 'Предыдущая серия (P)' }, icon('ic_player_previous'));
   const nextBtn = h('button', { class: 'icon-btn', title: 'Следующая серия (N)' }, icon('ic_player_next'));
-  const gearBtn = h('button', { class: 'icon-btn gear', title: 'Настройки: качество, скорость, улучшение картинки и звука, пропуск опенинга и эндинга' }, icon('ic_settings'));
+  const gearBtn = h('button', { class: 'icon-btn gear', title: has.upscale ? 'Настройки: качество, скорость, улучшение картинки и звука, пропуск опенинга и эндинга' : 'Настройки: качество, скорость, звук, пропуск опенинга и эндинга' }, icon('ic_settings'));
   const volume = h('input', { type: 'range', class: 'vol', min: 0, max: 1, step: 0.05, value: 1, title: 'Громкость (↑ ↓, M)' });
   let menu = null;
 
@@ -207,11 +208,15 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
       nextBtn,
       h('div', { class: 'grow' }),
       timeEl,
-      volume,
+      ANDROID ? null : volume, // на телефоне громкость — кнопками телефона
       gearBtn,
       pipOk ? h('button', { class: 'icon-btn pip-btn', title: 'Картинка в картинке (I) — серия в маленьком окне поверх всех окон', onclick: () => togglePip() }, icon('ic_player_pip')) : null,
-      fsBtn));
-  const stage = h('div', { class: 'player-stage' }, video, msg);
+      ANDROID ? null : fsBtn)); // на Android плеер и так на весь экран (MainActivity), кнопка ничего бы не меняла
+  // На паузе посреди экрана — «Продолжить»; продолжить можно, как и раньше, и тапом по любому месту (жесты — ниже).
+  // Нажатие по кнопке до жестов не доходит: ни двойного тапа, ни удержания ×2
+  const centerPlay = h('button', { class: 'p-center', title: 'Продолжить (пробел)', 'aria-label': 'Продолжить', tabindex: '-1',
+    onclick: (e) => { e.stopPropagation(); if (video.paused) togglePlay(); }, onpointerdown: (e) => e.stopPropagation() }, icon('ic_player_play'));
+  const stage = h('div', { class: 'player-stage' }, video, msg, centerPlay);
   const ov = h('div', { class: 'player-overlay', tabindex: '-1' }, top, stage, skipRow, controls);
 
   // --- Улучшение картинки (апскейл нейросетью, upscale/index.js) и шторка сравнения ---
@@ -276,7 +281,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     ov.classList.toggle('mini', on);
     up.relayout(); // слой апскейла — сразу по новому размеру, без мелькания в старом месте
     miniTitle.textContent = `${ttlB.textContent} · ${ttlS.textContent}`;
-    placeSplit();
+    placeSplit(); // и «Продолжить» посреди экрана (paintCenter): в мини-плеере её нет
     if (!on) ov.focus();
     poke();
   }
@@ -384,6 +389,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   function placeSplit() {
     const on = up.split > 0 && !upCanvas.hidden;
     splitEl.hidden = !on;
+    paintCenter();
     if (!on) return;
     const sr = stage.getBoundingClientRect(); const cr = upCanvas.getBoundingClientRect();
     Object.assign(splitEl.style, { left: `${cr.left - sr.left + up.split * cr.width}px`, top: `${cr.top - sr.top}px`, height: `${cr.height}px` });
@@ -404,6 +410,14 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     msg.replaceChildren(...[spinner ? h('div', { class: 'spinner' }) : null, text ? h('div', { style: { marginTop: '12px', whiteSpace: 'pre-line' } }, text) : null].filter(Boolean));
     msg.style.display = text || spinner ? 'grid' : 'none';
     if (text) exitPip('full'); // ошибку в окне PiP не показать — плеер обратно в приложение
+    paintCenter();
+  }
+  // «Продолжить» посреди экрана — только на паузе с готовым кадром: не поверх загрузки и ошибки, не в мини-плеере и
+  // PiP, не поверх шторки сравнения апскейла (её ручка — посередине), не в конце серии
+  function paintCenter() {
+    const on = video.paused && !video.ended && video.readyState >= 2 && !msg.firstChild
+      && !ov.classList.contains('mini') && !inPip() && splitEl.hidden;
+    centerPlay.classList.toggle('show', on);
   }
 
   // Серию начали заново («⏭», «Смотреть N серию», «Начать с начала»): прежняя позиция больше не верна. Позиция
@@ -573,7 +587,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
       A.historyAdd(rid, sid, ep.position).catch(() => {});
       A.episodeWatch(rid, sid, ep.position).catch(() => {});
     }
-    db.putEpisode(rid, sid, ep.position, { isWatched: true });
+    db.putEpisode(rid, sid, ep.position, { isWatched: true, startedAt: Date.now() }); // запускали здесь (resumeOf)
     ep.is_watched = true;
     await load(ni);
     return true;
@@ -819,7 +833,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
       cur ? row('ic_quality', 'Качество', qualityName(cur.quality), () => menuPage('Качество', Object.keys(cur.res.qualities).slice().reverse().map((q) => h('button', {
         class: `pm-row pm-opt ${q === cur.quality ? 'on' : ''}`, onclick: () => { if (q !== cur.quality) setQuality(q); closeMenu(); },
       }, icon('ic_check', 'sm'), h('span', { class: 'grow' }, qualityName(q)))))) : null,
-      row('ic_upscale', 'Улучшение', UP_MODE[up.mode] || 'Выкл', () => menuShow('Улучшение картинки', upscaleRows)),
+      has.upscale ? row('ic_upscale', 'Улучшение', UP_MODE[up.mode] || 'Выкл', () => menuShow('Улучшение картинки', upscaleRows)) : null,
       row('ic_audio', 'Звук', audioName(), () => menuShow('Звук', audioRows)),
       row('ic_play_speed', 'Скорость', speedName(video.playbackRate), () => menuPage('Скорость', SPEEDS.map((s, i) => h('button', {
         class: `pm-row pm-opt ${video.playbackRate === s ? 'on' : ''}`, onclick: () => { video.playbackRate = s; prefs.set('SELECTED_PLAYER_SPEED', i); closeMenu(); },
@@ -866,10 +880,11 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   paintVolume();
 
   // После нажатия «плей» или автозапуска интерфейс прячется быстрее: смотреть, а не на кнопки
-  video.addEventListener('play', () => { playIcon.set(true); miniPlayIcon.set(true); poke(PLAY_HIDE_MS); });
-  video.addEventListener('pause', () => { playIcon.set(false); miniPlayIcon.set(false); savePosition(); poke(); });
+  video.addEventListener('play', () => { playIcon.set(true); miniPlayIcon.set(true); poke(PLAY_HIDE_MS); paintCenter(); });
+  video.addEventListener('pause', () => { playIcon.set(false); miniPlayIcon.set(false); savePosition(); poke(); paintCenter(); });
   video.addEventListener('waiting', () => showMsg('', true));
   video.addEventListener('playing', () => showMsg(''));
+  for (const ev of ['loadeddata', 'ended', 'emptied', 'enterpictureinpicture', 'leavepictureinpicture']) video.addEventListener(ev, paintCenter);
   video.addEventListener('error', () => { if (!hls) onFatal(); });
   video.addEventListener('volumechange', paintVolume);
   video.addEventListener('timeupdate', paintTime);
@@ -1043,6 +1058,9 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   // Жесты плеера: двойной тап по левым/правым 35% — ∓10 с (повторные тапы суммируются),
   // по центру — полный экран; удержание 500 мс — скорость ×2, пока зажато
   let lastClick = 0;
+  // Палец (телефон, сенсорный экран): тап показывает или прячет кнопки, пауза — кнопкой, как в мобильных плеерах;
+  // мышь: клик — пауза. Были ли кнопки спрятаны — на момент касания (следом тап шлёт mousemove, и они уже видны)
+  let touchTap = false; let idleAtTap = false;
   stage.addEventListener('click', (e) => {
     if (isMini()) { setMini(false); return; } // клик по мини-плееру — развернуть
     if (menu) return; // клик мимо меню только закрывает его (обработчик на ov)
@@ -1058,10 +1076,16 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
       lastClick = 0;
     } else {
       lastClick = now;
-      setTimeout(() => { if (lastClick === now && !holding) togglePlay(); }, 300);
+      setTimeout(() => {
+        if (lastClick !== now || holding) return;
+        if (!touchTap) togglePlay();
+        else if (idleAtTap || video.paused) poke();
+        else { clearTimeout(idleTimer); ov.classList.add('idle'); }
+      }, 300);
     }
   });
-  stage.addEventListener('pointerdown', () => {
+  stage.addEventListener('pointerdown', (e) => {
+    touchTap = e.pointerType === 'touch'; idleAtTap = ov.classList.contains('idle');
     clearTimeout(holdTimer);
     if (pc) return; // в комнате скорость общая — удержание ×2 разогнало бы только себя
     holdTimer = setTimeout(() => {
@@ -1089,7 +1113,9 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   function poke(ms = 2500) {
     ov.classList.remove('idle');
     clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => { if (!video.paused && !menu && !pop && !controls.matches(':hover') && !top.matches(':hover')) ov.classList.add('idle'); }, ms);
+    // наведение — только у мыши: на телефоне :hover «залипает» на последней нажатой кнопке, и панель не пряталась бы
+    const hovered = () => matchMedia('(hover: hover)').matches && (controls.matches(':hover') || top.matches(':hover'));
+    idleTimer = setTimeout(() => { if (!video.paused && !menu && !pop && !hovered()) ov.classList.add('idle'); }, ms);
   }
   // мышь без сдвига (событие после смены раскладки) интерфейс не показывает
   let lastPt = '';
@@ -1111,7 +1137,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     else if (k === 'n') switchEpisode(1);
     else if (k === 'p') switchEpisode(-1);
     else if (k === 's') { if (skipState.kind && skipState.dismissed !== skipState.kind) doSkip(skipState.kind, true); }
-    else if (k === 'u') toggleUpscale();
+    else if (k === 'u' && has.upscale) toggleUpscale();
     else if (k === 'c' && !e.repeat && up.mode !== 'off') up.setHoldOriginal(true);
     else if (k === 'escape' && !document.fullscreenElement) close();
     poke();

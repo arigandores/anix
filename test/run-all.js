@@ -31,6 +31,7 @@ const SUITE = [
   ['comments-thread', 'comments-thread.js', 'electron'], // ветки ответов, поле комментария, статус на постере, тёмная тема по умолчанию
   ['motion', 'motion.js', 'electron'], // навигация, вкладки, полосы, перекат чисел, плей/пауза, копирование
   ['empty-center', 'empty-center.js', 'electron'], // пустые экраны и «не найдено» — посередине свободного места
+  ['titlebar', 'titlebar.js', 'electron'], // шапка окна: полоса, кнопки окна в цвет экрана, плеер, диалог, полный экран
   ['hero-backdrop', 'hero-backdrop.js', 'electron'], // шапка релиза: кнопки не темнеют после въезда экрана
   ['release-toolbar', 'release-toolbar.js', 'electron'], // шапка релиза: кнопки с первого кадра, без сдвига при загрузке
   ['chat-scroll', 'chat-scroll.js', 'electron'], // колесо над чатом комнаты: короткий чат не глушит прокрутку панели
@@ -39,6 +40,9 @@ const SUITE = [
   ['lottie-icons', 'lottie-icons.js', 'electron'], // жесты при наведении, глаз, полный экран, замок и часы: покой = статичная иконка
   ['e2e', 'e2e.js', 'electron'],
   ['watch-flow', 'watch-flow.js', 'electron'],
+  ['resume-marks', 'resume-marks.js', 'electron'], // «Продолжить» после серий, досмотренных на телефоне (отметки с сервера) — следующая за ними
+  ['episodes-sticky', 'episodes-sticky.js', 'electron'], // чипы озвучки, источника и плеера прилипают под шапкой экрана серий
+  ['player-center', 'player-center.js', 'electron'], // плеер на паузе: «Продолжить» посреди экрана
   ['web-quality', 'web-quality.js', 'electron'], // веб-плеер: качество AniLibria по «Приоритету качества», а не 720p сайта // путь до серии: «Продолжить», чипы озвучки/источника/плеера, переключатели в плеере
   ['resume', 'resume.js', 'electron'],
   ['pip', 'pip.js', 'electron'], // «Картинка в картинке»: плеер уходит из приложения, кнопки окна PiP, ✕ / «Назад во вкладку», закрытие
@@ -55,6 +59,7 @@ const SUITE = [
   ['smoke', 'smoke.js', 'node'],
   // после остальных и один: два видеотеста одновременно делили бы видеокарту
   ['upscale-trt', 'upscale-trt.js', 'electron', true],
+  ['upscale-mini', 'upscale-mini.js', 'electron', true], // «Развернуть» мини-плеер с апскейлом: слой не мелькает в старом месте
   ['upscale-trt-install', 'upscale-trt-install.js', 'electron', true], // установка кнопкой: скачивает 93 МБ
 ];
 // провал — ненулевой код или явные признаки в выводе тестов (LOW-CONTRAST — contrast.js: без него находки

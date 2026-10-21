@@ -1,0 +1,18 @@
+/* Android: стили поверх public/css/app.css (подключает android/tools/sync-web.mjs) */
+
+/* «Картинка в картинке» (MainActivity): в маленьком окне — только видео, без кнопок плеера, тостов и окон */
+.android-pip .player-overlay > :not(.player-stage),
+.android-pip .player-stage > :not(video),
+.android-pip #toast, .android-pip .backdrop { display: none !important; }
+.android-pip .player-overlay, .android-pip .player-stage { background: #000; }
+
+/* Палец крупнее курсора: у маленьких кнопок (голоса и «Ответить» в комментариях, подвал карточек, значки на странице
+   аниме) — невидимое поле нажатия вокруг, вид тот же. Поле поиска — на всю высоту плашки, а не по строке текста */
+.android .tools button, .android .foot button, .android button.badge { position: relative; }
+.android .tools button::after, .android .foot button::after, .android button.badge::after { content: ''; position: absolute; inset: -6px -3px; }
+.android .searchbar input { align-self: stretch; min-height: 40px; }
+
+/* Мини-плеер на телефоне: компактный, справа над нижним меню, кнопки (пауза, развернуть, закрыть) видны всегда —
+   на ПК они появляются при наведении мыши, а пальцем не наведёшь */
+.android .player-overlay.mini { width: min(62vw, 300px); right: 12px; bottom: calc(var(--android-nav, 84px) + 10px); }
+.android .player-overlay.mini .mini-bar { opacity: 1; padding-top: 14px; }

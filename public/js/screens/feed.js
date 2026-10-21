@@ -3,6 +3,7 @@ import { h, icon, bump, rollTo, nudge, iconButton, img, toast, tabs, pagedList, 
 import { A, auth } from '../api.js';
 import { t, tp } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
+import { APP_NAME } from '../platform.js';
 import { mainToolbar, backToolbar, relTime, needAuthView, requireAuth, commentItem, commentComposer, imageViewer, digits } from './common.js';
 
 // Jsoup-санитизация абзацев: разрешены b, i, s, u, a[href]; остальное — текст
@@ -55,7 +56,7 @@ function renderBlocks(blocks) {
           h('div', { class: 'grow' }, h('div', { class: 'muted', style: { fontSize: '12px' } }, d.site_name || d.service || ''), h('b', { class: 'clamp2' }, d.title || d.url), d.description ? h('div', { class: 'muted clamp2', style: { fontSize: '13px' } }, d.description) : null)));
         break;
       case 'delimiter': box.append(h('hr', { style: { border: 0, borderTop: '1px solid var(--sep)', width: '100%' } })); break;
-      default: box.append(h('p', { class: 'muted' }, 'Этот тип блока пока не поддерживается в Anix Desktop.'));
+      default: box.append(h('p', { class: 'muted' }, `Этот тип блока пока не поддерживается в ${APP_NAME}.`));
     }
   }
   return box;

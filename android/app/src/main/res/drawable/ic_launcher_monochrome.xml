@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Тематическая иконка (Android 13+): тот же знак одним цветом -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="768" android:viewportHeight="768">
+    <group android:translateX="204" android:translateY="204" android:scaleX="0.703" android:scaleY="0.703">
+        <path android:pathData="M108,444 L256,76 L404,444" android:strokeWidth="76" android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" />
+        <path android:pathData="M226,300 L226,386 L296,343 Z" android:fillColor="#FFFFFFFF"
+            android:strokeColor="#FFFFFFFF" android:strokeWidth="28" android:strokeLineJoin="round" />
+    </group>
+</vector>

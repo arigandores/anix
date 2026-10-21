@@ -11,6 +11,7 @@ import { trtStatus, trtInstall, benchRunDialog, benchResultsDialog, benchInfo, S
 import { AUDIO_OPTS } from '../audio.js';
 import { clearPresence, discordStatus } from '../discord.js';
 import { canUpdate, checkUpdate, lastCheck, updateDialog, whatsNewDialog, releaseNotes } from '../update.js';
+import { has, APP_NAME } from '../platform.js';
 
 function item(ic, title, sub, onClick) {
   return h('div', { class: 'menu-item', onclick: onClick }, icon(ic), h('div', { class: 'grow' }, h('div', null, title), sub ? h('div', { class: 'sub' }, sub) : null));
@@ -66,7 +67,8 @@ function lookSection() {
 
 function playbackSection() {
   // от лучшего качества к худшему, как в чипе плеера над сериями; «спрашивать» — диалог перед каждой серией
-  const PLAYERS = [[2, t('player_embedded')], [3, t('player_third_party')], [1, t('player_web')], [0, 'Спрашивать перед каждой серией']];
+  const PLAYERS = [[2, t('player_embedded')], [3, t('player_third_party')], [1, t('player_web')], [0, 'Спрашивать перед каждой серией']]
+    .filter(([id]) => id !== 3 || has.externalPlayer);
   const QUALITY = [[0, t('quality_max_available')], [1, t('quality_min_available')], [3, '480p'], [4, '720p'], [5, '1080p'], [6, '1440p'], [7, '2160p']];
   // пропуск опенинга и эндинга — то же, что «Пропуски» в шестерёнке плеера: 'auto' — сам, иначе кнопка «Пропустить»
   const skip = (key) => ({ get: () => prefs.get(key) === 'auto', set: (v) => prefs.set(key, v ? 'auto' : 'watch') });
@@ -84,7 +86,7 @@ function playbackSection() {
     // скорость запоминается и из шестерёнки плеера
     choice('ic_play_speed', 'Скорость воспроизведения', SPEEDS.map((s, i) => [i, s === 1 ? 'Обычная' : speedName(s)]), () => prefs.get('SELECTED_PLAYER_SPEED') ?? 3, (v) => prefs.set('SELECTED_PLAYER_SPEED', v)),
     toggle('ic_voice', t('remember_type_source'), t('remember_type_source_summary'), 'IS_REMEMBERING_TYPE_SOURCE'),
-    ext,
+    has.externalPlayer ? ext : null,
     cat('Серии и пропуски'),
     toggle('ic_player_next', t('pref_autoplay_title'), t('pref_autoplay_summary'), 'AUTO_PLAY'),
     toggle('ic_player_rewind_fast', 'Пропускать опенинг', 'Сам, после короткого отсчёта; иначе — кнопка «Пропустить»', skip('SKIP_OPENING')),
@@ -94,6 +96,15 @@ function playbackSection() {
 }
 
 function pictureSection() {
+  return [
+    ...(has.upscale ? upscaleItems() : []),
+    cat('Звук'),
+    // улучшение звука во встроенном плеере — то же, что «Звук» в шестерёнке плеера (audio.js)
+    ...AUDIO_OPTS.map((o) => toggle(o.icon, o.label, o.sub, o.pref)),
+  ];
+}
+
+function upscaleItems() {
   return [
     cat('Улучшение картинки'),
     // улучшение картинки во встроенном плеере — то же, что в шестерёнке плеера (upscale/index.js)
@@ -111,9 +122,6 @@ function pictureSection() {
       if (r) benchResultsDialog();
     }),
     item('ic_info_outline', 'Результаты проверки', 'Сколько мс на кадр занимает каждая модель', () => benchResultsDialog()),
-    cat('Звук'),
-    // улучшение звука во встроенном плеере — то же, что «Звук» в шестерёнке плеера (audio.js)
-    ...AUDIO_OPTS.map((o) => toggle(o.icon, o.label, o.sub, o.pref)),
   ];
 }
 
@@ -154,26 +162,27 @@ function accountSection() {
 }
 
 function aboutSection() {
-  const about = item('ic_info_outline', 'Anix Desktop', 'Неофициальный клиент Anixart', () => {});
+  const about = item('ic_info_outline', APP_NAME, 'Неофициальный клиент Anixart', () => {});
   fetch('/__info').then((r) => r.json()).then((i) => {
     about.querySelector('.sub').textContent = `Версия ${i.appVersion} • неофициальный клиент Anixart`;
   }).catch(() => {});
   return [about, ...updateItems(),
     item('ic_open_in_new', 'Исходный код', 'github.com/arigandores/anix-desktop', () => window.open('https://github.com/arigandores/anix-desktop', '_blank')),
     h('div', { class: 'muted3', style: { fontSize: '12px', padding: '8px 24px 16px' } },
-      'Anix Desktop не связан с разработчиками Anixart. Аккаунт, каталог и комментарии — сервис Anixart, видео — сторонние источники.')];
+      `${APP_NAME} не связан с разработчиками Anixart. Аккаунт, каталог и комментарии — сервис Anixart, видео — сторонние источники.`)];
 }
 
 const SECTIONS = [
   { id: 'look', icon: 'ic_preference_appearance', title: 'Внешний вид', render: lookSection },
   { id: 'playback', icon: 'ic_play_circle', title: 'Воспроизведение', render: playbackSection },
-  { id: 'picture', icon: 'ic_upscale', title: 'Картинка и звук', render: pictureSection },
-  { id: 'discord', icon: 'ic_discord', title: 'Discord', render: () => [discordSetting()] },
-  { id: 'ai', icon: 'ic_ai', title: 'AI-помощник', render: aiSection },
+  has.upscale ? { id: 'picture', icon: 'ic_upscale', title: 'Картинка и звук', render: pictureSection }
+    : { id: 'picture', icon: 'ic_audio', title: 'Звук', render: pictureSection },
+  has.discord ? { id: 'discord', icon: 'ic_discord', title: 'Discord', render: () => [discordSetting()] } : null,
+  has.ai ? { id: 'ai', icon: 'ic_ai', title: 'AI-помощник', render: aiSection } : null,
   { id: 'advanced', icon: 'ic_tune', title: 'Дополнительно', render: advancedSection },
   { id: 'account', icon: 'ic_profile', title: 'Аккаунт', render: accountSection },
   { id: 'about', icon: 'ic_info_outline', title: 'О приложении', render: aboutSection },
-];
+].filter(Boolean);
 let lastSection = 'look'; // повторный заход в настройки — в тот же раздел (до перезапуска)
 
 // params.section — открыть сразу нужный раздел («Редактировать» в профиле → «Аккаунт»)
@@ -213,7 +222,7 @@ registerScreen('settings', ({ section } = {}) => {
   });
   // нет Discord-приложения в сборке — нет и раздела (флаг из /__features — без проверки, запущен ли Discord)
   fetch('/__features').then((r) => r.json()).then((f) => {
-    if (f.discord !== false) return;
+    if (f.discord !== false || !buttons.has('discord')) return;
     buttons.get('discord').remove();
     if (current === 'discord') select('look');
   }).catch(() => {});

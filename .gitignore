@@ -11,3 +11,12 @@ test/logs/
 trt/sdk/
 trt/bin/
 roadmap.md
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.kotlin/
+android/keystore.properties
+android/*.keystore
+android/*.jks
+android/test/shots/

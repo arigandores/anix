@@ -18,17 +18,23 @@ export async function checkUpdate() { last = await U().check(); return last; }
 export const releaseNotes = (version) => U().notes(version);
 
 // Из текста релиза — первая строка (о чём версия) и список «Что нового»; «Как установить», SmartScreen и версия
-// для браузера обновляющемуся не нужны. Нет раздела «Что нового» — текст целиком.
-export function whatsNew(md) {
-  const lines = String(md || '').replace(/\r/g, '').split('\n');
+// для браузера обновляющемуся не нужны. Нет раздела «Что нового» — текст целиком. У платформ бывают свои разделы
+// после общего списка — «**Windows**» и «**Android**» (docs/RELEASE.md): показываются общий и свой, чужой — нет.
+// Строка «Платформы: …» — для сборки (какие платформы выпускать), не для людей
+const PLATFORM_HEAD = /^\s*(#{1,4}\s*)?(\*\*)?\s*(?:Для\s+|На\s+)?(Windows|Android)\s*:?\s*(\*\*)?\s*:?\s*$/i;
+const PLATFORMS_LINE = /^\s*(Платформы|Platforms)\s*:/i;
+export function whatsNew(md, platform = ANDROID ? 'android' : 'windows') {
+  const lines = String(md || '').replace(/\r/g, '').split('\n').filter((l) => !PLATFORMS_LINE.test(l));
   const at = lines.findIndex((l) => /^\s*(#{1,4}\s*)?(\*\*)?\s*Что нового/i.test(l));
   if (at < 0) return lines.join('\n').trim();
   const lead = lines.slice(0, at).find((l) => l.trim() && !/^\s*>/.test(l) && !/Как установить/i.test(l));
   const out = lead ? [lead, ''] : [];
-  let list = false;
+  let list = false; let section = null; // null — общий список, иначе 'windows' | 'android'
   for (const l of lines.slice(at + 1)) {
+    const head = PLATFORM_HEAD.exec(l);
+    if (head) { section = head[3].toLowerCase(); continue; }
     const item = /^\s*([-*•]|\d+[.)])\s/.test(l);
-    if (item) { out.push(l); list = true; } else if (!l.trim()) continue; else if (list) break; else out.push(l);
+    if (item) { if (!section || section === platform) out.push(l); list = true; } else if (!l.trim()) continue; else if (list) break; else if (!section || section === platform) out.push(l);
   }
   return out.join('\n').trim();
 }

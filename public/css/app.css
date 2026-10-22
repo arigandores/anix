@@ -186,10 +186,14 @@ img { display: block; }
 .icon-btn.sm .ic { width: 20px; height: 20px; }
 
 /* ---------- Поисковая строка на главной ---------- */
-.searchbar { flex: 1; display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 8px 0 16px; border-radius: 24px;
+.searchbar { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 8px 0 16px; border-radius: 24px;
   background: var(--bg2); color: var(--text2); box-shadow: var(--shadow); cursor: text; max-width: 720px; }
 :root[data-theme="dark"] .searchbar { box-shadow: none; }
-.searchbar input { flex: 1; border: 0; outline: 0; background: transparent; font-size: 16px; color: var(--text); min-width: 0; }
+/* подсказка — с полем справа как слева (справа 8 px — под кнопку очистки у поля ввода) */
+.searchbar:has(> .placeholder) { padding-right: 16px; }
+/* поле ввода — не шире места: его собственная ширина (~225 px) распирала строку поиска, и кнопки (очистить, голос,
+   фильтр) уезжали за край экрана */
+.searchbar input { flex: 1; width: 0; border: 0; outline: 0; background: transparent; font-size: 16px; color: var(--text); min-width: 0; }
 .searchbar .placeholder { flex: 1; font-size: 16px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* узкое окно (телефон): строка поиска не делит ширину пополам с пустым местом справа — подсказка в одну строку */
 @media (max-width: 600px) { .searchbar + .grow { flex-grow: .001; } }
@@ -369,12 +373,17 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .fav-btn { width: 40px; height: 40px; border-radius: 20px; display: grid; place-items: center; background: var(--btn2); color: var(--btn2-text); }
 .fav-btn.on { color: #ff4d6d; }
 .rel-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; padding: 16px var(--page-pad) 40px; align-items: start; }
+.rel-body > .rel-comments { grid-column: 1; }
+@media (min-width: 981px) { .rel-body > .rel-side { grid-row: span 2; } }
 @media (max-width: 980px) { .rel-body { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 640px) { .rel-hero .inner { flex-direction: column; align-items: center; text-align: center; } .rel-hero .poster { width: 170px; align-self: center; } .rel-badges { justify-content: center; } .rel-actions { justify-content: center; } }
 .card { background: var(--bg2); border-radius: 16px; padding: var(--card-pad); box-shadow: var(--shadow); }
 :root[data-theme="dark"] .card { box-shadow: none; }
 .card + .card { margin-top: 16px; }
 .card-title { font-family: 'Google Sans','Roboto',sans-serif; font-size: 18px; font-weight: 500; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+/* строки аниме в карточке («Просмотрено недавно» в профиле) — во всю ширину карточки, постер и текст на одной линии с
+   заголовком карточки: свои поля строки поверх полей карточки съедали ширину с обеих сторон */
+.card > .list > .release-row { margin-inline: calc(-1 * var(--card-pad)); padding-inline: var(--card-pad); }
 .info-rows { display: flex; flex-direction: column; gap: 10px; }
 .info-row { display: flex; gap: 12px; align-items: flex-start; font-size: 14px; }
 .info-row .ic { color: var(--icon); width: 20px; height: 20px; margin-top: 1px; }
@@ -606,7 +615,10 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .player-top .ttl b { display: block; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .player-top .ttl span { font-size: 13px; opacity: .75; }
 .player-stage { flex: 1; position: relative; display: grid; place-items: center; }
-.player-stage video, .player-stage iframe { width: 100%; height: 100%; border: 0; background: #000; }
+/* видео — ровно во всю область плеера: высота 100% у элемента сетки не срабатывала, и рамка видео бралась по пропорциям
+   ролика (4:3 на экране телефона — 914×686 при высоте 411): верх и низ обрезались, а «Вписать / Заполнить / Растянуть»
+   (object-fit) ничего не меняли */
+.player-stage video, .player-stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000; }
 .player-msg { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; text-align: center; padding: 20px; }
 /* Панель плеера. Цвета: проигранное — карминовый, секции опенинга/эндинга — зелёный (--mark). */
 .player-overlay { --mark: #66c942; --mark-dim: rgba(102,201,66,.32); --mark-buf: rgba(102,201,66,.55); }
@@ -622,7 +634,7 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 /* Таймлайн: сегменты по границам опенинга и эндинга, между ними зазор; в сегменте — буфер и проигранное */
 .seek { width: 100%; height: 22px; position: relative; cursor: pointer; touch-action: none; }
 .seek .segs { position: absolute; left: 0; right: 0; top: 50%; height: 4px; transform: translateY(-50%); transition: height .12s; }
-.seek:hover .segs { height: 7px; }
+.seek:hover .segs, .seek.drag .segs { height: 7px; }
 /* зазор 3 px между сегментами — обрезкой их краёв (позиции сегментов точно соответствуют времени) */
 .seek .seg { position: absolute; top: 0; bottom: 0; overflow: hidden; background: rgba(255,255,255,.22); clip-path: inset(0 1.5px 0 1.5px round 99px); }
 .seek .seg:first-child { clip-path: inset(0 1.5px 0 0 round 99px); }
@@ -637,6 +649,7 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .seek .knob { position: absolute; top: 50%; width: 14px; height: 14px; margin-top: -7px; border-radius: 50%; background: var(--carmine); transform: translateX(-50%) scale(.85);
   box-shadow: 0 1px 4px rgba(0,0,0,.4); transition: transform .12s, background .2s; pointer-events: none; }
 .seek:hover .knob { transform: translateX(-50%) scale(1.1); }
+.seek.drag .knob { transform: translateX(-50%) scale(1.25); } /* тянут — точка крупнее (после :hover: на телефоне :hover залипает) */
 .seek .knob.mark { background: var(--mark); }
 .seek-tip { position: absolute; bottom: 24px; left: 0; transform: translateX(-50%); padding: 5px 9px; border-radius: 8px; background: rgba(18,18,18,.92);
   color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .12s; display: flex; gap: 6px; align-items: center; }
@@ -661,7 +674,7 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
   box-shadow: 0 2px 10px rgba(0,0,0,.35); transition: background .15s, transform .15s; }
 .skip-row button:active { transform: scale(.97); }
 .skip-row .fill { position: absolute; inset: 0 auto 0 0; width: 0; z-index: -1; pointer-events: none; }
-.skip-row .skip-watch { background: rgba(24,24,24,.66); color: #fff; backdrop-filter: blur(10px); }
+.skip-row .skip-watch { background: rgba(32,32,32,.92); color: #fff; } /* сплошная: размытие под ней на телефоне догружалось кадром позже */
 .skip-row .skip-watch:hover { background: rgba(40,40,40,.78); }
 .skip-row .skip-watch .fill { background: rgba(255,255,255,.18); }
 .skip-row .skip-go { background: #fff; color: #111; }
@@ -1312,6 +1325,16 @@ button:focus-visible, a:focus-visible, .menu-item:focus-visible, .release-card:f
 .pick-list label.sheet-item { cursor: pointer; }
 .pick-list input[type="checkbox"] { width: 18px; height: 18px; margin: 0; flex: none; accent-color: var(--carmine); }
 :root[data-theme="dark"] .pick-list input[type="checkbox"] { accent-color: var(--accent); }
+/* Фильтр: поле выбора нескольких вариантов (filter.js multi) — как выпадающий список рядом: выбранное одной строкой,
+   стрелка справа; окно с галочками (chooseMany) — подзаголовки групп, поиск, «Выбрать все», «Сбросить» слева */
+.pick-field { display: flex; align-items: center; gap: 8px; text-align: left; color: var(--text); font-size: 15px; padding-right: 34px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text2) 50%), linear-gradient(135deg, var(--text2) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 21px, calc(100% - 13px) 21px; background-size: 5px 5px; background-repeat: no-repeat; }
+.pick-group { padding: 14px 24px 4px; color: var(--text2); font-size: 13px; font-weight: 500; }
+.pick-tools { display: flex; justify-content: flex-end; margin: 2px -12px 0 0; }
+.pick-search { margin-top: 4px; height: 44px; }
+.pick-field:focus:not(:focus-visible) { border-color: var(--input-border); } /* окно закрылось — поле не «в фокусе» красным */
+.pick-dialog .dialog-actions .btn:first-child { margin-right: auto; }
 .pick-cat { margin: 18px 0 8px; color: var(--text2); font-size: 13px; font-weight: 500; }
 .pick-cat:first-child { margin-top: 0; }
 
@@ -1327,3 +1350,15 @@ button:focus-visible, a:focus-visible, .menu-item:focus-visible, .release-card:f
   /* записи блога внутри колонки профиля — без второго отступа (у колонки он уже есть) */
   .container .article { padding-inline: 0; }
 }
+
+/* Скрытое атрибутом hidden — скрыто всегда: классы с display (.icon-btn — inline-grid) перебивали его, и кнопки,
+   которые код прятал («Перемотать опенинг» при метках, «Смотреть вместе» там, где нельзя), оставались на экране */
+[hidden] { display: none !important; }
+
+/* «Перемотать опенинг» в плеере (player.js opBtn): значок и «+85 с» — видно, что и на сколько */
+.op-btn { display: inline-flex; align-items: center; gap: 4px; height: 36px; padding: 0 12px 0 8px; border-radius: 18px; flex: none;
+  background: rgba(255, 255, 255, .14); color: #fff; font-size: 14px; font-weight: 500; white-space: nowrap; }
+.op-btn:hover { background: rgba(255, 255, 255, .22); }
+
+/* Улучшение картинки на телефоне (sharpen.js): холст ровно над видео, тот же режим кадра; касания — к плееру */
+.sharpen-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; background: #000; }

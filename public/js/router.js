@@ -213,8 +213,12 @@ export async function refreshCurrent() {
   forgetRecent();
   const lists = [...old.node.querySelectorAll('.paged')].filter((p) => p.refresh && p.offsetParent);
   if (lists.length) { await Promise.all(lists.map((p) => p.refresh())); return true; }
+  // экран собирается заново — на тех же вкладках (пустая «Моя вкладка» без списка пересобирала Главную, и та
+  // открывалась на вкладке по умолчанию)
+  const tabsAt = [...old.node.querySelectorAll('.tabs')].map((t) => t.current?.());
   const entry = makeEntry(old.name, old.params);
   await entry.ready;
+  [...entry.node.querySelectorAll('.tabs')].forEach((t, k) => { if (tabsAt[k] != null && tabsAt[k] >= 0 && t.select) t.select(tabsAt[k]); });
   for (const t0 = Date.now(); entry.node.querySelector('.sk-root, .sk, .spinner-wrap, .load-reveal') && Date.now() - t0 < 10000;) await new Promise((ok) => setTimeout(ok, 100));
   const st = state.stacks[state.current];
   if (entry.failed || topEntry() !== old) { entry.dispose && entry.dispose(); return !entry.failed; } // не загрузилось — прежний вид

@@ -18,7 +18,7 @@ check('ссылка-приглашение запускает приложени
 check('…и предлагает войти в комнату с этим кодом', !!(await inviteDialog()));
 screenshot('links-invite');
 await cancelDialog();
-check('«Отмена» — без комнаты', await js(`!document.querySelector('.backdrop:not(.closing)')`));
+check('«Отмена» — без комнаты', !!(await until(`!document.querySelector('.backdrop:not(.closing)')`, 5000)));
 
 // Приложение открыто — ссылка приходит в него же (без перезапуска страницы)
 await js('window.__mark = 1');
@@ -65,7 +65,7 @@ sh(`am force-stop ${PKG}`);
 await launch({ link: `https://anixart.tv/release/${relId}` });
 check('ссылка anixart.tv/release/… запускает приложение на странице аниме', !!(await until(`document.querySelector('#viewport > .screen')?.dataset.screen === 'release' && !!document.querySelector('.btn-watch, .screen h1')`, 20000)), await screenNow());
 await back();
-check('«Назад» — на Главную', await screenNow() === 'tab:home');
+check('«Назад» — на Главную', !!(await until(`document.querySelector('#viewport > .screen')?.dataset.screen === 'tab:home'`, 5000)), await screenNow());
 // приложение открыто — anixart://profile?id=… приходит в него же
 await js('window.__mark = 2');
 sh(`am start -W -a android.intent.action.VIEW -d 'anixart://profile?id=1' ${PKG}`);

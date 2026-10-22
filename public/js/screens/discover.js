@@ -8,7 +8,7 @@ import { releaseList } from './home.js';
 
 const TILE_COLORS = {
   popular: ['#fbe9e7', '#ff5722'], schedule: ['#e3f2fd', '#2196f3'], collections: ['#f3e5f5', '#ab47bc'],
-  filter: ['#e0f2f1', '#009688'], random: ['#e8f5e9', '#4caf50'], vk: ['#e8f0fb', '#0077ff'], tg: ['#e5f4fb', '#2aabee'],
+  filter: ['#e0f2f1', '#009688'], random: ['#e8f5e9', '#4caf50'],
 };
 function tile(key, label, ic, onClick) {
   const [bg, fg] = TILE_COLORS[key];
@@ -87,11 +87,7 @@ registerScreen('tab:discover', async (_p, ctx) => {
       body.append(sectionHead(t('label_discussed_today')));
       body.append(h('div', { class: 'list' }, disc.map(discussRow)));
     }
-    // 5. Соцсети
-    const baseUrl = (window.__toggles && window.__toggles.baseUrl) || 'https://anixart-app.com/';
-    body.append(h('div', { class: 'tiles' },
-      tile('vk', t('label_we_are_vk'), 'ic_vk', () => window.open('https://vk.com/public94475547', '_blank')),
-      tile('tg', t('label_we_are_telegram'), 'ic_telegram', () => window.open(`${baseUrl}tg`, '_blank'))));
+    // 5. (соцсети Anixart — «Anixart ВКонтакте», «Anixart в Telegram» — не показываем: это не наше приложение)
     // 6. Смотрят сейчас
     const w = v(watching).content;
     if (w.length) {

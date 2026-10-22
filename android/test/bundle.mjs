@@ -25,7 +25,9 @@ try {
   check('index.html: server.js — первым скриптом, android.css — после app.css',
     html.indexOf('/android/server.js') > 0 && html.indexOf('/android/server.js') < html.indexOf('<script', html.indexOf('/android/server.js') + 30)
     && html.indexOf('/android/android.css') > html.indexOf('/css/app.css'));
-  check('модели апскейла в сборку не попали', !fs.existsSync(path.join(out, 'models')));
+  // улучшение картинки на телефоне — только шейдер Anime4K и его лицензия; моделей апскейла с ПК (20 МБ) в APK нет
+  const models = fs.existsSync(path.join(out, 'models', 'upscale')) ? fs.readdirSync(path.join(out, 'models', 'upscale')).sort() : [];
+  check('модели: в APK только шейдеры Anime4K (Clamp, Restore S/M, Upscale M), дебандинг и лицензия', JSON.stringify(models) === JSON.stringify(['ANIME4K-LICENSE', 'Anime4K_Clamp_Highlights.glsl', 'Anime4K_Restore_CNN_M.glsl', 'Anime4K_Restore_CNN_S.glsl', 'Anime4K_Upscale_CNN_x2_M.glsl', 'Anix_Deband.glsl']) && !fs.existsSync(path.join(out, 'models', 'upscale-onnx')), models.join(', '));
 
   // app.css: правила с :hover — только при наведении мышью (на телефоне :hover залипает после тапа), общей полосы
   // прокрутки ПК (::-webkit-scrollbar) нет — она держала колонку справа; остальное как было

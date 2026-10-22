@@ -7,7 +7,7 @@ import { initDragScroll } from './dragscroll.js';
 import { preloadLottie, navIcon } from './lottie.js';
 import { startupUpdateCheck } from './update.js';
 import { initTitlebar } from './titlebar.js';
-import { has, touch, haptic, ANDROID } from './platform.js';
+import { has, touch, haptic, ANDROID, launchLink } from './platform.js';
 import { pullToRefresh } from './pull.js';
 import { initLinks } from './links.js';
 import { initPush } from './push.js';
@@ -63,9 +63,15 @@ async function main() {
   initDragScroll(); // ЛКМ + движение = прокрутка, как пальцем в мобильном приложении
   // Двойной клик = одно нажатие: второй клик серии (detail > 1) до кнопок не доходит — иначе он повторяет
   // действие или попадает в только что открытый экран. Плеер ловит двойное нажатие сам (pointerdown),
-  // поля ввода выделяют слово двойным кликом — их не трогаем.
+  // поля ввода выделяют слово двойным кликом — их не трогаем. Только по тому же месту или когда первый клик уже сменил
+  // экран: пальцем быстрые нажатия по соседним переключателям (настройки уведомлений) — тоже серия, и второй
+  // переключатель не срабатывал
+  const pressed = (el) => el.closest('button, a, label, [role="button"], [role="tab"], .menu-item') || el;
+  let lastClick = null;
   document.addEventListener('click', (e) => {
-    if (e.detail > 1 && !e.target.closest('.player-overlay, input, textarea, select, [contenteditable]')) { e.stopPropagation(); e.preventDefault(); }
+    const was = lastClick; const el = pressed(e.target);
+    if (e.isTrusted) lastClick = el;
+    if (e.detail > 1 && was && (was === el || !was.isConnected) && !e.target.closest('.player-overlay, input, textarea, select, [contenteditable]')) { e.stopPropagation(); e.preventDefault(); }
   }, true);
   // Анимация появления — один раз на элемент (см. .appeared в app.css). Сам .screen не трогаем:
   // его затухание при смене вкладки задаёт роутер.
@@ -91,6 +97,21 @@ async function main() {
   A.toggles().then((tg) => { prefs.applyToggles(tg); window.__toggles = tg; }).catch(() => {});
   switchTab(TABS[0]);
   initLinks(); // ссылки на Anixart — в приложении (links.js)
+  // телефон: тянет ли он нейросеть Anime4K — проверка один раз в фоне, когда плеер закрыт (upscale/phone-check.js)
+  if (ANDROID) {
+    const later = () => setTimeout(async () => {
+      const pc = await import('./upscale/phone-check.js');
+      if (!pc.checkDue()) return;
+      if (document.querySelector('.player-overlay') || document.hidden) { later(); return; }
+      pc.checkPhone().catch((e) => window.__anixLog?.(`upscale: проверка не удалась — ${e && e.message}`));
+    }, 40000); // в простое: на старте приложение грузит главную, и замер ловил её нагрузку
+    later();
+  }
+  // телефон: диагностика апскейла по ссылке anixdesktop://upscale-diag (adb shell am start -d …) — замеры в журнал
+  if (ANDROID && window.anixartNative?.onDeepLink) {
+    const diag = (u) => { if (/^anixdesktop:\/\/upscale-diag/.test(u || '')) import('./upscale/diag.js').then((m) => m.runDiag()).catch((e) => window.__anixLog?.(`diag: ${e && e.message}`)); };
+    window.anixartNative.onDeepLink(diag); launchLink().then(diag);
+  }
   initPush(); // телефон: уведомления Anixart системными (push.js)
   refreshNotifBadge();
   preloadLottie(); // анимации интерфейса — заранее, в простое

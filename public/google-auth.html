@@ -19,6 +19,7 @@
       font: inherit; font-weight: 600; cursor: pointer; }
     button:disabled { opacity: .6; cursor: default; }
     .err { color: var(--err); margin-top: 14px; min-height: 1.5em; }
+    a.back { display: block; padding: 13px; border-radius: 999px; background: var(--accent); color: #fff; font-weight: 600; text-decoration: none; }
   </style>
 </head>
 <body>
@@ -33,10 +34,18 @@
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
     import { getAuth, GoogleAuthProvider, signInWithPopup } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
 
-    const n = new URLSearchParams(location.search).get('n');
+    const q = new URLSearchParams(location.search);
+    const n = q.get('n');
+    // телефон (LocalServer.kt): после входа — сразу обратно в приложение ссылкой intent:// (MainActivity, singleTask);
+    // если браузер не пустит переход без нажатия — кнопка «Вернуться в Anix»
+    const android = q.get('app') === 'android';
+    const APP = android ? 'Anix' : 'Anix Desktop';
+    const BACK = 'intent://auth-done#Intent;scheme=anixdesktop;package=com.arigandores.anix;end';
+    document.title = `Вход через Google — ${APP}`;
     const btn = document.getElementById('go');
     const err = document.getElementById('err');
     const sub = document.getElementById('sub');
+    sub.textContent = `${APP} откроет окно Google. После входа ${android ? 'приложение откроется само' : 'вернитесь в приложение'}.`;
     const cfg = await (await fetch('/social/google/config')).json();
     const auth = getAuth(initializeApp(cfg));
 
@@ -51,8 +60,15 @@
         })).json();
         if (!r.ok) throw new Error('Сеанс входа устарел — начните вход в приложении заново');
         btn.remove();
-        sub.textContent = 'Готово! Вернитесь в Anix Desktop — вкладку можно закрыть.';
-        setTimeout(() => window.close(), 1500);
+        if (android) {
+          sub.textContent = 'Готово! Возвращаемся в Anix…';
+          const a = document.createElement('a'); a.className = 'back'; a.href = BACK; a.textContent = 'Вернуться в Anix';
+          sub.after(a);
+          location.href = BACK;
+        } else {
+          sub.textContent = 'Готово! Вернитесь в Anix Desktop — вкладку можно закрыть.';
+          setTimeout(() => window.close(), 1500);
+        }
       } catch (e) {
         btn.disabled = false;
         if (e && e.code === 'auth/popup-closed-by-user') return;

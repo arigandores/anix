@@ -11,7 +11,6 @@ import android.view.ViewGroup
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -31,18 +30,33 @@ class SocialAuth(private val activity: Activity, req: JSONObject, private val do
     private lateinit var dialog: Dialog
     private lateinit var web: WebView
 
+    private val provider = req.optString("provider")
+
     @SuppressLint("SetJavaScriptEnabled")
     fun show() {
-        dialog = Dialog(activity, android.R.style.Theme_DeviceDefault_Light_NoActionBar)
-        val root = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.WHITE) }
+        // Шапка — как в приложении: крестик «Закрыть» слева и «Вход через …», цвета темы приложения. Раньше кнопка
+        // «Отмена» справа терялась (светлая тема окна поверх тёмной системы), и выйти можно было только «Назад»
+        val dark = activity.getSharedPreferences("anix", Activity.MODE_PRIVATE).getBoolean("darkTheme", true)
+        val bg = if (dark) Color.parseColor("#121212") else Color.WHITE
+        val fg = if (dark) Color.WHITE else Color.parseColor("#212121")
+        dialog = Dialog(activity, if (dark) android.R.style.Theme_DeviceDefault_NoActionBar else android.R.style.Theme_DeviceDefault_Light_NoActionBar)
+        val root = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(bg) }
+        val name = mapOf("telegram" to "Telegram", "vk" to "ВКонтакте", "yandex" to "Яндекс")[provider]
         val bar = LinearLayout(activity).apply {
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(8), dp(8), dp(8))
-            addView(TextView(activity).apply { text = "Вход"; textSize = 18f; setTextColor(Color.BLACK) }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            addView(Button(activity, null, android.R.attr.borderlessButtonStyle).apply {
-                text = "Отмена"; contentDescription = "Отмена"
+            setPadding(dp(4), dp(4), dp(16), dp(4))
+            setBackgroundColor(bg)
+            addView(TextView(activity).apply {
+                text = "✕"; textSize = 22f; setTextColor(fg); gravity = Gravity.CENTER
+                contentDescription = "Закрыть"
+                val ripple = android.util.TypedValue().also { activity.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, it, true) }
+                setBackgroundResource(ripple.resourceId)
                 setOnClickListener { finish(JSONObject().put("ok", false).put("error", "canceled")) }
-            })
+            }, LinearLayout.LayoutParams(dp(48), dp(48)))
+            addView(TextView(activity).apply {
+                text = if (name != null) "Вход через $name" else "Вход"; textSize = 18f; setTextColor(fg)
+                setPadding(dp(8), 0, 0, 0); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
         web = WebView(activity)
         web.settings.javaScriptEnabled = true
@@ -70,7 +84,14 @@ class SocialAuth(private val activity: Activity, req: JSONObject, private val do
             v.setPadding(i.left, i.top, i.right, i.bottom)
             insets
         }
+        frame.setBackgroundColor(bg)
         dialog.setContentView(frame)
+        dialog.window?.let { w ->
+            w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            // значки строки состояния — тёмные на светлой шапке, светлые на тёмной
+            val light = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            w.insetsController?.setSystemBarsAppearance(if (dark) 0 else light, light)
+        }
         dialog.setOnCancelListener { finish(JSONObject().put("ok", false).put("error", "canceled")) }
         dialog.show()
         web.loadUrl(url)

@@ -14,7 +14,7 @@ const root = path.resolve(dir, '..', '..');
 // [тест, таймаут в минутах, переменные окружения]
 const SUITE = [
   ['bundle', 2], ['server', 5], ['launch', 5], ['features', 8], ['navigation', 10], ['watch', 10], ['pip', 8],
-  ['links', 6], ['auth', 10], ['offline', 8], ['party', 8], ['update', 8], ['touch', 8], ['nav', 8], ['player-touch', 8], ['push', 8], ['extras', 8], ['editors', 8], ['layout', 25], ['layout', 25, { ANIX_FONT_SCALE: '1.3' }],
+  ['links', 6], ['auth', 10], ['offline', 8], ['party', 8], ['update', 8], ['touch', 8], ['nav', 8], ['player-touch', 8], ['push', 8], ['extras', 8], ['editors', 8], ['home-ux', 8], ['layout', 25], ['layout', 25, { ANIX_FONT_SCALE: '1.3' }],
   ['layout', 25, { ANIX_LANDSCAPE: '1' }],
 ];
 const args = process.argv.slice(2);

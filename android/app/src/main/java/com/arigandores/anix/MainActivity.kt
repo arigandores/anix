@@ -16,6 +16,7 @@ import android.content.pm.ActivityInfo
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Insets
 import android.graphics.drawable.Icon
@@ -65,6 +66,7 @@ class MainActivity : Activity() {
     private var session: MediaSession? = null
     private var fileCallback: android.webkit.ValueCallback<Array<Uri>>? = null // выбор файла для страницы
     private var saveText: String? = null // файл, который страница сохраняет (экспорт закладок), — до выбора места
+    private var imeShown = false // клавиатура открыта: странице — убрать нижнее меню (shim.js __anixIme)
     private var cutout = Insets.NONE // вырез камеры в плеере: видео под ним, кнопки страница отодвигает (shim.js)
     // Кнопки окна «картинка в картинке» → страница (__anixMedia в shim.js)
     private val mediaReceiver = object : BroadcastReceiver() {
@@ -91,6 +93,8 @@ class MainActivity : Activity() {
             v.setPadding(i.left, i.top, i.right, i.bottom)
             val c = if (full) insets.getInsets(WindowInsets.Type.displayCutout()) else Insets.NONE
             if (c != cutout) { cutout = c; js("window.__anixInsets && __anixInsets()") }
+            val k = insets.isVisible(WindowInsets.Type.ime())
+            if (k != imeShown) { imeShown = k; js("window.__anixIme && __anixIme($k)") }
             insets
         }
         web = WebView(this)
@@ -100,6 +104,9 @@ class MainActivity : Activity() {
             javaScriptEnabled = true
             domStorageEnabled = true
             mediaPlaybackRequiresUserGesture = false
+            // страница — как приложение, а не сайт: двумя пальцами её не масштабировать (щипок в плеере — режим кадра,
+            // его ловит сама страница). И метатег viewport в сборке (sync-web.mjs)
+            setSupportZoom(false); builtInZoomControls = false; displayZoomControls = false
             userAgentString = "$userAgentString AnixAndroid/${packageManager.getPackageInfo(packageName, 0).versionName}"
         }
         web.addJavascriptInterface(Bridge(), "anixAndroid")
@@ -138,6 +145,10 @@ class MainActivity : Activity() {
                 return try { startActivityForResult(params.createIntent(), REQ_FILE); true } catch (_: Exception) { fileCallback = null; false }
             }
 
+            // Заглушка видео без кадра — прозрачная: своя у WebView (серый фон и огромный треугольник) была на весь
+            // экран плеера, пока серия грузится, — поверх неё только кружок загрузки страницы
+            override fun getDefaultVideoPoster(): Bitmap = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+
             override fun onHideCustomView() {
                 val v = fullscreen ?: return
                 root.removeView(v)
@@ -156,6 +167,17 @@ class MainActivity : Activity() {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { back() }
         }
         web.loadUrl("http://127.0.0.1:${server.port}/")
+    }
+
+    // MIUI/HyperOS: разрешено ли создавать ярлыки (MIUIOP 10017, «Ярлыки на рабочем столе»). Не Xiaomi или не
+    // удалось спросить — считаем, что можно (как раньше)
+    private fun miuiShortcutsAllowed(): Boolean {
+        if (!Build.MANUFACTURER.equals("Xiaomi", ignoreCase = true)) return true
+        return try {
+            val ops = getSystemService(android.app.AppOpsManager::class.java)
+            val check = android.app.AppOpsManager::class.java.getMethod("checkOpNoThrow", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, String::class.java)
+            check.invoke(ops, 10017, applicationInfo.uid, packageName) as Int == android.app.AppOpsManager.MODE_ALLOWED
+        } catch (_: Exception) { true }
     }
 
     // Приглашение в совместный просмотр: anixdesktop://watch/<код> (docs/watch открывает эту ссылку); ссылки на Anixart
@@ -383,6 +405,10 @@ class MainActivity : Activity() {
             catch (_: Exception) { try { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg)) } catch (_: Exception) {} }
         }
 
+        // Запись страницы в журнал телефона (adb logcat -s AnixWeb): возможности WebView, сбои — для диагностики
+        @JavascriptInterface
+        fun log(msg: String) { android.util.Log.i("AnixWeb", msg.take(500)) }
+
         // Отклик вибрацией (platform.js haptic): long — меню по долгому нажатию, tap — голос, оценка
         @JavascriptInterface
         fun haptic(kind: String) = runOnUiThread {
@@ -402,9 +428,13 @@ class MainActivity : Activity() {
 
         // Ярлык на рабочем столе (аниме, коллекция): значок — постер (квадрат по центру), нажатие — ссылка anixart://…
         @JavascriptInterface
-        fun pinShortcut(id: String, label: String, link: String, image: String) {
+        // ok | unsupported | blocked — на Xiaomi (MIUI/HyperOS) ярлыки по умолчанию запрещены разрешением «Ярлыки на
+        // рабочем столе» (MIUIOP 10017): запрос система молча отклоняет, и кнопка «ничего не делала» — страница
+        // показывает, где разрешить (openShortcutSettings)
+        fun pinShortcut(id: String, label: String, link: String, image: String): String {
             val sm = getSystemService(android.content.pm.ShortcutManager::class.java)
-            if (sm?.isRequestPinShortcutSupported != true) { js("window.__anixToast && __anixToast('Рабочий стол не поддерживает ярлыки')"); return }
+            if (sm?.isRequestPinShortcutSupported != true) return "unsupported"
+            if (!miuiShortcutsAllowed()) return "blocked"
             kotlin.concurrent.thread {
                 val pic = image.takeIf { it.startsWith("http") }?.let { shortcutIcon(it) }
                 val info = android.content.pm.ShortcutInfo.Builder(this@MainActivity, id)
@@ -413,6 +443,19 @@ class MainActivity : Activity() {
                     .setIntent(Intent(Intent.ACTION_VIEW, Uri.parse(link), this@MainActivity, MainActivity::class.java))
                     .build()
                 runOnUiThread { try { sm.requestPinShortcut(info, null) } catch (_: Exception) {} }
+            }
+            return "ok"
+        }
+
+        // Экран разрешений приложения в MIUI (там «Ярлыки на рабочем столе»); не открылся — карточка приложения
+        @JavascriptInterface
+        fun openShortcutSettings() = runOnUiThread {
+            try {
+                startActivity(Intent("miui.intent.action.APP_PERM_EDITOR")
+                    .setClassName("com.miui.securitycenter", "com.miui.permcenter.permissions.PermissionsEditorActivity")
+                    .putExtra("extra_pkgname", packageName))
+            } catch (_: Exception) {
+                try { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) } catch (_: Exception) {}
             }
         }
 

@@ -30,12 +30,14 @@ export function bookmarkReleaseTab(def, { profileId = null } = {}) {
   let filterAnnounce = 0;
   function build() {
     const grid = viewType() === 1;
-    const totalEl = h('span', { class: 'muted' });
+    // «6 всего» — одной строкой (на узком экране переносилось «6» / «всего»); не хватает места — сжимается подпись
+    // сортировки (многоточие), а не счётчик
+    const totalEl = h('span', { class: 'muted', style: { whiteSpace: 'nowrap', flex: 'none' } });
     const sortLabel = SORTS.find((s) => s[0] === sort);
     const header = h('div', { class: 'row', style: { padding: '10px var(--gutter)', gap: '10px' } },
       totalEl, h('div', { class: 'grow' }),
-      h('button', { class: 'chip', onclick: () => sheet('Сортировка', SORTS.map(([v, g, l]) => ({ label: `${t(g)}: ${t(l)}`, checked: v === sort, onClick: () => { sort = v; prefs.set(def.sortKey, v); build(); } }))) },
-        icon(sort % 2 ? 'sort_desc' : 'sort_asc', 'sm'), `${t(sortLabel[1])}`),
+      h('button', { class: 'chip', style: { minWidth: 0 }, onclick: () => sheet('Сортировка', SORTS.map(([v, g, l]) => ({ label: `${t(g)}: ${t(l)}`, checked: v === sort, onClick: () => { sort = v; prefs.set(def.sortKey, v); build(); } }))) },
+        icon(sort % 2 ? 'sort_desc' : 'sort_asc', 'sm'), h('span', { class: 'ellipsis' }, t(sortLabel[1]))),
       def.filter && !profileId ? h('button', { class: `chip ${filterAnnounce ? 'on' : ''}`, onclick: () => sheet(t('filter'), [
         { label: t('no_matter'), checked: filterAnnounce === 0, onClick: () => { filterAnnounce = 0; build(); } },
         { label: t('only_announces'), checked: filterAnnounce === 1, onClick: () => { filterAnnounce = 1; build(); } },

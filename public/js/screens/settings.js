@@ -13,6 +13,7 @@ import { AUDIO_OPTS } from '../audio.js';
 import { clearPresence, discordStatus } from '../discord.js';
 import { canUpdate, checkUpdate, lastCheck, updateDialog, whatsNewDialog, releaseNotes } from '../update.js';
 import { has, APP_NAME, touch, ANDROID } from '../platform.js';
+import { neuralOk } from '../upscale/phone-check.js';
 
 function item(ic, title, sub, onClick) {
   return h('div', { class: 'menu-item', onclick: onClick }, icon(ic), h('div', { class: 'grow' }, h('div', null, title), sub ? h('div', { class: 'sub' }, sub) : null));
@@ -110,6 +111,12 @@ function playbackSection() {
 function pictureSection() {
   return [
     ...(has.upscale ? upscaleItems() : []),
+    ...(has.sharpen ? [cat('Улучшение картинки'),
+      // телефон: резкость контуров в плеере (sharpen.js) — то же, что «Улучшение» в шестерёнке плеера
+      // «Нейросеть» (Anime4K, anime4k-gl.js) — только если телефон её тянет (upscale/phone-check.js)
+      choice('ic_upscale', 'Улучшение картинки', [['off', 'Выключено'], ['soft', 'Чётче — контуры чище у серий до 720p, чуть больше расход батареи'], ['strong', 'Сильнее — ещё резче'],
+        neuralOk() ? ['neural', 'Нейросеть — Anime4K, как «720p +» в Anixart: чище линии; больше расход батареи'] : null].filter(Boolean),
+        () => prefs.get('PLAYER_SHARPEN') || 'off', (v) => prefs.set('PLAYER_SHARPEN', v))] : []),
     cat('Звук'),
     // улучшение звука во встроенном плеере — то же, что «Звук» в шестерёнке плеера (audio.js)
     ...AUDIO_OPTS.map((o) => toggle(o.icon, o.label, o.sub, o.pref)),
@@ -198,7 +205,7 @@ function aboutSection() {
 const SECTIONS = [
   { id: 'look', icon: 'ic_preference_appearance', title: 'Внешний вид', render: lookSection },
   { id: 'playback', icon: 'ic_play_circle', title: 'Воспроизведение', render: playbackSection },
-  has.upscale ? { id: 'picture', icon: 'ic_upscale', title: 'Картинка и звук', render: pictureSection }
+  has.upscale || has.sharpen ? { id: 'picture', icon: 'ic_upscale', title: 'Картинка и звук', render: pictureSection }
     : { id: 'picture', icon: 'ic_audio', title: 'Звук', render: pictureSection },
   has.discord ? { id: 'discord', icon: 'ic_discord', title: 'Discord', render: () => [discordSetting()] } : null,
   has.ai ? { id: 'ai', icon: 'ic_ai', title: 'AI-помощник', render: aiSection } : null,
@@ -230,8 +237,11 @@ registerScreen('settings', ({ section } = {}) => {
     if (!byUser) return; // первый показ — без своей анимации: идёт въезд экрана
     if (!swiped) nudge(built.get(s.id), [{ opacity: 0 }, { opacity: 1 }], 200);
     const vp = document.getElementById('viewport');
-    if (vp && vp.scrollTop > 0) vp.scrollTop = 0; // новый раздел — с начала
-    buttons.get(s.id).scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+    if (vp && vp.scrollTop > 0) { vp.__jump = true; vp.scrollTop = 0; } // новый раздел — с начала (прыжок, не жест: hidebar.js)
+    // телефон: разделы — строкой, выбранный по центру (видно, что есть ещё). Не scrollIntoView: строка липкая, и он
+    // прокручивал ещё и экран
+    const b = buttons.get(s.id);
+    if (nav.scrollWidth > nav.clientWidth) nav.scrollTo({ left: nav.scrollLeft + b.getBoundingClientRect().left - nav.getBoundingClientRect().left - (nav.clientWidth - b.offsetWidth) / 2, behavior: 'smooth' });
   }
   for (const s of SECTIONS) {
     const b = h('button', { class: 'settings-tab', role: 'tab', 'data-section': s.id, onclick: () => select(s.id, true) }, icon(s.icon), h('span', null, s.title));

@@ -111,8 +111,11 @@
   // Повторы при кратковременных сбоях — как fetchUpstream в server/index.js
   const RETRY_DELAYS = [300, 900];
   const CONNECT_ERRORS = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT', 'ENETUNREACH', 'EHOSTUNREACH']);
+  // Вход через соцсеть (токен → профиль) повторять можно: ничего не записывает, повтор вернёт тот же профиль. Бекенд
+  // временами отвечает на него 502 — вход через Google проходил «через раз»
+  const REPEATABLE_POST = /\/auth\/(google|vk|telegram|yandex)$/;
   async function fetchUpstream(target, opts) {
-    const idempotent = opts.method === 'GET' || opts.method === 'HEAD';
+    const idempotent = opts.method === 'GET' || opts.method === 'HEAD' || REPEATABLE_POST.test(new URL(String(target)).pathname);
     for (let attempt = 0; ; attempt++) {
       const last = attempt >= RETRY_DELAYS.length;
       try {
@@ -218,6 +221,21 @@
   };
 
   const bridge = window.anixAndroid;
+  // при запуске — в журнал телефона (AnixWeb): есть ли WebGPU и какая видеокарта (улучшение картинки выбирает по ним)
+  const nlog = (m) => { try { bridge.log(String(m)); } catch (_) { /* старая сборка без log */ } };
+  window.__anixLog = nlog;
+  // Есть ли видеокарта для WebGPU (navigator.gpu бывает и без неё — эмулятор): ответ запоминается (anix.webgpu),
+  // по нему platform.js выбирает улучшение картинки — нейросеть (upscale/) или резкость (sharpen.js); до первого ответа —
+  // резкость
+  const remember = (on) => { try { localStorage.setItem('anix.webgpu', on ? '1' : '0'); } catch (_) { /* ignore */ } };
+  if (!navigator.gpu) { remember(false); nlog('webgpu: нет navigator.gpu'); }
+  else navigator.gpu.requestAdapter().then((a) => { remember(!!a); nlog(a ? `webgpu: ${a.info?.vendor || ''} ${a.info?.architecture || ''} ${a.info?.description || ''} f16=${a.features.has('shader-f16')}` : 'webgpu: нет адаптера'); })
+    .catch((e) => { remember(false); nlog(`webgpu: ошибка ${e && e.message}`); });
+  setTimeout(() => {
+    const gl = document.createElement('canvas').getContext('webgl2');
+    const dbg = gl && gl.getExtension('WEBGL_debug_renderer_info');
+    nlog(`webgl2: ${gl ? (dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)) : 'нет'}`);
+  }, 3000);
   if (!bridge) return; // страница открыта не в приложении (например, в браузере для отладки)
   document.documentElement.classList.add('android');
   try { bridge.setGoogleConfig(JSON.stringify(social.googleWebConfig())); } catch (_) { /* без ключей Google */ }
@@ -243,7 +261,8 @@
     saveFile: (name, mime, text) => new Promise((ok) => { savedWait = ok; bridge.saveFile(String(name), String(mime), String(text)); }),
     appIcon: { get: () => bridge.icon(), set: (name) => bridge.setIcon(String(name)) }, // значок на рабочем столе
     // ярлык на рабочем столе (аниме, коллекция): система спрашивает, куда положить
-    pinShortcut: (id, label, link, image) => bridge.pinShortcut(String(id), String(label), String(link), String(image || '')),
+    pinShortcut: (id, label, link, image) => bridge.pinShortcut(String(id), String(label), String(link), String(image || '')), // ok | unsupported | blocked
+    openShortcutSettings: () => bridge.openShortcutSettings(),
     // голосовой поиск (search.js): распознавание речи Android; null — отменили или не расслышали
     voice: {
       available: () => bridge.voiceAvailable(),
@@ -275,9 +294,13 @@
   const update = {
     async check() {
       const current = APP_VERSION;
-      const rel = await gh('/latest');
+      // последний релиз, в котором есть APK, — не просто последний: релиз только для Windows (без APK) телефону не
+      // обновление, но и не должен прятать более ранний релиз для Android (build/RELEASE.md → «Платформы»)
+      const list = await gh('?per_page=20');
+      const apkOf = (r) => (r.assets || []).find((a) => /^Anix-[\d.]+\.apk$/.test(a.name));
+      const rel = (Array.isArray(list) ? list : []).find((r) => !r.draft && !r.prerelease && apkOf(r)) || {};
       const version = String(rel.tag_name || '').replace(/^v/, '');
-      const apk = (rel.assets || []).find((a) => /^Anix-[\d.]+\.apk$/.test(a.name));
+      const apk = apkOf(rel);
       if (!version || !apk || !newer(version, current)) return { supported: true, current };
       apkUrl = apk.browser_download_url;
       return { supported: true, current, version, notes: rel.body || '' };
@@ -346,6 +369,8 @@
     for (const [k, v] of Object.entries(c)) document.documentElement.style.setProperty(`--cut-${k}`, `${v}px`);
   };
   window.__anixInsets();
+  // Клавиатура открылась / закрылась (MainActivity) — без нижнего меню над ней (android.css .kb-open)
+  window.__anixIme = (on) => document.documentElement.classList.toggle('kb-open', !!on);
 
   // Цвет системных полос — по теме приложения (index.html и store.js ставят data-theme)
   const theme = () => bridge.setTheme(document.documentElement.dataset.theme !== 'light');

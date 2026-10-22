@@ -136,7 +136,7 @@ const watchedLine = (p) => (p.dur ? `остановились на ${fmtTime(p.p
 
 // --- Плееры: от лучшего качества к худшему ---
 // Встроенный и сторонний получают одни и те же потоки источника; встроенный ещё и улучшает картинку до 4K.
-// На Android нет ни улучшения картинки, ни стороннего плеера (platform.js)
+// На Android нет ни апскейла с ПК, ни стороннего плеера (platform.js)
 const PLAYERS = [
   has.upscale ? { id: 2, icon: 'ic_play_circle', name: () => t('player_embedded'), sub: 'Улучшение картинки нейросетью до 4K', badge: (q) => (q ? `${q} → 4K` : 'до 4K'), hi: true }
     : { id: 2, icon: 'ic_play_circle', name: () => t('player_embedded'), sub: 'Плеер приложения: пропуски, скорость, звук', badge: (q) => q, hi: true },

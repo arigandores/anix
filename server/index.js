@@ -88,8 +88,11 @@ function logError(entry) {
 // только если соединение не установилось, т.е. запрос точно не дошёл до сервера.
 const RETRY_DELAYS = [300, 900];
 const CONNECT_ERRORS = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT', 'ENETUNREACH', 'EHOSTUNREACH']);
+// Вход через соцсеть (токен → профиль) повторять можно: ничего не записывает, повтор вернёт тот же профиль. Бекенд
+// временами отвечает на него 502 — вход через Google проходил «через раз»
+const REPEATABLE_POST = /\/auth\/(google|vk|telegram|yandex)$/;
 async function fetchUpstream(target, opts) {
-  const idempotent = opts.method === 'GET' || opts.method === 'HEAD';
+  const idempotent = opts.method === 'GET' || opts.method === 'HEAD' || REPEATABLE_POST.test(new URL(String(target)).pathname);
   for (let attempt = 0; ; attempt++) {
     const last = attempt >= RETRY_DELAYS.length;
     try {

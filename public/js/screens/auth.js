@@ -136,9 +136,26 @@ async function googleBrowserLogin(label) {
   while (!canceled) {
     const r = await (await fetch(`/social/google/wait?n=${s.n}`)).json();
     if (r.error) { wait.close(); throw new Error(r.error); }
-    if (!r.pending) { wait.close(); window.focus(); return r; }
+    // результат приходит, пока на экране ещё браузер: дальше — запрос входа, а в фоне Android не даёт приложению
+    // сети (ENOTFOUND → «HTTP 502», вход «через раз») — продолжаем, когда приложение снова на экране
+    if (!r.pending) { wait.close(); window.focus(); await whenVisible(); return r; }
   }
   return null;
+}
+
+const whenVisible = () => (document.visibilityState === 'visible' ? Promise.resolve() : new Promise((ok) => {
+  const f = () => { if (document.visibilityState === 'visible') { document.removeEventListener('visibilitychange', f); ok(); } };
+  document.addEventListener('visibilitychange', f);
+}));
+// сбой сети (а не ответ бекенда): shim.js и server/index.js отвечают на него 502 с code −1
+const netError = (e) => e && e.status === 502 && e.body && e.body.code === -1;
+// Вход по токену соцсети: сразу после возврата из браузера сеть у приложения бывает ещё не поднята — повторяем
+// сетевой сбой до ~10 с (вход по токену ничего не записывает, повтор безопасен)
+async function socialAuthRequest(provider, field, token) {
+  for (let i = 0; ; i++) {
+    try { return await api.form(`auth/${provider}`, { [field]: token }, {}, { withToken: false }); }
+    catch (e) { if (i >= 6 || !netError(e)) throw e; await new Promise((ok) => setTimeout(ok, 1500)); }
+  }
 }
 
 // Токен соцсети: окно Electron (Google — системный браузер) → обмен на сервере → { field, token, email? }
@@ -173,13 +190,13 @@ async function socialLogin(provider, label) {
   try {
     const ex = await socialToken(provider, label);
     if (!ex) return;
-    const r = await api.form(`auth/${provider}`, { [ex.field]: ex.token }, {}, { withToken: false });
+    const r = await socialAuthRequest(provider, ex.field, ex.token);
     if (r.code === 0 && r.profile && r.profileToken) return finishLogin(r);
     // 3 — аккаунта ещё нет: регистрация. Почту подставляем: Яндекс отдаёт её в ответе, Google — Firebase
     if (r.code === 3) return navigate('social-register', { provider, label, field: ex.field, token: ex.token, email: provider === 'yandex' ? (r.email || '') : (ex.email || '') });
     if (r.code === 2) return toast(`${label} не подтвердил вход. Попробуйте ещё раз.`);
     toast(`Не удалось войти через ${label} (код ${r.code ?? '—'})`);
-  } catch (e) { toast(String(e.message || e)); }
+  } catch (e) { toast(netError(e) ? 'Нет связи с сервером Anixart — проверьте интернет и попробуйте ещё раз' : String(e.message || e)); }
 }
 
 // Регистрация через соцсеть: никнейм + email → auth/<соцсеть> → код на почту → auth/verify с токеном.

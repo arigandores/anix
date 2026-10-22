@@ -36,10 +36,37 @@ check('плеер: вырез камеры передан странице (--cu
 
 // Режим кадра: по умолчанию «Вписать», кнопка перебирает «Заполнить» → «Растянуть» → «Вписать», выбор запоминается
 check('режим кадра по умолчанию — вписать', await fitNow() === 'contain', await fitNow());
+// рамка видео — во весь плеер, а не по пропорциям ролика: иначе режим кадра ничего не меняет, а верх и низ обрезаны
+const vbox = await js(`(() => { const v = ${V}.getBoundingClientRect(); const s = document.querySelector('.player-stage').getBoundingClientRect(); return { v: [Math.round(v.width), Math.round(v.height)], s: [Math.round(s.width), Math.round(s.height)], ih: innerHeight }; })()`);
+check('видео — ровно во всю область плеера (режим кадра виден)', Math.abs(vbox.v[0] - vbox.s[0]) <= 1 && Math.abs(vbox.v[1] - vbox.s[1]) <= 1 && vbox.v[1] <= vbox.ih + 1, vbox);
 check('кнопки «Кадр» и «Картинка в картинке» в панели', await js(`!!document.querySelector('.player-controls .fit-btn') && !!document.querySelector('.player-controls .pip-btn')`));
 await js(`document.querySelector('.fit-btn').click(), 1`);
 check('«Кадр» → заполнить, плашка «Заполнить»', await fitNow() === 'cover' && await js(`document.querySelector('.p-hint.show')?.textContent`) === 'Заполнить');
 check('режим кадра запомнился', await js(`localStorage.getItem('anixart.pref.PLAYER_FIT')`) === '"cover"');
+// Улучшение картинки (sharpen.js, как «720p +» в Anixart): холст над видео — с тем же режимом кадра; выключили — его нет
+const big = await js(`${V}.videoWidth * ${V}.videoHeight > 1280 * 960`); // 1080p — улучшение не включается, так и задумано
+await js(`(document.querySelector('.player-overlay').sharpen.setMode('soft'), ${V}.play().then(() => 1, () => 1))`);
+const shp = await until(`(() => { const c = document.querySelector('.sharpen-canvas'); return c && getComputedStyle(c).display !== 'none' ? { fit: c.style.objectFit, w: c.width, vw: ${V}.videoWidth } : null; })()`, 8000);
+if (big) check('улучшение картинки: у источника 1080p холста нет (и так чёткий)', !shp); else check('улучшение картинки: холст над видео, размер кадра и режим кадра — как у видео', !!shp && shp.fit === (await fitNow()) && shp.w === shp.vw, shp);
+await js(`(document.querySelector('.player-overlay').sharpen.setMode('off'), ${V}.pause(), 1)`);
+check('улучшение выключено — холста не видно', await js(`getComputedStyle(document.querySelector('.sharpen-canvas')).display === 'none'`));
+
+// Нейросеть Anime4K (anime4k-gl.js): пункт «Нейросеть» — только с вердиктом фоновой проверки (phone-check.js); при выборе —
+// холст Anime4K вдвое больше кадра, резкость выключена
+const noVerdict = await js(`(localStorage.removeItem('anix.a4k'), import('/js/upscale/phone-check.js').then((m) => m.neuralOk()))`);
+check('без проверки телефона «Нейросети» нет', noVerdict === false);
+await js(`(localStorage.setItem('anix.a4k', JSON.stringify({ ms: { 480: { rm: 20, rs: 15, m: 10 }, 720: { rm: 49, rs: 25, m: 20 }, 1080: { r: 12 } }, v: 4 })), localStorage.setItem('anixart.pref.PLAYER_SHARPEN', '"neural"'), 1)`);
+await js(`(document.querySelector('.player-overlay video').dispatchEvent(new Event('loadedmetadata')), ${V}.play().then(() => 1, () => 1))`);
+const nn = await until(`(() => { const c = document.querySelector('.anime4k-canvas'); return c && getComputedStyle(c).display !== 'none' ? { w: c.width, vw: ${V}.videoWidth, sharp: getComputedStyle(document.querySelector('.sharpen-canvas:not(.anime4k-canvas)')).display } : null; })()`, 10000);
+check('«Нейросеть»: холст Anime4K вдвое больше кадра, резкость выключена', !!nn && nn.w === nn.vw * 2 && nn.sharp === 'none', nn);
+// облегчение: телефон не успел — цепочка полегче, и запоминается для этого разрешения (следующие серии — сразу с неё)
+const chainBefore = await js(`document.querySelector('.player-overlay').anime4kChain`);
+await js(`import('/js/upscale/phone-check.js').then((m) => (m.lighterFrom(${V}.videoWidth, ${V}.videoHeight, document.querySelector('.player-overlay').anime4kChain), document.querySelector('.player-overlay video').dispatchEvent(new Event('loadedmetadata')), 1))`);
+await sleep(600);
+const chainAfter = await js(`document.querySelector('.player-overlay').anime4kChain`);
+check('720p: лучшая, что успевает, — Restore S; не успевает — легче (M) и запоминается', chainBefore === 'rs' && chainAfter === 'm' && !!(await js(`localStorage.getItem('anix.a4k.cap')`)), { chainBefore, chainAfter });
+await js(`(localStorage.removeItem('anix.a4k.cap'), 1)`);
+await js(`(localStorage.setItem('anixart.pref.PLAYER_SHARPEN', '"off"'), localStorage.removeItem('anix.a4k'), document.querySelector('.player-overlay video').dispatchEvent(new Event('loadedmetadata')), ${V}.pause(), 1)`);
 await js(`document.querySelector('.fit-btn').click(), 1`);
 check('«Кадр» → растянуть', await fitNow() === 'fill');
 await js(`document.querySelector('.fit-btn').click(), 1`);
@@ -69,22 +96,52 @@ check('свайп: пока палец на экране — не перемат
 await touch('touchEnd', []);
 await sleep(600);
 const t1 = await js(`${V}.currentTime`);
-check('свайп вправо на полэкрана — вперёд примерно на минуту', t1 - t0 > 30 && t1 - t0 < 90, `${t0.toFixed(1)} → ${t1.toFixed(1)}`);
+check('свайп вправо на полэкрана — вперёд на 1:40, как в Anixart (p²/25 с)', t1 - t0 > 85 && t1 - t0 < 110, `${t0.toFixed(1)} → ${t1.toFixed(1)}`);
 check('свайп не снимает паузу и не прячет плашку навсегда', await js(`${V}.paused && !document.querySelector('.p-hint.show')`));
-await drag([[r.x + r.w * 0.8, cy]], [[r.x + r.w * 0.6, cy]]);
+// идёт видео — на время свайпа пауза (как в Anixart), отпустили — перемотало и играет дальше
+await js(`${V}.play().then(() => 1, () => 1)`); await sleep(800);
+await touch('touchStart', [[r.x + r.w * 0.8, cy]]);
+for (let i = 1; i <= 8; i++) { await touch('touchMove', [[r.x + r.w * (0.8 - 0.2 * i / 8), cy]]); await sleep(16); }
+check('свайп по идущему видео: пока ведёшь — пауза', await js(`${V}.paused`));
+await touch('touchEnd', []);
+await sleep(900);
 const t2 = await js(`${V}.currentTime`);
+check('после свайпа видео играет дальше', !(await js(`${V}.paused`)));
+await js(`(${V}.pause(), 1)`);
 check('свайп влево — назад', t2 < t1 - 3, `${t1.toFixed(1)} → ${t2.toFixed(1)}`);
 await drag([[cx, r.y + r.h * 0.3]], [[cx + 10, r.y + r.h * 0.8]]);
 check('вертикальный свайп — без перемотки', Math.abs(await js(`${V}.currentTime`) - t2) < 1);
 
-// Перемотка опенинга без меток: кнопка — только у серии без меток (с метками — «Пропустить» по ним), +1:25
-const op = await js(`(() => { const b = document.querySelector('.player-controls .op-btn'); return { shown: !!b && !b.hidden, marks: !!document.querySelector('.seg[data-kind="opening"]'), title: b?.title }; })()`);
+// Перемотка опенинга без меток: кнопка — только у серии без меток (с метками — «Пропустить» по ним), +1:25. Видна ли —
+// по вёрстке, не по атрибуту hidden: .icon-btn перебивал его, и кнопка стояла и при метках
+const op = await js(`(() => { const b = document.querySelector('.player-controls .op-btn'); return { shown: !!b && getComputedStyle(b).display !== 'none', marks: !!document.querySelector('.seg[data-kind="opening"]'), title: b?.title, label: b?.textContent }; })()`);
 check('кнопка «перемотать опенинг» — только у серии без метки опенинга (метка эндинга — не в счёт)', op.shown !== op.marks, op);
 if (op.shown) {
   const a = await js(`${V}.currentTime`);
   await js(`document.querySelector('.op-btn').click(), 1`); await sleep(300);
-  check('«перемотать опенинг» — +1:25', Math.abs(await js(`${V}.currentTime`) - a - 85) < 2 && /\+1:25/.test(op.title), op.title);
+  check('«перемотать опенинг» — +1:25, на кнопке «+85 с»', Math.abs(await js(`${V}.currentTime`) - a - 85) < 2 && /\+1:25/.test(op.title) && op.label === '+85 с', op);
 }
+
+// Полоса перемотки пальцем: пока тянут — точка и время за пальцем, видео не перематывается (и над опенингом не
+// всплывает «Пропустить»), кнопки не прячутся, даже если тянуть дольше 2,5 с; отпустили — перемотка туда
+await js(`(${V}.currentTime = 30, ${V}.play().then(() => 1, () => 1))`); await sleep(1200);
+await js(`(document.querySelector('.player-overlay').classList.remove('idle'), 1)`);
+const sk = await js(`(() => { const r = document.querySelector('.player-controls .seek').getBoundingClientRect(); const op = document.querySelector('.seek .seg[data-kind="opening"]'); const o = op ? op.getBoundingClientRect() : null; return { x: r.left, w: r.width, y: r.top + r.height / 2, op: o ? (o.left + o.width / 2 - r.left) / r.width : null }; })()`);
+const from = sk.op ?? 0.05; const to = 0.6; const tStart = await js(`${V}.currentTime`);
+await touch('touchStart', [[sk.x + sk.w * from, sk.y]]);
+const during = [];
+for (let i = 1; i <= 15; i++) {
+  await touch('touchMove', [[sk.x + sk.w * (from + (to - from) * i / 15), sk.y]]); await sleep(200);
+  if (i === 2 || i === 15) during.push(await js(`({ knob: parseFloat(document.querySelector('.seek .knob').style.left), t: ${V}.currentTime, skip: document.querySelector('.skip-row').classList.contains('show'), idle: document.querySelector('.player-overlay').classList.contains('idle'), tip: document.querySelector('.seek .tip, .seek-tip')?.classList.contains('show') ?? null })`));
+}
+check('ползунок пальцем: точка идёт за пальцем', Math.abs(during[1].knob - to * 100) < 2.5, during);
+check('ползунок пальцем: пока тянут — видео не перематывается', during.every((d) => Math.abs(d.t - tStart) < 6), { tStart, during });
+check('ползунок пальцем: над опенингом посреди жеста — без «Пропустить»', during.every((d) => !d.skip), during);
+check('ползунок пальцем: кнопки не прячутся, пока тянут (3 с)', during.every((d) => !d.idle), during);
+await touch('touchEnd', []); await sleep(900);
+const dur = await js(`${V}.duration`); const tEnd = await js(`${V}.currentTime`);
+check('ползунок отпустили — перемотка туда, где палец', Math.abs(tEnd - to * dur) < 5, `${tEnd.toFixed(1)} из ${dur.toFixed(0)}, ждали ~${(to * dur).toFixed(0)}`);
+await js(`(${V}.pause(), 1)`);
 
 // Блокировка: касания не действуют, ориентация зафиксирована; тап — замок, замок или «Назад» — снять
 await js(`document.querySelector('.player-top .lock-btn').click(), 1`);
@@ -159,8 +216,11 @@ await until(`!!document.querySelector('.player-overlay:not(.mini)')`, 30000);
 await sleep(1500);
 w = await windowState();
 check('«Только горизонтально» выключено — ориентация за телефоном', w.playerOpen && w.requestedOrientation === 13, w.requestedOrientation);
+// и улучшение картинки включено: закрытие плеера — не «недоступно на этом устройстве» (видеокарту освобождаем сами)
+await js(`(document.getElementById('toast') && (document.getElementById('toast').textContent = ''), document.querySelector('.player-overlay').sharpen?.setMode('soft'), 1)`); await sleep(1500);
 await js(`(localStorage.setItem('anixart.pref.PLAYER_LANDSCAPE_ONLY', 'true'), document.querySelector('.player-overlay .player-top .icon-btn').click(), 1)`);
 await sleep(800);
+check('закрыли плеер с улучшением картинки — без тоста «недоступно»', !/недоступно/.test(await js(`document.getElementById('toast')?.textContent || ''`)), await js(`document.getElementById('toast')?.textContent || ''`));
 await sleep(300);
 check('на странице нет необработанных ошибок', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
 done('player-touch');

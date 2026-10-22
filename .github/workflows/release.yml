@@ -1,6 +1,8 @@
-# Сборка установщика Windows и APK для Android, релиз на GitHub — оба файла в одном релизе.
+# Сборка установщика Windows и APK для Android, релиз на GitHub — файлы платформ в одном релизе.
 #   Тег vX.Y.Z (версия = package.json) → установщик и APK собираются параллельно и выкладываются в один релиз; текст
 #   релиза — сообщение аннотированного тега (git tag -a v1.4.0 -F notes.md).
+#   Строка «Платформы: android» (или «windows») в тексте тега — релиз только для этой платформы: другая не собирается,
+#   её файлов в релизе нет, и её приложение обновления не увидит (ищет последний релиз со своим файлом). Без строки — обе.
 #   Вручную (Actions → Release → Run workflow) → только сборка: установщик и APK в артефактах запуска, релиз не создаётся.
 #   Вместе с установщиком в релиз идут latest.yml и .blockmap, вместе с APK — ничего: по ним и по Anix-X.Y.Z.apk
 #   приложения на ПК и на телефоне находят обновление.
@@ -21,7 +23,34 @@ concurrency:
   group: release-${{ github.ref }}
 
 jobs:
+  # Какие платформы выпускать — из строки «Платформы: …» в тексте тега (docs/RELEASE.md); вручную — обе
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      windows: ${{ steps.p.outputs.windows }}
+      android: ${{ steps.p.outputs.android }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: p
+        shell: bash
+        run: |
+          line=""
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+            line=$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME" | grep -iE '^\s*(Платформы|Platforms)\s*:' | head -1 | tr '[:upper:]' '[:lower:]')
+          fi
+          win=true; and=true
+          if [ -n "$line" ]; then
+            echo "$line" | grep -qE 'windows|win' && win=true || win=false
+            echo "$line" | grep -qE 'android' && and=true || and=false
+            if [ "$win" = false ] && [ "$and" = false ]; then echo "::error::«$line» — нет ни windows, ни android"; exit 1; fi
+          fi
+          echo "windows=$win" >> "$GITHUB_OUTPUT"; echo "android=$and" >> "$GITHUB_OUTPUT"
+          echo "Платформы: windows=$win, android=$and"
+
   build:
+    needs: plan
+    if: needs.plan.outputs.windows == 'true'
     runs-on: windows-2022 # Visual Studio 2022: nvcc CUDA 13.1 не принимает VS 2026 из windows-2025
     timeout-minutes: 75
     env:
@@ -89,21 +118,13 @@ jobs:
             release/latest.yml
           retention-days: 14
 
-      - name: Релиз на GitHub
-        if: startsWith(github.ref, 'refs/tags/')
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # checkout оставляет тег без аннотации — забираем его целиком, текст релиза берётся из неё
-          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
-          v=$(node -p "require('./package.json').version")
-          gh release create "$GITHUB_REF_NAME" "release/AnixDesktop-Setup-$v.exe" "release/AnixDesktop-Setup-$v.exe.blockmap" release/latest.yml --title "Anix Desktop $v" --notes-from-tag --verify-tag
 
   # Android: подписанный APK — параллельно со сборкой для Windows (docs/TECHNICAL.md → «Android»).
   # Ключ подписи — секреты ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
   # (копия — в приватном arigandores/anix-secrets). Другой ключ — и новая версия не встанет поверх установленной.
   android:
+    needs: plan
+    if: needs.plan.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -166,17 +187,36 @@ jobs:
           path: Anix-*.apk
           retention-days: 14
 
-  # APK — в релиз, который создала сборка для Windows (по нему приложение на телефоне находит обновление)
-  android-release:
-    if: startsWith(github.ref, 'refs/tags/')
-    needs: [build, android]
+  # Релиз — из того, что собрано: установщик с latest.yml и .blockmap (Windows) и/или APK (Android). Название — по
+  # платформам; текст — сообщение тега
+  release:
+    if: always() && startsWith(github.ref, 'refs/tags/') && needs.plan.result == 'success' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    needs: [plan, build, android]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
+        if: needs.plan.outputs.windows == 'true'
+        with:
+          name: AnixDesktop-Setup
+          path: out
+      - uses: actions/download-artifact@v4
+        if: needs.plan.outputs.android == 'true'
         with:
           name: Anix-Android
-
-      - name: APK в релиз
+          path: out
+      - name: Релиз на GitHub
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" Anix-*.apk --clobber -R "$GITHUB_REPOSITORY"
+          WIN: ${{ needs.plan.outputs.windows }}
+          AND: ${{ needs.plan.outputs.android }}
+        run: |
+          # checkout оставляет тег без аннотации — забираем его целиком, текст релиза берётся из неё
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          v=$(node -p "require('./package.json').version")
+          title="Anix Desktop $v"
+          [ "$WIN" = true ] && [ "$AND" != true ] && title="Anix Desktop $v (Windows)"
+          [ "$AND" = true ] && [ "$WIN" != true ] && title="Anix $v (Android)"
+          ls -la out
+          gh release create "$GITHUB_REF_NAME" out/* --title "$title" --notes-from-tag --verify-tag -R "$GITHUB_REPOSITORY"

@@ -4,9 +4,10 @@
 // берёт самый качественный пресет, который успевает, а меню подписывает уровни «тяжело / не потянет».
 // Пока бенчмарка нет — прогноз по формуле (умножений на пиксель / скорость видеокарты); замеры на реальных
 // кадрах уточняют сохранённые значения.
-import { getGpu, loadModel, createUpscaler } from './engine.js';
+import { getGpu, loadModel, createUpscaler, submitLatency } from './engine.js';
 import { MODELS, CLASS_SIZE, sizeClass, modelName } from './catalog.js';
 import { prefs } from '../store.js';
+import { ANDROID } from '../platform.js';
 import { h, dialog } from '../ui.js';
 
 // --- Ускорение NVIDIA (TensorRT, electron/trt.js) ---
@@ -69,7 +70,7 @@ export async function runBenchmark({ onProgress = () => {}, cancelled = () => fa
   const tasks = [];
   for (const [arch, id] of Object.entries(reps)) {
     for (const backend of ['gpu', ...(withTrt && MODELS[id].trt ? ['trt'] : [])]) {
-      tasks.push({ arch, id, backend, cls: 'hd' });
+      tasks.push({ arch, id, backend, cls: ANDROID ? 'sd' : 'hd' }); // телефон — на 480p: меньше держим видеокарту
     }
   }
   const ms = {};
@@ -80,12 +81,15 @@ export async function runBenchmark({ onProgress = () => {}, cancelled = () => fa
     const [w, h] = CLASS_SIZE[t.cls];
     onProgress(i, tasks.length, `${modelName(t.id).replace(/ Sharp1| DN| DS/, '')} · ${t.backend === 'trt' ? 'TensorRT' : 'WebGPU'}`);
     let v;
+    if (ANDROID) await new Promise((ok) => setTimeout(ok, 150));
     try {
       v = t.backend === 'trt' ? await benchTrt(t.id, w, h) : await benchGpu(device, t.id, w, h);
+      if (ANDROID && v > 0) v = Math.max(0.5, v - await submitLatency(device)); // без задержки отправки (engine.js)
     } catch (e) {
       console.warn('[upscale] бенчмарк', t.arch, t.backend, e && e.message);
       v = -1;
     }
+    window.__anixLog?.(`bench ${t.arch} ${w}x${h} ${t.backend}: ${v < 0 ? 'не тянет' : `${v.toFixed(1)} мс`}`); // телефон: в журнал (adb logcat -s AnixWeb)
     // 480p и 1080p — по числу пикселей; у TensorRT часть времени — передача кадра, она тоже растёт с размером
     for (const cls of ['sd', 'hd', 'fhd']) {
       const [cw, chh] = CLASS_SIZE[cls];
@@ -110,9 +114,21 @@ function testFrame(w, h) {
 }
 const median = (a) => { const s = a.slice().sort((x, y) => x - y); return s[s.length >> 1]; };
 
+// телефон: кадр — текстурой (кадр VideoFrame из холста во WebView на Android как внешняя текстура не принимался —
+// проход отбрасывался с ошибкой, и бенчмарк мерил пустоту: 1 мс вместо секунд на настоящем видео)
+function testTexture(device, w, h) {
+  const cv = new OffscreenCanvas(w, h); const cx = cv.getContext('2d');
+  const g = cx.createLinearGradient(0, 0, w, h); g.addColorStop(0, '#f2c49b'); g.addColorStop(1, '#2b4c7e');
+  cx.fillStyle = g; cx.fillRect(0, 0, w, h);
+  const t = device.createTexture({ size: [w, h], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
+  device.queue.copyExternalImageToTexture({ source: cv }, { texture: t }, [w, h]);
+  return { tex: t, close: () => t.destroy() };
+}
+
 async function benchGpu(device, id, w, h) {
-  const up = await createUpscaler(await loadModel(id));
-  const frame = testFrame(w, h);
+  const up = await createUpscaler(await loadModel(id), ANDROID ? { input: 'texture' } : {});
+  const src = ANDROID ? testTexture(device, w, h) : null;
+  const frame = src ? src.tex : testFrame(w, h);
   try {
     up.setSize(w, h);
     const once = async () => {
@@ -121,11 +137,16 @@ async function benchGpu(device, id, w, h) {
       await device.queue.onSubmittedWorkDone();
       return performance.now() - t0;
     };
+    // телефон: видеокарта не прерывает тяжёлую работу ради экрана — между прогонами даём ей нарисовать кадр, а сеть,
+    // которая и первый прогон считает дольше 120 мс, дальше не гоняем (раньше бенчмарк вешал приложение — ANR)
+    const breathe = () => (ANDROID ? new Promise((ok) => setTimeout(ok, 120)) : null);
+    // первый прогон — с компиляцией шейдеров (на телефоне — сотни мс): только прогрев, в оценку не идёт
+    if (ANDROID) { await once(); await breathe(); }
     const first = await once();
-    if (first > TOO_SLOW * 3) return -1;
-    const ts = []; for (let i = 0; i < RUNS; i++) ts.push(await once());
+    if (first > (ANDROID ? TOO_SLOW : TOO_SLOW * 3)) return -1;
+    const ts = []; for (let i = 0; i < RUNS; i++) { await breathe(); ts.push(await once()); }
     return median(ts);
-  } finally { frame.close(); up.destroy(); }
+  } finally { if (src) src.close(); else frame.close(); up.destroy(); }
 }
 
 async function benchTrt(id, w, h) {
@@ -170,6 +191,11 @@ export function benchPrompt(withTrt) {
 export function benchRunDialog() {
   return new Promise((resolve) => {
     let cancel = false;
+    // серия на паузе, пока идёт проверка: видеокарта нужна бенчмарку целиком, а кадры серии ему мешают
+    const v = document.querySelector('.player-overlay video');
+    const resume = v && !v.paused;
+    if (resume) v.pause();
+    const done = (r) => { if (resume) v.play().catch(() => {}); resolve(r); };
     const fill = h('div', { class: 'bench-fill' });
     const label = h('div', { class: 'bench-label' }, 'Подготовка…');
     const d = dialog({
@@ -181,7 +207,7 @@ export function benchRunDialog() {
     runBenchmark({
       cancelled: () => cancel,
       onProgress: (i, n, text) => { fill.style.width = `${Math.round((i / n) * 100)}%`; label.textContent = `${text} (${Math.min(i + 1, n)} из ${n})`; },
-    }).then((r) => { d.close(); resolve(r); }, (e) => { console.warn('[upscale] бенчмарк', e); d.close(); resolve(null); });
+    }).then((r) => { d.close(); done(r); }, (e) => { console.warn('[upscale] бенчмарк', e); d.close(); done(null); });
   });
 }
 // таблица результатов: сеть × класс -> мс (WebGPU / TensorRT)

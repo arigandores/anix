@@ -59,6 +59,7 @@ const DEFAULTS = {
   SELECTED_PLAYER_SPEED: 3,
   PHONE_NOTIFY: true, // телефон: уведомления Anixart системными (push.js, NotifyJob.kt)
   PLAYER_REWIND_TIME: 85, // кнопка «перемотать опенинг», когда у серии нет меток (как в Anixart: рекомендуется 1:25)
+  PLAYER_SHARPEN: 'off', // телефон: улучшение картинки (sharpen.js) — off | soft | strong; включает сам пользователь
   PLAYER_LANDSCAPE_ONLY: true, // телефон: плеер только горизонтально; выкл — поворачивается за телефоном
   WATCHED_TIME_FORMAT: 'days', // время просмотра в профиле: 'days' (~ 3 дня 4 часа) | 'hours' (~ 76 часов)
   COMPACT_NAV: false, // телефон: нижнее меню без подписей

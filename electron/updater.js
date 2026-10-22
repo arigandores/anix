@@ -28,6 +28,20 @@ if (FEED) {
   autoUpdater.setFeedURL({ provider: 'github', owner, repo });
 }
 
+// Релизы бывают только для одной платформы (docs/RELEASE.md → «Платформы»): последний релиз GitHub может быть только
+// для Android — без latest.yml, и провайдер github (смотрит только на последний) падал бы или прятал более ранний
+// релиз для Windows. Поэтому — последний релиз, в котором есть latest.yml, и его файлы — как свой сервер (generic):
+// там же установщик и .blockmap. Не удалось спросить GitHub — как было, провайдер github
+async function pointToWindowsRelease() {
+  if (FEED) return;
+  try {
+    const r = await net.fetch(`https://api.github.com/repos/${REPO}/releases?per_page=20`, { headers: { Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(10000) });
+    if (!r.ok) return;
+    const rel = (await r.json()).find((x) => !x.draft && !x.prerelease && (x.assets || []).some((a) => a.name === 'latest.yml'));
+    if (rel) autoUpdater.setFeedURL({ provider: 'generic', url: `https://github.com/${REPO}/releases/download/${rel.tag_name}/`, useMultipleRangeRequest: false });
+  } catch { /* как было */ }
+}
+
 // Обновления — только у установленного приложения: запуск из исходников (electron .) обновлять нечего
 const supported = () => app.isPackaged || !!FEED;
 
@@ -47,6 +61,7 @@ function register(ipcMain) {
   ipcMain.handle('update-check', async () => {
     const current = app.getVersion();
     if (!supported()) return { supported: false, current };
+    await pointToWindowsRelease();
     const r = await autoUpdater.checkForUpdates();
     if (!r || !r.cancellationToken) return { supported: true, current }; // токен есть, только если версия новее
     const { version } = r.updateInfo;

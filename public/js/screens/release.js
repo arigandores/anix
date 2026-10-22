@@ -5,7 +5,7 @@ import { t, tp } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
 import {
   gradeText, digits, seasonName, LIST_NAMES, chooseListStatus, toggleFavorite, requireAuth, commentItem, commentComposer,
-  openRelease, imageViewer, report, backToolbar, sectionHead, collectionCard, relTime, releaseRow,
+  openRelease, imageViewer, report, backToolbar, sectionHead, collectionCard, relTime, releaseRow, pinToHome,
 } from './common.js';
 import { prefetchWatch, watchBlock, typesOf, typeLogo } from './episodes.js';
 import { partyWatchButton } from '../party/ui.js';
@@ -123,20 +123,21 @@ function previewPage(p) {
           h('div', { style: { marginTop: '14px' } }, h('div', { class: 'watch' }, h('div', { class: 'watch-row' },
             block({ flex: '1 1 260px', height: '48px', borderRadius: '24px' }), pill('190px', '48px'))))))), // ширина как у «Смотреть вместе» — так же переносится на узком окне
     h('div', { class: 'rel-body skeleton' },
-      h('div', null,
-        infoPreview(p),
-        card(cardTitle('16%'), thumbs(2)),
-        card(cardTitle('14%'), thumbs(4)),
-        card(cardTitle('30%'), relCards(5)),
-        card(cardTitle('34%'), relCards(5)),
-        card(cardTitle('26%'), line('36%', '', { margin: '-4px 0 14px' }), block({ height: '46px', borderRadius: '23px', marginBottom: '8px' }),
-          comment('70%'), comment('85%'), comment('55%'), comment('78%'), comment('62%'))),
-      h('div', null,
-        card(cardTitle('40%'), h('div', { class: 'rating-box' }, col('6px', block({ width: '64px', height: '44px', borderRadius: '8px' }), line('70px')),
-          col('9px', ...[90, 30, 12, 6, 8].map((w) => line(`${w}%`, '', { height: '6px' }))))),
-        card(cardTitle('60%'), block({ height: '10px', borderRadius: '5px', margin: '8px 0 12px' }),
-          h('div', { class: 'info-rows' }, ['40%', '46%', '58%', '44%', '40%'].map((w) => h('div', { class: 'row' }, circle('10px'), h('div', { class: 'grow' }, line(w)), line('36px'))))),
-        card(...[['62%', '44px'], ['78%', '']].map(([w, badge]) => h('div', { class: 'row', style: { gap: '16px', padding: '8px 0' } }, block({ width: '24px', height: '24px', borderRadius: '6px', flex: 'none' }), h('div', { class: 'grow' }, line(w)), badge ? block({ width: badge, height: '22px', borderRadius: '6px' }) : null))))),
+      h('div', { class: 'rel-main' },
+        tag(infoPreview(p), 'rb-info'),
+        tag(card(cardTitle('16%'), thumbs(2)), 'rb-video'),
+        tag(card(cardTitle('14%'), thumbs(4)), 'rb-screens'),
+        tag(card(cardTitle('30%'), relCards(5)), 'rb-related'),
+        tag(card(cardTitle('34%'), relCards(5)), 'rb-recommended')),
+      h('div', { class: 'rel-side' },
+        tag(card(cardTitle('40%'), h('div', { class: 'rating-box' }, col('6px', block({ width: '64px', height: '44px', borderRadius: '8px' }), line('70px')),
+          col('9px', ...[90, 30, 12, 6, 8].map((w) => line(`${w}%`, '', { height: '6px' }))))), 'rb-rating'),
+        tag(card(cardTitle('60%'), block({ height: '10px', borderRadius: '5px', margin: '8px 0 12px' }),
+          h('div', { class: 'info-rows' }, ['40%', '46%', '58%', '44%', '40%'].map((w) => h('div', { class: 'row' }, circle('10px'), h('div', { class: 'grow' }, line(w)), line('36px'))))), 'rb-stats'),
+        tag(card(...[['62%', '44px'], ['78%', '']].map(([w, badge]) => h('div', { class: 'row', style: { gap: '16px', padding: '8px 0' } }, block({ width: '24px', height: '24px', borderRadius: '6px', flex: 'none' }), h('div', { class: 'grow' }, line(w)), badge ? block({ width: badge, height: '22px', borderRadius: '6px' }) : null))), 'rb-collections')),
+      // комментарии — внизу, как на странице (rel-comments)
+      h('div', { class: 'card rel-comments' }, cardTitle('26%'), line('36%', '', { margin: '-4px 0 14px' }), block({ height: '46px', borderRadius: '23px', marginBottom: '8px' }),
+        comment('70%'), comment('85%'), comment('55%'), comment('78%'), comment('62%'))),
   ];
 }
 
@@ -293,17 +294,20 @@ registerScreen('release', ({ id, random, profileId, status, collectionId, preloa
     descToggle.onclick = () => setCollapsed(!desc.classList.contains('collapsed'));
     if (longDesc) desc.onclick = () => { if (desc.classList.contains('collapsed')) setCollapsed(false); };
 
-    const left = h('div', null,
-      h('div', { class: 'card' },
+    // rb-* — место блока на телефоне (android.css): там колонок нет и порядок свой, как в Anixart
+    const left = h('div', { class: 'rel-main' },
+      h('div', { class: 'card rb-info' },
         infoEl,
         h('div', { style: { marginTop: '14px' } }, desc, longDesc ? descToggle : null)),
-      videoBanners(rel),
-      screenshots(rel),
-      relatedBlock(rel),
-      recommendedBlock(rel),
-      commentsBlock(rel, () => build()));
-    let ratingEl = ratingBlock(rel); let statsEl = statsBlock(rel); let collEl = collectionsBlock(rel);
-    const right = h('div', null, ratingEl, statsEl, collEl);
+      tag(videoBanners(rel), 'rb-video'),
+      tag(screenshots(rel), 'rb-screens'),
+      tag(relatedBlock(rel), 'rb-related'),
+      tag(recommendedBlock(rel), 'rb-recommended'));
+    let ratingEl = tag(ratingBlock(rel), 'rb-rating'); let statsEl = tag(statsBlock(rel), 'rb-stats'); let collEl = tag(collectionsBlock(rel), 'rb-collections');
+    const right = h('div', { class: 'rel-side' }, ratingEl, statsEl, collEl);
+    // комментарии — в самом низу страницы: на телефоне (одна колонка) и после оценок, статистики и коллекций
+    const comments = commentsBlock(rel, () => build());
+    comments.classList.add('rel-comments');
     // свежие данные пришли фоном (refreshFrom): меняем только то, что изменилось
     // блок изменился — правим в нём только изменившееся и плавно (ui.js morph): числа перекатываются, полосы доезжают
     const swap = (old, fresh) => { if (old && fresh) { morph(old, markAppeared(fresh)); return old; } if (old) old.remove(); return fresh; };
@@ -314,16 +318,16 @@ registerScreen('release', ({ id, random, profileId, status, collectionId, preloa
       paintPanel(); // статус, сердце, число «в избранном» (перекатывается)
       const nc = rel.comment_count ?? rel.comments_count ?? 0; const oc = was.comment_count ?? was.comments_count ?? 0;
       if (nc !== oc) rollTo(commentsCount, digits(nc), nc > oc);
-      if (diff('grade', 'vote_count', 'your_vote', 'vote_1_count', 'vote_2_count', 'vote_3_count', 'vote_4_count', 'vote_5_count')) ratingEl = swap(ratingEl, ratingBlock(rel, { grow: false }));
-      if (diff('watching_count', 'plan_count', 'completed_count', 'hold_on_count', 'dropped_count', 'status_id') || (f.status?.id !== was.status?.id)) statsEl = swap(statsEl, statsBlock(rel, { grow: false }));
-      if (diff('collection_count')) collEl = swap(collEl, collectionsBlock(rel));
+      if (diff('grade', 'vote_count', 'your_vote', 'vote_1_count', 'vote_2_count', 'vote_3_count', 'vote_4_count', 'vote_5_count')) ratingEl = swap(ratingEl, tag(ratingBlock(rel, { grow: false }), 'rb-rating'));
+      if (diff('watching_count', 'plan_count', 'completed_count', 'hold_on_count', 'dropped_count', 'status_id') || (f.status?.id !== was.status?.id)) statsEl = swap(statsEl, tag(statsBlock(rel, { grow: false }), 'rb-stats'));
+      if (diff('collection_count')) collEl = swap(collEl, tag(collectionsBlock(rel), 'rb-collections'));
       if (diff('episodes_released', 'episodes_total', 'status_id', 'broadcast', 'duration') || (f.status?.id !== was.status?.id)) {
         morph(infoEl, infoRowsEl());
         watch.repaint?.(); // «Смотреть / Продолжить» — по новым сериям
       }
     };
 
-    root.replaceChildren(toolbar, hero, h('div', { class: 'rel-body' }, left, right));
+    root.replaceChildren(toolbar, hero, h('div', { class: 'rel-body' }, left, right, comments));
   }
 
   render();
@@ -362,7 +366,7 @@ function moreSheet(rel) {
     { label: 'Поделиться', icon: 'ic_export_variant', onClick: () => { const text = `${rel.title_ru}\n${link}`; if (navigator.share) navigator.share({ text }).catch(() => {}); else { navigator.clipboard?.writeText(text); toast('Скопировано', { ok: true }); } } },
     { label: 'Скопировать ссылку', icon: 'ic_link', onClick: () => { navigator.clipboard?.writeText(link); toast('Скопировано', { ok: true }); } },
     // ярлык аниме на рабочем столе телефона (как в Anixart): открывает его страницу (anixart://release?id=…)
-    window.anixartNative?.pinShortcut ? { label: 'На рабочий стол', icon: 'ic_home', onClick: () => window.anixartNative.pinShortcut(`release-${rel.id}`, rel.title_ru || rel.title_original || 'Аниме', `anixart://release?id=${rel.id}`, rel.image || '') } : null,
+    window.anixartNative?.pinShortcut ? { label: 'На рабочий стол', icon: 'ic_home', onClick: () => pinToHome(`release-${rel.id}`, rel.title_ru || rel.title_original || 'Аниме', `anixart://release?id=${rel.id}`, rel.image || '') } : null,
     { label: 'Пожаловаться', icon: 'ic_alert', onClick: () => report('release', rel.id) },
   ]);
 }
@@ -609,6 +613,8 @@ function recommendedBlock(rel) {
 
 // первая страница комментариев — с нажатия кнопки мыши: успевает за ожидание перехода, экран — сразу с ними
 const preCommentsOf = (rel) => (e) => { if (e.button === 0) import('./comments.js').then((m) => m.prefetchComments('release', rel.id)).catch(() => {}); };
+// класс блоку страницы (null — блока нет)
+function tag(el, cls) { if (el) el.classList.add(cls); return el; }
 function commentsBlock(rel, rebuild) {
   const preComments = preCommentsOf(rel);
   const card = h('div', { class: 'card', style: { padding: '16px 0 0' } },

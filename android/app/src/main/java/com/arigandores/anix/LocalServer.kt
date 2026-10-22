@@ -170,6 +170,9 @@ class LocalServer(private val assets: AssetManager) {
                 val list = JSONArray()
                 for ((k, v) in r.headers) list.put(JSONArray().put(k.lowercase()).put(v))
                 val body = r.body.bytes()
+                // сбои бекенда — в logcat (adb logcat -s AnixServer): адрес без параметров, код и начало ответа; ни
+                // запрос, ни заголовки (там токены) не пишутся
+                if (r.code >= 500) Log.w(TAG, "relay $method ${rb.url.newBuilder().query(null).build()} → ${r.code} ${String(body, 0, minOf(body.size, 300), Charsets.UTF_8).replace(Regex("\\s+"), " ")}")
                 val b64 = Base64.encodeToString(list.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
                 send(out, 200, body, "application/octet-stream", listOf(
                     "X-Relay-Status" to r.code.toString(),
@@ -184,6 +187,7 @@ class LocalServer(private val assets: AssetManager) {
                 is java.net.ConnectException -> "ECONNREFUSED"
                 else -> e.javaClass.simpleName
             }
+            Log.w(TAG, "relay $method ${rb.url.newBuilder().query(null).build()} failed: $code ${e.message}")
             val err = JSONObject().put("error", e.message ?: code).put("code", code)
             send(out, 599, err.toString().toByteArray(), "application/json; charset=utf-8")
         }
@@ -262,7 +266,8 @@ class LocalServer(private val assets: AssetManager) {
         val n = Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
         googleLogins[n] = GoogleLogin(now)
         // localhost, а не 127.0.0.1: в разрешённых доменах Firebase-проекта есть только localhost
-        val body = JSONObject().put("n", n).put("url", "http://localhost:$port/google-auth.html?n=$n")
+        // app=android — страница после входа сама возвращает в приложение (intent://), а не просит вернуться вручную
+        val body = JSONObject().put("n", n).put("url", "http://localhost:$port/google-auth.html?n=$n&app=android")
         send(out, 200, body.toString().toByteArray(), JSON_TYPE)
     }
 

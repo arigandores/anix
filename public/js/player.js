@@ -5,6 +5,10 @@ import { A, auth } from './api.js';
 import { prefs, db, t } from './store.js';
 import { createUpscale, TIER_LABEL, TIERS, SHARPNESS, SHARP_LABEL, benchPrompt, benchRunDialog } from './upscale/index.js';
 import { createAudioFx, AUDIO_OPTS } from './audio.js';
+import { createSharpen, SHARPEN_LABEL } from './sharpen.js';
+const ENH_LABEL = { ...SHARPEN_LABEL, neural: 'Нейросеть' }; // «Улучшение» на телефоне
+import { createAnime4K, CHAINS } from './anime4k-gl.js';
+import { neuralOk, pickChain, lighterFrom, capFor } from './upscale/phone-check.js';
 import { playerPresence, webPresence } from './discord.js';
 import { has, ANDROID } from './platform.js';
 import { party, bindPlayer, playerEpisode, partyEnded, partyWhy, roomSkip, setRoomSkip, partySkipAuto, isHost as partyIsHost, canControl, fillersText } from './party/room.js';
@@ -212,7 +216,9 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     clearTimeout(hintTimer); if (ms) hintTimer = setTimeout(() => hintEl.classList.remove('show'), ms);
   };
   // Перемотка опенинга, когда у серии нет меток (как «⏩» в Anixart): на время из настроек, по умолчанию 1:25
-  const opBtn = h('button', { class: 'icon-btn op-btn', hidden: true, onclick: () => seekBy(prefs.get('PLAYER_REWIND_TIME') || 85) }, icon('ic_player_rewind_fast'));
+  // «Перемотать опенинг» — у серий без меток: на кнопке — на сколько (значок «>>» один не говорил, что он делает)
+  const opLabel = h('span');
+  const opBtn = h('button', { class: 'op-btn', hidden: true, onclick: () => seekBy(prefs.get('PLAYER_REWIND_TIME') || 85) }, icon('ic_player_rewind_fast', 'sm'), opLabel);
   // Блокировка (телефон): касания не действуют, ориентация — текущая (MainActivity); снять — замком, он появляется по тапу
   let locked = false; let unlockTimer = null;
   const unlockBtn = h('button', { class: 'p-unlock', title: 'Разблокировать', 'aria-label': 'Разблокировать', onclick: (e) => { e.stopPropagation(); setLock(false); } }, icon('ic_lock'));
@@ -221,12 +227,14 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   function setLock(on) {
     locked = on;
     ov.classList.toggle('locked', on);
-    if (on) { closeMenu(); pop?.close(); showUnlock(); } else { unlockBtn.classList.remove('show'); poke(); }
+    // замок — от случайных касаний (смотреть лёжа, в кармане, ребёнку): что произошло — словами, не только значком
+    if (on) { closeMenu(); pop?.close(); showUnlock(); hint('Касания отключены — снять: замок или «Назад»', 2200); } else { unlockBtn.classList.remove('show'); poke(); }
     window.anixartNative?.lockOrientation?.(on);
   }
   function setFit(i, say) {
     fit = i;
     if (ANDROID) video.style.objectFit = FITS[i][0];
+    sharpen?.redraw(); a4k?.redraw();
     prefs.set('PLAYER_FIT', FITS[i][0]);
     if (say) hint(FITS[i][1]);
   }
@@ -251,6 +259,40 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   const centerPlay = h('button', { class: 'p-center', title: 'Продолжить (пробел)', 'aria-label': 'Продолжить', tabindex: '-1',
     onclick: (e) => { e.stopPropagation(); if (video.paused) togglePlay(); }, onpointerdown: (e) => e.stopPropagation() }, icon('ic_player_play'));
   const stage = h('div', { class: 'player-stage' }, video, msg, centerPlay, hintEl);
+  // Телефон: «Улучшение» — резкость (Чётче / Сильнее) или нейросеть Anime4K (anime4k-gl.js), если телефон её тянет
+  // (phone-check.js). На источнике, за которым нейросеть не успевает (или пока размер кадра неизвестен), — резкость
+  const sharpen = has.sharpen ? createSharpen(video, { onFail: () => toast('Улучшение картинки недоступно на этом устройстве') }) : null;
+  // нейросеть: цепочка Anime4K (anime4k-gl.js CHAINS) — лучшая, что телефон успевает на разрешении серии (phone-check.js);
+  // a4kFrom — облегчение во время просмотра: телефон перестал успевать (нагрелся) — цепочка полегче, ни одной — резкость
+  let a4k = null; let a4kChain = null; let a4kBroken = false; let a4kFrom = 0;
+  if (sharpen) video.after(sharpen.canvas);
+  function applyEnhance() {
+    if (!sharpen) return;
+    const m = prefs.get('PLAYER_SHARPEN') || 'off';
+    const chain = m === 'neural' && !a4kBroken && neuralOk() ? pickChain(video.videoWidth, video.videoHeight, Math.max(a4kFrom, capFor(video.videoWidth, video.videoHeight))) : null;
+    if (chain !== a4kChain) {
+      a4k?.dispose(); a4kChain = chain;
+      a4k = chain ? createAnime4K(video, { chain: CHAINS[chain], onFail: () => { a4kBroken = true; applyEnhance(); } }) : null;
+      if (a4k) sharpen.canvas.after(a4k.canvas);
+      if (m === 'neural') window.__anixLog?.(`anime4k: цепочка ${chain || 'нет — резкость'} для ${video.videoWidth}x${video.videoHeight}`);
+    }
+    a4k?.setOn(!!chain);
+    sharpen.setMode(chain ? 'off' : m === 'neural' ? 'soft' : m);
+  }
+  // следим, успевает ли: доля кадров видео, показанных мимо нейросети, за 3 с; дважды подряд больше 15% — легче
+  let a4kStrikes = 0; let a4kSeen = { frames: 0, missed: 0 };
+  const a4kWatch = setInterval(() => {
+    if (!a4k || video.paused || !a4k.active()) { a4kSeen = a4k ? a4k.stats() : { frames: 0, missed: 0 }; return; }
+    const st = a4k.stats(); const fr = st.frames - a4kSeen.frames; const ms = st.missed - a4kSeen.missed; a4kSeen = st;
+    if (fr < 20) return;
+    a4kStrikes = ms / (fr + ms) > 0.15 ? a4kStrikes + 1 : 0;
+    if (a4kStrikes < 2) return;
+    a4kStrikes = 0; a4kFrom = lighterFrom(video.videoWidth, video.videoHeight, a4kChain);
+    window.__anixLog?.(`anime4k: не успевает (${ms} из ${fr + ms} кадров мимо) — легче`);
+    applyEnhance(); a4kSeen = a4k ? a4k.stats() : { frames: 0, missed: 0 };
+  }, 3000);
+  applyEnhance();
+  if (sharpen) video.addEventListener('loadedmetadata', () => { a4kFrom = 0; applyEnhance(); }); // новая серия — снова лучшая
   if (ANDROID) setFit(fit);
   const ov = h('div', { class: 'player-overlay', tabindex: '-1' }, top, stage, skipRow, controls, unlockBtn);
 
@@ -259,14 +301,17 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   const splitEl = h('div', { class: 'up-split', hidden: true },
     h('div', { class: 'line' }), splitKnob, h('span', { class: 'lbl l' }, 'Оригинал'), h('span', { class: 'lbl r' }, 'Улучшено'));
   stage.append(splitEl);
+  let upLogged = '';
   const up = createUpscale({
     video, stage,
-    onChange: () => { placeSplit(); refreshMenu(); },
-    onNotice: (text) => toast(text),
+    // телефон: что выбрал апскейл и что пошло не так — в журнал (adb logcat -s AnixWeb), экрана там не видно
+    onChange: () => { placeSplit(); refreshMenu(); if (window.__anixLog && up && up.status.text !== upLogged) { upLogged = up.status.text; window.__anixLog(`upscale: ${up.mode} · ${up.status.state} · ${upLogged || '—'}`); } },
+    onNotice: (text) => { toast(text); window.__anixLog?.(`upscale: ${text}`); },
     onBenchPrompt: () => askBenchWhenFree(),
   });
   const upCanvas = stage.querySelector('.up-canvas');
   ov.upscale = up; // для тестов и отладки
+  ov.sharpen = sharpen; Object.defineProperty(ov, 'anime4k', { get: () => a4k }); Object.defineProperty(ov, 'anime4kChain', { get: () => a4kChain }); // для тестов
   // Улучшение звука (audio.js): три переключателя в шестерёнке, общие для всех серий. Громкость и mute — через него:
   // пока звучит обработка, <video> заглушён, а громкость задаёт Web Audio
   const fx = createAudioFx({ video, onError: () => toast('Улучшение звука недоступно на этом устройстве'), onVolume: () => paintVolume() });
@@ -784,7 +829,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
       h('div', { class: 'pm-sep' }),
       tierOpt('fast', 'Немного чётче, почти без нагрузки'),
       tierOpt('quality', 'Чистые линии, меньше артефактов сжатия'),
-      tierOpt('max', 'Лучшее качество, для мощной видеокарты'),
+      TIERS.includes('max') ? tierOpt('max', 'Лучшее качество, для мощной видеокарты') : null, // на телефоне нет
       h('div', { class: 'pm-sep' }),
       chosen ? row('ic_tune', 'Модель', shortName(chosen.name), () => menuShow('Модель', presetRows)) : null,
       chosen ? row('ic_tune_variant', 'Резкость', SHARP_LABEL[up.sharpness], () => menuShow('Резкость', sharpRows)) : null, // в «Авто» выбираем сами
@@ -795,7 +840,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
       up.mode !== 'off' ? h('label', { class: 'pm-row' }, icon('ic_compare', 'sm'), h('span', { class: 'grow' }, 'Сравнить с оригиналом'), h('span', { class: 'switch' }, cmp, h('span'))) : null,
       h('div', { class: `pm-note ${st.state === 'error' ? 'err' : ''}` },
         st.text ? h('b', null, st.text) : null,
-        h('span', null, up.mode === 'off' ? 'Нейросеть делает линии и детали чётче при увеличении серии до размера экрана.' : 'Удерживайте C — оригинал, U — включить или выключить.')),
+        h('span', null, up.mode === 'off' ? 'Нейросеть делает линии и детали чётче при увеличении серии до размера экрана.' : ANDROID ? 'Нейросеть считает на видеокарте телефона — немного больше расход батареи.' : 'Удерживайте C — оригинал, U — включить или выключить.')),
     ];
   }
   // установка библиотек TensorRT: прогресс — в подписи строки, без перестройки меню на каждый процент
@@ -845,7 +890,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     if (playing && ov.isConnected) video.play().catch(() => {});
   }
   function targetRows() {
-    return ['auto', '1080', '1440', '2160'].map((tg) => h('button', {
+    return (ANDROID ? ['auto', '1080', '1440'] : ['auto', '1080', '1440', '2160']).map((tg) => h('button', {
       class: `pm-row pm-opt ${up.target === tg ? 'on' : ''}`, onclick: () => { up.setTarget(tg); menuShow('Улучшение картинки', upscaleRows); },
     }, icon('ic_check', 'sm'), h('span', { class: 'grow' }, targetName(tg), tg === 'auto' ? h('small', null, 'Под размер окна') : null)));
   }
@@ -871,6 +916,14 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
         class: `pm-row pm-opt ${q === cur.quality ? 'on' : ''}`, onclick: () => { if (q !== cur.quality) setQuality(q); closeMenu(); },
       }, icon('ic_check', 'sm'), h('span', { class: 'grow' }, qualityName(q)))))) : null,
       has.upscale ? row('ic_upscale', 'Улучшение', UP_MODE[up.mode] || 'Выкл', () => menuShow('Улучшение картинки', upscaleRows)) : null,
+      // телефон: «Нейросеть» — только если он её тянет (сравнения с оригиналом здесь нет — оно на ПК)
+      sharpen ? row('ic_upscale', 'Улучшение', ENH_LABEL[prefs.get('PLAYER_SHARPEN')] || 'Выкл', () => menuPage('Улучшение картинки', [
+        ...Object.entries(ENH_LABEL).filter(([m]) => m !== 'neural' || neuralOk()).map(([m, l]) => h('button', {
+          class: `pm-row pm-opt ${(prefs.get('PLAYER_SHARPEN') || 'off') === m ? 'on' : ''}`,
+          onclick: () => { prefs.set('PLAYER_SHARPEN', m); applyEnhance(); closeMenu(); },
+        }, icon('ic_check', 'sm'), h('span', { class: 'grow' }, l, m === 'neural' ? h('small', null, 'Anime4K — как «720p +» в Anixart, чище линии') : null))),
+        h('div', { class: 'pm-note' }, 'Улучшение считает видеокарта телефона — немного больше расход батареи.'),
+      ])) : null,
       row('ic_audio', 'Звук', audioName(), () => menuShow('Звук', audioRows)),
       row('ic_play_speed', 'Скорость', speedName(video.playbackRate), () => menuPage('Скорость', SPEEDS.map((s, i) => h('button', {
         class: `pm-row pm-opt ${video.playbackRate === s ? 'on' : ''}`, onclick: () => { video.playbackRate = s; prefs.set('SELECTED_PLAYER_SPEED', i); closeMenu(); },
@@ -940,7 +993,8 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   function buildSegments() {
     const d = video.duration || 0; const marks = marksNow();
     opBtn.hidden = !(d > 0) || !!marks?.opening; // метки есть — пропуск по ним (skipRow)
-    opBtn.title = `Перемотать опенинг: +${fmt(prefs.get('PLAYER_REWIND_TIME') || 85)}`;
+    const rew = prefs.get('PLAYER_REWIND_TIME') || 85;
+    opBtn.title = `Перемотать опенинг: +${fmt(rew)}`; opLabel.textContent = `+${rew} с`;
     const key = `${Math.round(d)}|${JSON.stringify(marks)}`;
     if (key === segKey) return;
     segKey = key;
@@ -955,7 +1009,8 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   const within = (s, a, b) => Math.max(0, Math.min(100, ((Math.min(b, s.to) - Math.max(a, s.from)) / (s.to - s.from)) * 100));
   function paintTime() {
     buildSegments();
-    const d = video.duration || 0; const c = video.currentTime || 0;
+    // тянут ползунок — точка, полоса и время там, где палец (видео перематывается, когда отпустили)
+    const d = video.duration || 0; const c = scrub != null ? scrub * d : video.currentTime || 0;
     const pct = d ? (c / d) * 100 : 0;
     let bufEnd = 0;
     for (let i = 0; i < video.buffered.length; i++) if (video.buffered.start(i) <= c + 1) bufEnd = Math.max(bufEnd, video.buffered.end(i));
@@ -967,13 +1022,23 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     knob.style.left = `${pct}%`;
     knob.classList.toggle('mark', segs.some((s) => s.kind !== 'content' && pct >= s.from && pct < s.to));
     timeEl.textContent = `${fmt(c)} / ${fmt(d)}`;
-    updateSkip();
+    if (scrub == null) updateSkip(); // пока тянут — без «Пропустить»: палец над опенингом ещё не значит «перемотал сюда»
   }
 
-  // Перемотка по полосе; подсказка — время под курсором и «Опенинг/Эндинг», если курсор в их секции
-  let dragging = false;
+  // Перемотка по полосе; подсказка — время под курсором и «Опенинг/Эндинг», если курсор в их секции. Пока тянут
+  // (палец или мышь) — точка и время идут за ним, а видео перематывается один раз, когда отпустили: раньше перемотка
+  // на каждый сдвиг отставала (точка стояла, потом прыгала сама), всплывало «Пропустить» над опенингом посреди жеста,
+  // а интерфейс успевал спрятаться
+  let dragging = false; let scrub = null;
   const pointerPct = (e) => { const r = seek.getBoundingClientRect(); return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); };
-  const seekTo = (e) => { if (video.duration) video.currentTime = pointerPct(e) * video.duration; };
+  const scrubTo = (e) => { scrub = pointerPct(e); paintTime(); clearTimeout(idleTimer); ov.classList.remove('idle'); };
+  const endScrub = (commit) => {
+    if (!dragging) return;
+    dragging = false; seek.classList.remove('drag');
+    if (commit && scrub != null && video.duration) video.currentTime = scrub * video.duration;
+    scrub = null; paintTime(); poke();
+    if (!matchMedia('(hover: hover)').matches) tip.classList.remove('show'); // пальцем: подсказка — только пока тянут
+  };
   function showTip(e) {
     const d = video.duration || 0;
     if (!d) { tip.classList.remove('show'); return; }
@@ -984,9 +1049,10 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     tip.style.left = `${p * 100}%`;
     tip.classList.add('show');
   }
-  seek.addEventListener('pointerdown', (e) => { dragging = true; seek.setPointerCapture(e.pointerId); seekTo(e); });
-  seek.addEventListener('pointermove', (e) => { showTip(e); if (dragging) seekTo(e); });
-  seek.addEventListener('pointerup', () => { dragging = false; });
+  seek.addEventListener('pointerdown', (e) => { if (e.button > 0 || !video.duration) return; dragging = true; seek.classList.add('drag'); seek.setPointerCapture(e.pointerId); showTip(e); scrubTo(e); });
+  seek.addEventListener('pointermove', (e) => { showTip(e); if (dragging) scrubTo(e); });
+  seek.addEventListener('pointerup', () => endScrub(true));
+  seek.addEventListener('pointercancel', () => endScrub(false));
   seek.addEventListener('pointerleave', () => { if (!dragging) tip.classList.remove('show'); });
 
   // --- Пропуск опенинга и эндинга ---
@@ -1057,7 +1123,9 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     const total = auto ? Math.min(SKIP_AUTO_MS, Math.max(1500, ((range ? range.end - (video.currentTime || 0) : 7) * 1000) + skipState.elapsed)) : WATCH_AUTO_MS;
     const pct = Math.min(100, (skipState.elapsed / total) * 100);
     goFill.style.width = auto ? `${pct}%` : '0%';
-    watchFill.style.width = auto ? '0%' : `${pct}%`;
+    // «Смотреть …» — без заливки: ряд сам прячется через 10 с, а заливка на ней выглядела, будто кнопка из
+    // полупрозрачной становится сплошной. Заливка — только у «Пропустить», когда пропуск сработает сам
+    watchFill.style.width = '0%';
     if (pct >= 100) { if (auto) doSkip(kind, false); else watchMark(kind, false); return; }
     skipState.raf = requestAnimationFrame(countdown);
   }
@@ -1149,13 +1217,15 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   stage.addEventListener('pointerup', endHold);
   stage.addEventListener('pointerleave', endHold);
 
-  // Пальцем (телефон): по горизонтали — перемотка, сдвиг растёт к краю быстрее (на всю ширину — 3 мин), пока ведёшь —
-  // плашка «+0:35 · 12:40», перематывает, когда палец отпустили; двумя пальцами — щипок, режим кадра (как в Anixart)
+  // Пальцем (телефон): по горизонтали — перемотка, как в Anixart (PlayerGestureController): p — сдвиг пальца в % ширины,
+  // перемотка — p²/25 с: четверть экрана — 25 с, половина — 1:40, вся ширина — 6:40 (было f^1.6 × 3 мин — четверть
+  // экрана давала ~20 с). Пока ведёшь — видео на паузе и плашка «+0:35 · 12:40», перематывает, когда палец отпустили,
+  // и играет дальше; двумя пальцами — щипок, режим кадра
   const fingers = new Map(); let swipe = null; let pinch = null;
   const spread = () => { const [a, b] = [...fingers.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
   const swipeTarget = (dx) => {
-    const f = Math.min(1, Math.abs(dx) / stage.clientWidth);
-    return Math.max(0, Math.min(video.duration - 1, swipe.from + Math.sign(dx) * f ** 1.6 * 180));
+    const p = Math.trunc(Math.max(-100, Math.min(100, (dx / stage.clientWidth) * 100)));
+    return Math.max(0, Math.min(video.duration - 1, swipe.from + Math.sign(p) * Math.floor((p * p) / 25)));
   };
   stage.addEventListener('pointerdown', (e) => {
     if (e.pointerType !== 'touch' || isMini() || menu || locked) return;
@@ -1175,7 +1245,11 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     }
     if (!swipe || holding || !video.duration) return;
     const dx = e.clientX - swipe.x; const dy = e.clientY - swipe.y;
-    if (!swipe.on && Math.abs(dx) > 24 && Math.abs(dx) > Math.abs(dy) * 1.5) { swipe.on = true; clearTimeout(holdTimer); swipe.x = e.clientX; }
+    if (!swipe.on && Math.abs(dx) > 24 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      swipe.on = true; clearTimeout(holdTimer);
+      // в комнате пауза ушла бы всем — там видео идёт, пока ведёшь
+      swipe.resume = !video.paused && !pc; if (swipe.resume) video.pause();
+    }
     if (!swipe.on) return;
     const to = swipeTarget(e.clientX - swipe.x); const d = to - swipe.from;
     hint(`${d < 0 ? '−' : '+'}${fmt(Math.abs(d))} · ${fmt(to)}`, 0);
@@ -1185,6 +1259,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     if (!fingers.delete(e.pointerId)) return;
     if (swipe?.on) {
       if (e.type === 'pointerup') video.currentTime = swipeTarget(e.clientX - swipe.x);
+      if (swipe.resume) video.play().catch(() => {});
       hintEl.classList.remove('show');
       gestureAt = Date.now();
     }
@@ -1250,6 +1325,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     window.removeEventListener('blur', onBlur);
     window.removeEventListener('resize', placeSplit);
     up.destroy();
+    sharpen?.dispose(); a4k?.dispose(); clearInterval(a4kWatch);
     fx.destroy();
     rp.stop();
     offParty(); if (pc) pc.unbind(); // из комнаты не выходим: плеер можно открыть снова

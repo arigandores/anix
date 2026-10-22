@@ -33,15 +33,18 @@ html { -webkit-tap-highlight-color: transparent; }
 .android .player-overlay:not(.mini) .player-stage { touch-action: none; }
 
 /* Шапка прячется при прокрутке вниз (hidebar.js, как в Anixart): уезжает вверх, прилипшее под ней (вкладки, чипы
-   серий, поле комментария, разделы настроек — top: --stick-top в app.css) поднимается к верху экрана */
-.android #viewport .screen .appbar { transition: transform .2s var(--ease-std); }
-.android #viewport .screen :is(.tabbar, .comment-input.top.sticky, .settings-nav, .wchips) { transition: top .2s var(--ease-std); }
+   серий, поле комментария, разделы настроек — top: --stick-top в app.css) поднимается к верху экрана. Движение —
+   hidebar.js (одно на всех, transform), не transition: переход top отставал от шапки, и между ними мелькала щель */
 .android.bar-hidden #viewport { --stick-top: 0px; }
 .android.bar-hidden #viewport .screen .appbar { transform: translateY(-100%); }
 
 /* Вложенные экраны без нижнего меню (как в Anixart): комментарии, ответы, «Смотрят», рекомендации, редактор
    коллекции — больше места полю ввода и списку (data-screen — router.js) */
 .android body:is([data-screen="comments"], [data-screen="replies"], [data-screen="watching"], [data-screen="recommendations"], [data-screen="collection-editor"]) #bottomnav { display: none; }
+
+/* Открыта клавиатура (MainActivity → shim.js __anixIme): нижнего меню нет — как в Anixart, над клавиатурой только экран
+   с полем ввода; мини-плеер тоже прячется */
+.kb-open #bottomnav, .kb-open .player-overlay.mini { display: none; }
 
 /* Компактное нижнее меню (настройки → Внешний вид): только значки */
 .compact-nav #bottomnav .nav-item > span:last-child { display: none; }
@@ -52,3 +55,32 @@ html { -webkit-tap-highlight-color: transparent; }
 @media (min-width: 900px) {
   .android #viewport .paged > .list { max-width: 760px; margin-inline: auto; }
 }
+
+/* Страница аниме на телефоне (одна колонка) — порядок блоков как в Anixart: описание, «В списках у людей», рейтинг,
+   коллекции, видео, кадры, связанные, рекомендуемые, комментарии. Колонки (.rel-main, .rel-side) раскрываются, блоки
+   (rb-* в release.js) встают по order */
+@media (max-width: 980px) {
+  .android .rel-body { row-gap: 16px; }
+  .android .rel-body > :is(.rel-main, .rel-side) { display: contents; }
+  .android .rel-body .card + .card { margin-top: 0; }
+  .android .rel-body .rb-info { order: 1; } .android .rel-body .rb-stats { order: 2; } .android .rel-body .rb-rating { order: 3; }
+  .android .rel-body .rb-collections { order: 4; } .android .rel-body .rb-video { order: 5; } .android .rel-body .rb-screens { order: 6; }
+  .android .rel-body .rb-related { order: 7; } .android .rel-body .rb-recommended { order: 8; } .android .rel-body .rel-comments { order: 9; }
+}
+
+/* «Смотреть вместе» в плеере на телефоне боком: панель — во всю высоту справа (шторка), а не окошко 320×250 под
+   кнопками: в нём очередь, участники и чат ужимались до пары строк, попасть пальцем было трудно. Вырез камеры справа —
+   отступ внутри */
+@media (orientation: landscape) and (max-height: 560px) {
+  .android .player-overlay:not(.mini) .party-panel { top: 0; right: 0; bottom: 0; height: auto; max-height: none; width: min(440px, 50%); max-width: none;
+    border-radius: 20px 0 0 20px; padding: calc(8px + var(--cut-t, 0px)) var(--cut-r, 0px) 0 0; transform-origin: 100% 50%; animation: party-sheet-in .2s var(--ease-out); }
+  .android .player-overlay:not(.mini) .party-panel.closing { animation: party-sheet-out .16s var(--ease-std) forwards; }
+  .android .player-overlay:not(.mini) .party-panel .party-head { font-size: 17px; min-height: 48px; }
+  .android .player-overlay:not(.mini) .party-panel .party-view > .party-chat { min-height: 160px; }
+}
+@keyframes party-sheet-in { from { transform: translateX(100%); } }
+@keyframes party-sheet-out { to { transform: translateX(100%); } }
+
+/* Полоса перемотки в плеере пальцем: поле нажатия выше самой полосы (22 px мало для пальца), вид тот же */
+.android .player-overlay:not(.mini) .seek::before { content: ''; position: absolute; left: 0; right: 0; top: -12px; bottom: -12px; }
+

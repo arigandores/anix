@@ -4,7 +4,7 @@ import { A, auth, remembered } from '../api.js';
 import { t } from '../store.js';
 import { registerScreen, navigate } from '../router.js';
 import { heartIcon } from '../lottie.js';
-import { backToolbar, collectionCard, releaseRow, relTime, requireAuth, avatarEl, profileName, imageViewer, report, digits } from './common.js';
+import { backToolbar, collectionCard, releaseRow, relTime, requireAuth, avatarEl, profileName, imageViewer, report, digits, pinToHome } from './common.js';
 
 const SORTS = [[1, 'Лидеры рейтинга'], [2, 'Популярные за год'], [3, 'Популярные за сезон'], [4, 'Популярные за неделю'], [5, 'Недавно добавленные'], [6, 'Случайные']];
 
@@ -123,7 +123,7 @@ registerScreen('collection', async ({ id }, ctx) => {
       { label: 'Поделиться', icon: 'ic_export_variant', onClick: () => { const text = `Рекомендую ознакомиться с коллекцией: «${c.title}»\n${base}collection/${c.id}`; if (navigator.share) navigator.share({ text }).catch(() => {}); else { navigator.clipboard?.writeText(text); toast('Скопировано', { ok: true }); } } },
       { label: 'Скопировать ссылку', icon: 'ic_link', onClick: () => { navigator.clipboard?.writeText(`${base}collection/${c.id}`); toast('Скопировано', { ok: true }); } },
       // ярлык коллекции на рабочем столе телефона (как в Anixart)
-      window.anixartNative?.pinShortcut ? { label: 'На рабочий стол', icon: 'ic_home', onClick: () => window.anixartNative.pinShortcut(`collection-${c.id}`, c.title || 'Коллекция', `anixart://collection?id=${c.id}`, c.image || '') } : null,
+      window.anixartNative?.pinShortcut ? { label: 'На рабочий стол', icon: 'ic_home', onClick: () => pinToHome(`collection-${c.id}`, c.title || 'Коллекция', `anixart://collection?id=${c.id}`, c.image || '') } : null,
       mine ? { label: 'Редактировать', icon: 'ic_pencil', onClick: () => navigate('collection-editor', { id: c.id }) } : null,
       // удалили — «Мои коллекции» обновятся (то же событие, что из редактора)
       mine ? { label: 'Удалить', icon: 'ic_trash_outline', danger: true, onClick: async () => { if (await confirmDialog('Удалить коллекцию?', 'Вы уверены, что хотите удалить коллекцию?', 'Удалить')) { const d = await A.collectionDelete(c.id).catch(() => null); toast(d && d.code === 0 ? 'Коллекция удалена' : 'Не удалось удалить коллекцию'); if (d && d.code === 0) { window.dispatchEvent(new CustomEvent('collection-changed', { detail: { id: c.id, deleted: true } })); history.back(); } } } } : null,

@@ -1,5 +1,7 @@
-// На Android нет улучшения картинки, AI-помощника, статуса в Discord и стороннего плеера (public/js/platform.js):
-// ни вкладки, ни разделов настроек, ни пунктов меню плеера и чипа плеера; апскейл не включается и из старой настройки
+// На Android нет апскейла нейросетью, AI-помощника, статуса в Discord и стороннего плеера (public/js/platform.js):
+// ни вкладки, ни разделов настроек, ни пунктов меню плеера и чипа плеера; апскейл не включается и из старой настройки.
+// Вместо апскейла — лёгкое «Улучшение картинки» (резкость, sharpen.js, как «720p +» в Anixart): только оно, без
+// моделей, TensorRT и проверки видеокарты
 import { ensureDevice, install, launch, js, until, check, skip, done, REAL, tap, back, screenshot, pageErrors, persist, tapWatchable } from './_device.mjs';
 
 await ensureDevice();
@@ -20,10 +22,10 @@ if (!(await until(`${REAL('.settings-tab')} > 3`, 5000))) await tap('[title="Н�
 check('настройки открылись', !!(await until(`${REAL('.settings-tab')} > 3`, 10000)));
 const sections = await js(`[...document.querySelectorAll('.settings-tab')].map((b) => b.dataset.section + ':' + b.textContent.trim())`);
 check('разделы без AI-помощника и Discord', !sections.some((s) => /^(ai|discord):/.test(s)), sections);
-check('вместо «Картинка и звук» — «Звук»', sections.includes('picture:Звук'), sections);
+check('раздел «Картинка и звук» (улучшение — резкость)', sections.includes('picture:Картинка и звук'), sections);
 await tap('.settings-tab[data-section="picture"]');
 const picture = await js(`document.querySelector('.settings-body').textContent`);
-check('в «Звуке» нет улучшения картинки, TensorRT, проверки видеокарты', !/Улучшение картинки|TensorRT|видеокарт|Разрешение улучшения/.test(picture), picture.slice(0, 120));
+check('в «Картинке и звуке» — резкость, без апскейла: нет TensorRT, проверки видеокарты, разрешения улучшения', /Улучшение картинки/.test(picture) && !/TensorRT|видеокарт|Разрешение улучшения|Авто — подберёт/.test(picture), picture.slice(0, 160));
 check('в «Звуке» есть переключатели звука', await js(`document.querySelectorAll('.settings-body .switch').length`) >= 1);
 await tap('.settings-tab[data-section="playback"]');
 check('в «Воспроизведении» нет пути к mpv/VLC', !/mpv|VLC|Сторонний плеер/i.test(await js(`document.querySelector('.settings-body').textContent`)));
@@ -40,7 +42,8 @@ await back(); // настройки → главная
 const api = await js(`fetch('/api/config/toggles').then((r) => r.status)`);
 if (api >= 500) { skip('экран серий и плеер', `бекенд Anixart отвечает ${api}`); done('features'); }
 await tapWatchable({ wait: 25000 });
-await tap('.btn-watch', { wait: 20000 });
+// страница аниме — с настоящего сервера Anixart: под нагрузкой четырёх эмуляторов бывает дольше 20 с
+await tap('.btn-watch', { wait: 40000 });
 // серии — через источник (relay): на эмуляторе под нагрузкой (4 параллельно) бывает дольше 20 с
 let loaded = await until(`${REAL('.type-row, .ep-row')} > 0`, 45000);
 if (!loaded) { // источник не ответил — «Повторить» на экране ошибки, иначе открыть серии заново (одна попытка)
@@ -64,7 +67,7 @@ else {
   await tap('.player-stage', { after: 700 });
   await tap('.player-overlay .gear', { after: 700 });
   const rows = await js(`[...document.querySelectorAll('.player-menu .pm-row')].map((r) => r.textContent.trim())`);
-  check('меню плеера: качество, звук, скорость, пропуски — без «Улучшения»', rows.length >= 3 && !rows.some((r) => /Улучшение/.test(r)) && rows.some((r) => /Звук/.test(r)), rows);
+  check('меню плеера: качество, улучшение (резкость, выключено), звук, скорость, пропуски', rows.length >= 4 && rows.some((r) => /^УлучшениеВыкл$/.test(r)) && rows.some((r) => /Звук/.test(r)), rows);
   screenshot('features-player-menu');
   const keyU = await js(`(document.dispatchEvent(new KeyboardEvent('keydown', { key: 'u', bubbles: true })), document.querySelector('.player-overlay').upscale.mode)`);
   check('клавиша U не включает апскейл', keyU === 'off', keyU);

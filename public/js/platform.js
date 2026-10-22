@@ -1,6 +1,8 @@
 // Где запущено приложение: Windows (Electron) / браузер или Android (android/: WebView, мост window.anixAndroid).
-// На Android нет улучшения картинки, AI-помощника, статуса в Discord и стороннего плеера (mpv/VLC) — пункты и вкладки
-// для них не показываются
+// На Android нет AI-помощника, статуса в Discord, стороннего плеера (mpv/VLC) и апскейла с ПК (upscale/: на мобильной
+// видеокарте его WebGPU-движок медленный) — пункты и вкладки для них не показываются. Улучшение картинки на телефоне —
+// своё: резкость (sharpen.js) и нейросеть Anime4K фрагментными шейдерами (anime4k-gl.js), если телефон её тянет
+// (upscale/phone-check.js)
 export const ANDROID = !!window.anixAndroid;
 
 export const has = {
@@ -8,6 +10,7 @@ export const has = {
   ai: !ANDROID,
   discord: !ANDROID,
   externalPlayer: !ANDROID,
+  sharpen: ANDROID, // улучшение картинки на телефоне: резкость и Anime4K (player.js)
 };
 
 // Название приложения в «О приложении» и подсказках

@@ -87,7 +87,12 @@ if (!apiOk) { skip('аниме, комментарии, профиль', 'бек
 // Ярлык аниме на рабочий стол — системный запрос рабочего стола
 await until(`${REAL('.release-row')} > 0`, 25000);
 await tapWatchable({ wait: 25000, after: 1500 });
-await tap('.appbar [title="Ещё"]', { after: 700 });
+// под нагрузкой (4 эмулятора) «Ещё» нажималось, пока страница аниме ещё собиралась, и меню не открывалось — ждём
+// страницу и нажимаем снова, если меню нет
+await until(`!!document.querySelector('#viewport .screen .rel-body:not(.skeleton)')`, 20000);
+for (let i = 0; i < 3 && !(await js(`[...document.querySelectorAll('.backdrop:not(.closing) .sheet-item')].some((b) => /На рабочий стол/.test(b.textContent))`)); i++) {
+  await tap('.appbar [title="Ещё"]', { after: 900 });
+}
 await tap('.backdrop:not(.closing) .sheet-item, .backdrop:not(.closing) button', { text: 'На рабочий стол', after: 3000 });
 const pin = sh('dumpsys activity activities | grep -E "topResumedActivity|mResumedActivity" | head -2');
 check('«На рабочий стол» — запрос рабочего стола на ярлык', /launcher|PinItem|AddItem/i.test(pin) || away(), pin.trim());

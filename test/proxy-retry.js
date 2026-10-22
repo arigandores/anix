@@ -13,6 +13,7 @@ const check = (name, ok, extra = '') => { console.log(`${ok ? 'OK  ' : 'FAIL'} $
     const n = (hits[key] = (hits[key] || 0) + 1);
     if (req.url.startsWith('/flaky502')) { if (n <= 2) { res.writeHead(502); return res.end('bad gateway'); } }
     if (req.url.startsWith('/reset')) { if (n <= 1) return req.socket.destroy(); }
+    if (req.url.startsWith('/auth/google')) { if (n <= 2) { res.writeHead(502); return res.end('bad gateway'); } }
     if (req.url.startsWith('/always502')) { res.writeHead(502); return res.end('bad gateway'); }
     res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{"code":0}');
   });
@@ -26,6 +27,8 @@ const check = (name, ok, extra = '') => { console.log(`${ok ? 'OK  ' : 'FAIL'} $
   check('GET: обрыв соединения, затем 200 → 200', (await get('reset')) === 200, `попыток ${hits['GET /reset']}`);
   check('GET: всегда 502 → 502 после 3 попыток', (await get('always502')) === 502 && hits['GET /always502'] === 3, `попыток ${hits['GET /always502']}`);
   check('POST: 502 не повторяется', (await get('flaky502post', { method: 'POST', body: '' })) === 502 && hits['POST /flaky502post'] === 1, `попыток ${hits['POST /flaky502post']}`);
+  // вход через соцсеть (токен → профиль) ничего не записывает — повторяется и POST: бекенд временами отвечает на него 502
+  check('POST auth/google: 502, 502, затем 200 → 200', (await get('auth/google', { method: 'POST', body: '' })) === 200 && hits['POST /auth/google'] === 3, `попыток ${hits['POST /auth/google']}`);
   check('POST: обрыв после отправки не повторяется', (await get('reset', { method: 'POST', body: '' })) === 502 && hits['POST /reset'] === 1, `попыток ${hits['POST /reset']}`);
 
   console.log(fails ? `FAILED: ${fails}` : 'ALL OK');

@@ -614,7 +614,10 @@ export function pagedList({ load: loadPage, render, container, empty, startPage 
       list.style.display = '';
       // первая страница во время въезда экрана — подхватывает въезд, строки без своего проявления (одна анимация)
       const joined = page === startPage && joinEnter(list);
-      for (const it of items) { const node = keyed(render(it, count++), it); if (node) list.append(instant || joined ? markAppeared(node) : node); }
+      // список ещё не на экране (соседняя вкладка, построенная заранее, tabs) — строки без своего проявления: иначе
+      // все разом начинали его в момент свайпа к вкладке, и кадры подвисали
+      const offscreen = !host.isConnected;
+      for (const it of items) { const node = keyed(render(it, count++), it); if (node) list.append(instant || joined || offscreen ? markAppeared(node) : node); }
       page += 1;
       // Следующая страница есть, только если пришло >= 25 элементов
       if (isEnd(r, items)) ended = true;
@@ -694,7 +697,30 @@ export function tabs(defs, { initial = 0, onChange, scrollable = true, cache: us
     ink.style.transform = `translateX(${t.offsetLeft}px)`;
     ink.dataset.placed = '1';
   };
-  new ResizeObserver(() => placeInk(false)).observe(bar);
+  // Выбранная вкладка — по центру полосы: соседние видны с обеих сторон, и понятно, что вкладок больше (у края
+  // «Последнее» выглядело последней). Не scrollIntoView: полоса липкая, и он прокручивал ещё и сам экран
+  const centerTab = (smooth) => {
+    const t = tabEls()[current];
+    if (!t || !bar.clientWidth || bar.scrollWidth <= bar.clientWidth) return;
+    bar.scrollTo({ left: t.offsetLeft - (bar.clientWidth - t.offsetWidth) / 2, behavior: smooth ? 'smooth' : 'instant' });
+  };
+  new ResizeObserver(() => { placeInk(false); centerTab(false); }).observe(bar);
+  // Прокрутка экрана — своя у каждой вкладки (как списки во вкладках Anixart): ушли со списка «Аниме» с середины —
+  // вернулись туда же, сразу, без анимации прокрутки (и шапка не возвращается: hidebar.js пропускает прыжок, __jump).
+  // Пока шапка экрана видна (прокрутили не дальше начала вкладок) — прокрутка общая, как была; новая вкладка —
+  // с начала списка, под прилипшей полосой
+  const scroller = () => body.closest('#viewport');
+  const savedY = new Map();
+  const startY = (sc) => {
+    const st = getComputedStyle(bar);
+    if (st.position !== 'sticky') return null;
+    return body.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - bar.offsetHeight - (parseFloat(st.top) || 0);
+  };
+  const targetY = (i) => {
+    const sc = scroller(); const a = sc && startY(sc);
+    if (a == null) return null;
+    return sc.scrollTop <= a ? sc.scrollTop : Math.max(a, savedY.get(i) ?? a);
+  };
   // Вкладка, построенная для свайпа (видна рядом, пока тянут), — та же и после свайпа: у вкладок без кеша второе
   // построение — второй запрос и скелетон поверх уже показанного списка. Свежая — построена не раньше 10 с назад
   const builtAt = new Map();
@@ -706,15 +732,22 @@ export function tabs(defs, { initial = 0, onChange, scrollable = true, cache: us
   function select(i, { swiped = false } = {}) {
     if (i === current) return;
     const first = current === -1;
+    const sc = scroller();
+    const y = first ? null : targetY(i);
+    if (!first && sc) savedY.set(current, sc.scrollTop);
     current = i;
     tabEls().forEach((b, j) => b.classList.toggle('active', j === i));
     placeInk(true);
     body.replaceChildren(build(i, swiped));
+    if (y != null && Math.abs(sc.scrollTop - y) > 0.5) { sc.__jump = true; sc.scrollTop = y; }
     // переключили вкладку — содержимое проявляется (разово); при первом показе экрана — нет: там уже идёт въезд
     // экрана, и своё проявление с нуля поверх него давало блик (экран «Списки просмотра»)
     if (!first && !swiped) nudge(cache.get(i), [{ opacity: 0 }, { opacity: 1 }], 200);
-    tabEls()[i]?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+    centerTab(!first);
     onChange && onChange(i);
+    // палец: соседние вкладки строятся заранее, в свободное время (как ViewPager в Anixart) — свайп к ещё не открытой
+    // вкладке иначе строил её и рисовал пришедший список посреди жеста: подвисание кадров на 100–150 мс
+    if (touch && useCache) (window.requestIdleCallback || setTimeout)(() => { for (const j of [i + 1, i - 1]) if (current === i && j >= 0 && j < defs.length) build(j); });
   }
   defs.forEach((d, i) => bar.append(h('button', { class: 'tab', role: 'tab', onclick: () => select(i) }, d.title)));
   bar.append(ink);
@@ -723,10 +756,13 @@ export function tabs(defs, { initial = 0, onChange, scrollable = true, cache: us
     swipePages(body, {
       count: () => defs.length, current: () => current, page: () => cache.get(current), ink, tabEls,
       peek: (i) => build(i, true),
+      // соседняя, пока тянут, — уже на своей прокрутке (targetY): после свайпа список не перескакивает
+      offset: (i) => { const y = targetY(i); return y == null ? 0 : scroller().scrollTop - y; },
       select: (i) => select(i, { swiped: true }),
     });
   }
   root.select = select;
+  root.current = () => current;
   root.refresh = (i = current) => { cache.delete(i); const c = current; current = -1; select(c); };
   select(initial);
   return root;
@@ -775,7 +811,8 @@ function routeSwipes() {
   document.addEventListener('touchend', () => { active?.swipe.end(); active = null; });
   document.addEventListener('touchcancel', () => { active?.swipe.cancel(); active = null; });
 }
-export function swipePages(body, { count, current, page, peek, select, ink = null, tabEls = () => [] }) {
+// offset(i) — на сколько px ниже начала .tabbody показать соседнюю i, пока тянут (у вкладок своя прокрутка экрана)
+export function swipePages(body, { count, current, page, peek, select, offset = () => 0, ink = null, tabEls = () => [] }) {
   body.classList.add('swipe-pages');
   routeSwipes();
   let g = null;
@@ -799,7 +836,7 @@ export function swipePages(body, { count, current, page, peek, select, ink = nul
     if (s.peekI === i) return;
     if (s.peek) { s.peek.remove(); reset(s.peek); }
     s.peekI = i; s.peek = i == null ? null : peek(i);
-    if (s.peek && s.peek !== s.el) { aside(s.peek); body.append(s.peek); } else s.peek = null;
+    if (s.peek && s.peek !== s.el) { aside(s.peek); s.peek.style.top = `${offset(i)}px`; body.append(s.peek); } else s.peek = null;
   };
   const start = (e) => {
     const p = e.touches[0];
@@ -851,13 +888,14 @@ export function swipePages(body, { count, current, page, peek, select, ink = nul
     if (to < 0 || to >= count() || !far) { cancel(); return; }
     const s = g; g = null;
     const old = s.el;
+    const sc = body.closest('#viewport'); const y0 = sc?.scrollTop ?? 0;
     select(to); // новая вкладка — в потоке (та же, что была рядом, или свежая, если вкладка перерисовывается при выборе)
     const next = page();
     if (s.peek && s.peek !== next) { s.peek.remove(); reset(s.peek); }
     reset(next);
     if (calm() || !old || !next || old === next) { reset(old); body.classList.remove('swiping'); return; }
-    // уходящая — рядом, пока новая доезжает
-    aside(old); body.append(old);
+    // уходящая — рядом, пока новая доезжает; экран прокрутился к месту новой (select) — уходящая остаётся где была
+    aside(old); old.style.top = `${(sc?.scrollTop ?? 0) - y0}px`; body.append(old);
     const out = old.animate([{ transform: `translateX(${s.dx}px)` }, { transform: `translateX(${-dir * s.w}px)` }], EASE);
     next.animate([{ transform: `translateX(${s.dx + dir * s.w}px)` }, { transform: 'none' }], EASE);
     out.finished.catch(() => {}).then(() => {

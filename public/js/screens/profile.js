@@ -151,9 +151,10 @@ async function profileView(id, { fromMain = false, blog = null } = {}) {
     const dyn = (p.watch_dynamics || []).filter((d) => d && d.timestamp);
     if (dyn.length && !p.is_stats_hidden) body.append(watchDynamics(dyn));
     if ((p.votes || []).length) {
+      // название — всегда на две строки: звёзды под всеми релизами на одной высоте (короткое название поднимало их)
       body.append(h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Оценки релизов'),
         h('div', { class: 'screens', style: { gap: '12px' } }, p.votes.map((rel) => h('div', { class: 'release-card', style: { width: '110px', flex: 'none' }, onclick: () => openRelease(rel) },
-          h('div', { class: 'poster', style: { width: '100%' } }, img(rel.image)), h('div', { class: 't clamp2', style: { fontSize: '12px' } }, rel.title_ru), h('div', { class: 'meta' }, '★'.repeat(rel.my_vote || 0)))))));
+          h('div', { class: 'poster', style: { width: '100%' } }, img(rel.image)), h('div', { class: 't clamp2', style: { fontSize: '12px', minHeight: '2.5em' } }, rel.title_ru), h('div', { class: 'meta' }, '★'.repeat(rel.my_vote || 0)))))));
     }
     if ((p.history || []).length && !p.is_stats_hidden) {
       body.append(h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Просмотрено недавно'),

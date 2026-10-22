@@ -115,7 +115,7 @@ try {
   })()`);
   if (g.skip) console.log('SKIP [Google] нет ключей Google в config.local.json');
   else {
-    check('Google: страница входа — на localhost и том же порту', g.s.url === `http://localhost:38371/google-auth.html?n=${g.s.n}` && g.page === 200, g.s.url);
+    check('Google: страница входа — на localhost и том же порту, с возвратом в приложение (app=android)', g.s.url === `http://localhost:38371/google-auth.html?n=${g.s.n}&app=android` && g.page === 200, g.s.url);
     check('Google: ключи Firebase переданы странице', !!g.cfg.apiKey && !!g.cfg.authDomain);
     check('Google: ожидание получает токен, как только страница его прислала', g.posted.ok && g.got.field === 'googleIdToken' && g.got.token === 'tok-123' && g.got.email === 'a@b.c', g.got);
     check('Google: ключ входа одноразовый', !!g.again.error, g.again);

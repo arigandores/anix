@@ -92,8 +92,11 @@ await sleep(800);
 if (!(await js(`!!document.querySelector('.pop-search')`))) skip('клавиатура в меню озвучек', 'озвучек меньше 7 — поля поиска нет');
 else check('меню озвучек: поле поиска есть, клавиатура сама не открывается', !(await windowState()).imeVisible);
 screenshot('nav-voice-menu');
-await back();
-check('«Назад» закрыл меню, экран серий остался', !(await popOpen()) && await depth() === 4);
+// «Назад» доходит до страницы не сразу, если она занята (эмулятор под нагрузкой): ждём, пока меню закроется
+const t0 = Date.now(); sh('input keyevent 4');
+const menuClosed = await until(`![...document.querySelectorAll('.pop-item')].some((e) => e.getClientRects().length)`, 3000, 100);
+const ms = Date.now() - t0; await sleep(400);
+check('«Назад» закрыл меню, экран серий остался', !!menuClosed && await depth() === 4, `за ${ms} мс, d=${await depth()}`);
 
 // Веб-плеер (плеер источника) — «Назад» закрывает его
 await tap('.wchip-player', { after: 700 });
@@ -106,8 +109,11 @@ await back();
 check('«Назад» закрыл веб-плеер', !(await js(`!!document.querySelector('.player-overlay')`)) && await depth() === 4);
 await tap('.wchip-player', { after: 700 });
 await tap('.pop-item', { text: 'Встроенный плеер', after: 700 });
-await back(); await back(); await back();
-check('«Назад» × 3 — на главную', await depth() === 1);
+// возврат на страницу аниме на эмуляторе под нагрузкой бывает дольше паузы между нажатиями — нажатие не теряется, а
+// доходит позже (было 4 → 3 → 3 → 1): ждём условие, а не фиксированную паузу
+const steps = [`d=${await depth()} pop=${await popOpen()}`];
+for (let i = 0; i < 3; i++) { await back(); steps.push(`d=${await depth()} pop=${await popOpen()}`); }
+check('«Назад» × 3 — на главную', !!(await until(`Number(document.body.dataset.depth || 1) === 1`, 5000)), steps.join(' → '));
 await sleep(300);
 check('на странице нет необработанных ошибок', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
 done('navigation');

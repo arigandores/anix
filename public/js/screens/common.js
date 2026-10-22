@@ -753,3 +753,20 @@ export const emptyFilter = () => ({
 
 // «Ещё» с has-more = content.length >= 25 (страница 0..)
 export function hasMore(r) { return (r.content || []).length >= 25; }
+
+// Ярлык аниме или коллекции на рабочий стол (телефон, MainActivity.pinShortcut). На Xiaomi ярлыки по умолчанию
+// запрещены разрешением «Ярлыки на рабочем столе» — система молча отклоняла запрос, и кнопка «ничего не делала»:
+// говорим, где разрешить, и открываем этот экран
+export function pinToHome(id, label, link, image) {
+  const native = window.anixartNative;
+  const r = native.pinShortcut(id, label, link, image || '');
+  if (r === 'unsupported') toast('Рабочий стол не поддерживает ярлыки');
+  else if (r === 'blocked') {
+    dialog({
+      title: 'Разрешите ярлыки',
+      content: h('p', null, 'Система Xiaomi не даёт приложениям добавлять ярлыки, пока это не разрешено. Откройте разрешения Anix, включите «Ярлыки на рабочем столе», вернитесь и нажмите «На рабочий стол» ещё раз.'),
+      actions: [{ label: 'Отмена' }, { label: 'Открыть разрешения', primary: true, onClick: () => native.openShortcutSettings?.() }],
+    });
+  }
+}
+

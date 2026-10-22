@@ -11,9 +11,14 @@ const APK = fs.readFileSync(path.join(ROOT, 'android', 'app', 'build', 'outputs'
 let hits = 0;
 const srv = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
-  if (u.pathname === '/releases/latest') {
+  // список релизов: последний — только для Windows (без APK) — телефону не обновление; предлагается 99.0.0 с APK.
+  // В тексте — разделы платформ: показывается общее и «Android», не «Windows»
+  if (u.pathname === '/releases') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ tag_name: 'v99.0.0', body: 'Тестовая версия.\n\n## Что нового\n- Проверка обновления на Android\n- Вторая строка', assets: [{ name: 'Anix-99.0.0.apk', browser_download_url: `http://127.0.0.1:${PORT_T}/apk` }] }));
+    res.end(JSON.stringify([
+      { tag_name: 'v99.1.0', body: 'Только для Windows.\nПлатформы: windows', assets: [{ name: 'latest.yml', browser_download_url: 'x' }] },
+      { tag_name: 'v99.0.0', body: 'Тестовая версия.\nПлатформы: windows, android\n\n## Что нового\n- Проверка обновления на Android\n- Вторая строка\n\n**Windows**\n- Только про Windows\n\n**Android**\n- Только про Android', assets: [{ name: 'Anix-99.0.0.apk', browser_download_url: `http://127.0.0.1:${PORT_T}/apk` }] },
+    ]));
     return;
   }
   if (u.pathname.startsWith('/releases/tags/')) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ body: '## Что нового\n- текущая' })); return; }
@@ -55,7 +60,8 @@ try {
 
   check('при запуске — «Вышла новая версия»', !!(await until(`/Вышла новая версия/.test(document.querySelector('.update-dialog')?.textContent || '')`, 20000)));
   const txt = await dialogText();
-  check('в окне — версия и «Что нового» из релиза', /Anix 99\.0\.0/.test(txt) && /Проверка обновления на Android/.test(txt) && !/Anix Desktop/.test(txt), txt.slice(0, 160));
+  check('в окне — версия и «Что нового» из релиза: последний с APK, а не последний (только для Windows)', /Anix 99\.0\.0/.test(txt) && /Проверка обновления на Android/.test(txt) && !/Anix Desktop/.test(txt), txt.slice(0, 160));
+  check('«Что нового» — общее и раздел Android, без раздела Windows и строки «Платформы»', /Только про Android/.test(txt) && !/Только про Windows/.test(txt) && !/Платформы/.test(txt), txt.slice(0, 300));
   screenshot('update-offer');
 
   // «Обновить» → скачивание с прогрессом → системное окно установки → отказ

@@ -9,6 +9,7 @@
 // AnimeJaNai SD Compact (самая чёткая, лучше всех вытягивает мыльный SD, но сильнее всех мерцает и на чистом HD
 // уступает). Что лучше, зависит от того, насколько исходник мягче своего кадра — это меряет native.js.
 
+
 export const MODELS = {
   'artcnn-c4f16': { family: 'ArtCNN', preset: 'C4F16', arch: 'artcnn-c4f16', macs: 12240, luma: true },
   'artcnn-c4f16-dn': { family: 'ArtCNN', preset: 'C4F16 DN', arch: 'artcnn-c4f16', macs: 12240, luma: true },

@@ -15,6 +15,18 @@ for (const name of fs.readdirSync(path.join(root, 'public'))) {
   if (SKIP.has(name)) continue;
   fs.cpSync(path.join(root, 'public', name), path.join(out, name), { recursive: true });
 }
+// Масштабирование щипком — не для приложения (как в Anixart): метатег viewport без него (и WebView — MainActivity)
+{
+  const f = path.join(out, 'index.html');
+  const html = fs.readFileSync(f, 'utf8');
+  const fixed = html.replace('content="width=device-width, initial-scale=1"', 'content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"');
+  if (fixed === html) throw new Error('sync-web: в index.html не найден метатег viewport');
+  fs.writeFileSync(f, fixed);
+}
+// Улучшение картинки на телефоне — Anime4K фрагментными шейдерами (anime4k-gl.js): в APK — его шейдер и лицензия (MIT);
+// модели апскейла с ПК (20 МБ) не нужны — WebGPU-движок на телефоне выключен (platform.js)
+fs.mkdirSync(path.join(out, 'models', 'upscale'), { recursive: true });
+for (const f of ['ANIME4K-LICENSE', 'Anime4K_Upscale_CNN_x2_M.glsl', 'Anime4K_Restore_CNN_S.glsl', 'Anime4K_Restore_CNN_M.glsl', 'Anime4K_Clamp_Highlights.glsl', 'Anix_Deband.glsl']) fs.copyFileSync(path.join(root, 'public', 'models', 'upscale', f), path.join(out, 'models', 'upscale', f));
 
 // Копия app.css для пальца. :hover на телефоне «залипает» после тапа (подсветка остаётся на нажатой кнопке) — правила
 // с :hover действуют только там, где есть наведение: @media (hover: hover). В списке селекторов «.a:hover,

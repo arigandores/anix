@@ -10,10 +10,10 @@
 // На NVIDIA RTX тяжёлые модели считает TensorRT на тензорных ядрах (electron/trt.js, anix-trt.exe): кадр уходит
 // в отдельную программу, результат возвращается общей текстурой (VideoFrame). Если TensorRT не установлен или
 // сломался — те же модели считает WebGPU-движок.
-import { getGpu, loadModel, createUpscaler } from './engine.js';
-import { has } from '../platform.js';
+import { getGpu, loadModel, createUpscaler, submitLatency } from './engine.js';
+import { has, ANDROID } from '../platform.js';
 import { createPresenter } from './present.js';
-import { MODELS, LEVELS, TIER_LABEL, SECOND, styled, tierOf, autoList, modelName, sourceClass } from './catalog.js';
+import { MODELS, LEVELS, TIERS, TIER_LABEL, SECOND, styled, tierOf, autoList, modelName, sourceClass } from './catalog.js';
 import { native, trtStatus, trtInstall, trtEnabled, trtUsable, gpuKey, benchDone, measuredMs, learn } from './bench.js';
 import { createNativeProbe } from './native.js';
 import { prefs } from '../store.js';
@@ -21,7 +21,7 @@ import { prefs } from '../store.js';
 export { TIERS, TIER_LABEL, MODELS, modelName } from './catalog.js';
 export { SHARPNESS, SHARP_LABEL } from './catalog.js';
 export { trtStatus, trtInstall, benchPrompt, benchRunDialog, benchResultsDialog, benchReset, benchInfo } from './bench.js';
-export const MODES = ['off', 'auto', 'fast', 'quality', 'max'];
+export const MODES = ['off', 'auto', ...TIERS];
 export const TARGETS = ['auto', '1080', '1440', '2160'];
 
 // доля интервала между кадрами, которую может занимать апскейл: модель, что укладывается в BUDGET, берётся; выше
@@ -46,12 +46,18 @@ function calibrate(device) {
   if (!calibrating) {
     calibrating = (async () => {
       const spec = await loadModel('janai-v31-perf');
-      const up = await createUpscaler(spec);
+      // телефон — кадр текстурой: VideoFrame из холста там как внешняя текстура не принимается (bench.js testTexture)
+      const up = await createUpscaler(spec, ANDROID ? { input: 'texture' } : {});
       const W = 640; const H = 360;
       up.setSize(W, H);
       const cv = new OffscreenCanvas(W, H); const cx = cv.getContext('2d');
       cx.fillStyle = '#7a5'; cx.fillRect(0, 0, W, H); cx.fillStyle = '#123'; cx.fillRect(W / 4, H / 4, W / 2, H / 2);
-      const frame = new VideoFrame(cv, { timestamp: 0 });
+      let frame;
+      if (ANDROID) {
+        frame = device.createTexture({ size: [W, H], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
+        device.queue.copyExternalImageToTexture({ source: cv }, { texture: frame }, [W, H]);
+        frame.close = () => frame.destroy();
+      } else frame = new VideoFrame(cv, { timestamp: 0 });
       const run = async () => {
         const e = device.createCommandEncoder(); up.encode(e, frame);
         const t0 = performance.now(); device.queue.submit([e.finish()]);
@@ -60,7 +66,8 @@ function calibrate(device) {
       };
       try {
         await run();
-        const ts = []; for (let i = 0; i < 4; i++) ts.push(await run());
+        // телефон: между прогонами — кадр экрану (видеокарта не прерывает работу ради него)
+        const ts = []; for (let i = 0; i < 4; i++) { if (ANDROID) await new Promise((ok) => setTimeout(ok, 100)); ts.push(await run()); }
         ts.sort((a, b) => a - b);
         return (spec.macs * W * H) / (((ts[1] + ts[2]) / 2) / 1000);
       } finally { frame.close(); up.destroy(); }
@@ -78,7 +85,8 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
 
   let gpu = null; let gpuError = null; let presenter = null; let key = '';
   let tput = 0; // MAC/с WebGPU-движка (прикидка до бенчмарка)
-  let mode = has.upscale ? prefs.get('UPSCALE_MODE') || 'off' : 'off'; // на Android улучшения нет (platform.js)
+  let mode = has.upscale ? prefs.get('UPSCALE_MODE') || 'off' : 'off'; // без WebGPU на Android — нет (platform.js)
+  if (!MODES.includes(mode)) mode = 'auto'; // уровень, которого здесь нет (на телефоне — «Максимальное»)
   let target = prefs.get('UPSCALE_TARGET') || 'auto';
   let tier = null; // уровень текущей модели (для «Авто» — уровень выбранного пресета)
   let autoCap = 0; // «Авто»: не выше этого места в рейтинге (растёт, когда модель не успела на реальном видео)
@@ -90,6 +98,8 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
   let stages = []; let stagesKey = ''; let building = null; let buildSeq = 0;
   let rvfc = 0; let inflight = 0; let destroyed = false;
   let samples = []; let lastMs = 0; let overloadSince = 0;
+  let lat = 0; // телефон: задержка отправки без работы — из замера кадра вычитается (engine.js submitLatency)
+  let phoneHangs = 0; let loggedFrames = 0; // телефон: подряд кадров дольше 150 мс (measure); замеры в журнал
   let slow = false; let slowNoticed = ''; // ручной уровень не успевает (метка в меню); о чём уже сказали (модель@высота)
   let fps = 24; let lastMedia = 0; let lastFrames = 0; let cbs = 0; let drawn = 0;
   let need = null; // { srcW, srcH, dispH, outH, passes, cls } — что требуется сейчас
@@ -271,7 +281,8 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
         key = gpuKey(gpu.info);
         const saved = prefs.get('UPSCALE_GPU'); tput = saved && saved.key === key ? saved.tput : 0;
         presenter = createPresenter(gpu.device, canvas);
-        gpu.device.lost.then(() => { if (!destroyed) { presenter = null; gpu = null; clearStages(); setStatus('error', 'Видеокарта сбросилась — включите заново'); } });
+        if (ANDROID) submitLatency(gpu.device).then((v) => { lat = v; window.__anixLog?.(`upscale: задержка отправки ${v.toFixed(1)} мс`); });
+        gpu.device.lost.then((info) => { window.__anixLog?.(`upscale: видеокарта сбросилась (${info && info.reason}) ${info && info.message} · ${stages.map((x) => x.id).join('+')}`); if (!destroyed) { presenter = null; gpu = null; clearStages(); setStatus('error', 'Видеокарта сбросилась — включите заново'); } });
       } catch (e) { gpuError = e; setStatus('error', 'Недоступно: видеокарта не поддерживает WebGPU'); return; }
       if (destroyed || mode === 'off') return;
     }
@@ -282,7 +293,7 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
     }
     if (!tput && !benchDone(key, false)) {
       setStatus('loading', 'Проверяю видеокарту…');
-      try { tput = await calibrate(gpu.device); prefs.set('UPSCALE_GPU', { key, tput: Math.round(tput) }); } catch (e) { console.warn('[upscale] замер', e && e.message); }
+      try { tput = await calibrate(gpu.device); prefs.set('UPSCALE_GPU', { key, tput: Math.round(tput) }); window.__anixLog?.(`upscale: прикидка ${(tput / 1e9).toFixed(1)} млрд умножений/с`); } catch (e) { console.warn('[upscale] замер', e && e.message); window.__anixLog?.(`upscale: прикидка не удалась — ${e && e.message}`); }
       if (destroyed || mode === 'off') return;
     }
     need = computeNeed();
@@ -344,7 +355,7 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
       reveal();
       device.queue.onSubmittedWorkDone().then(() => {
         inflight--;
-        if (fromFrame && solo) measure(performance.now() - t0, t0);
+        if (fromFrame && solo) measure(performance.now() - t0 - lat, t0);
       });
     } catch (e) { if (!noFrame(e)) fail(e); }
   }
@@ -397,12 +408,27 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
   // --- Замер и защита от рывков ---
   function measure(ms, t0) {
     if (!stages.length) return;
+    // телефон: кадр дольше 150 мс — видеокарта занята так, что экран не рисуется и приложение «висит» (ANR): не ждём
+    // статистики — сразу выключаем (в «Авто» — на модель легче), с объяснением
+    if (ANDROID && ms > 150) {
+      window.__anixLog?.(`upscale: кадр ${ms.toFixed(0)} мс (${stages.map((x) => x.id).join('+')})`);
+      if (++phoneHangs < 2) return;
+      phoneHangs = 0;
+      const list = need ? autoList(need.cls) : [];
+      const i = list.indexOf(current);
+      if (mode === 'auto' && i >= 0 && i < list.length - 1) { capAt = performance.now(); upAt = 0; autoCap = i + 1; update(); return; }
+      mode = 'off'; prefs.set('UPSCALE_MODE', 'off'); split = 0; update();
+      onNotice('Улучшение картинки выключено: телефон не успевает за этой моделью');
+      return;
+    }
+    phoneHangs = 0;
     if (probe.overlaps(t0, t0 + ms)) return; // кадр пришёлся на замер разрешения — в статистику не берём
     samples.push(ms); if (samples.length > 24) samples.shift();
     if (samples.length < 6) return;
     const sorted = samples.slice().sort((a, b) => a - b);
     const med = sorted[sorted.length >> 1];
     lastMs = med;
+    if (ANDROID && ++loggedFrames % 120 === 6) window.__anixLog?.(`upscale: ${stages.map((x) => x.id).join('+')} ${need ? `${need.srcW}x${need.srcH}` : ''} — ${med.toFixed(1)} мс на кадр (бюджет ${(frameMs() * BUDGET).toFixed(0)})`);
     // реальные кадры уточняют замеры бенчмарка (одиночный проход — его время целиком)
     // (только когда успеваем: замеры под чужой нагрузкой на видеокарту в бенчмарк не пишем)
     const over = med > frameMs() * OVERLOAD;

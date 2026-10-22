@@ -45,9 +45,16 @@ for (const name of social.filter((n) => HOSTS[n])) {
   check(`${name}: в окне — страница провайдера`, !!url, url || (await pages()).join(' '));
   check(`${name}: в приложении — «Завершите вход в окне…»`, await js(`/Завершите вход/.test(document.body.textContent)`));
   screenshot(`auth-${name === 'ВКонтакте' ? 'vk' : name === 'Яндекс' ? 'yandex' : 'telegram'}`);
-  await back();
+  // шапка окна: «Вход через …» и крестик «Закрыть» (SocialAuth.kt); у первого провайдера закрываем крестиком, у
+  // остальных — «Назад»
+  sh('uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true');
+  const xml = sh('cat /sdcard/ui.xml 2>/dev/null || true');
+  const close = /content-desc="Закрыть"[^>]*?bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/.exec(xml);
+  check(`${name}: в шапке окна — «Вход через ${name}» и крестик «Закрыть»`, !!close && xml.includes(`Вход через ${name}`));
+  if (close && name === social.filter((n) => HOSTS[n])[0]) sh(`input tap ${(Number(close[1]) + Number(close[3])) >> 1} ${(Number(close[2]) + Number(close[4])) >> 1}`);
+  else await back();
   await sleep(800);
-  check(`${name}: «Назад» закрыл окно, ожидание в приложении снято`, !(await windowState()).socialOpen && !(await js(`/Завершите вход/.test(document.body.textContent)`)));
+  check(`${name}: ${close && name === social.filter((n) => HOSTS[n])[0] ? 'крестик' : '«Назад»'} закрыл окно, ожидание в приложении снято`, !(await windowState()).socialOpen && !(await js(`/Завершите вход/.test(document.body.textContent)`)));
   check(`${name}: без сообщения об ошибке`, !(await js(`/canceled|ошибк/i.test(document.getElementById('toast')?.textContent || '')`)));
 }
 

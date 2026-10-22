@@ -84,10 +84,19 @@ async function kodikFtor(r, page, htmlP) {
     if (!s) continue;
     if (!/^(https?:)?\/\//.test(s)) s = decryptKodikSrc(s);
     if (s.startsWith('//')) s = `https:${s}`;
+    if (fakeQuality(s, q)) continue;
     // прямой MP4 с CDN Kodik часто уводит на недоступный edge — берём его HLS-вариант
     if (/\.mp4$/i.test(new URL(s).pathname)) s += ':hls:manifest.m3u8';
     r.put(`${q}p`, replaceAll(s, ':hls:hls.m3u8', ':hls:manifest.m3u8'));
   }
+}
+
+// Kodik, когда качеств у серии меньше трёх, сам дописывает «720» — тем же файлом 480.mp4 (его веб-плеер так же,
+// _qualitiesList): чип «Kodik · 720p» врал, а «настоящего» 720p у такой серии нет вовсе (720.mp4 — ошибка 500).
+// Пункт, у которого в имени файла качество ниже заявленного, пропускаем
+function fakeQuality(src, q) {
+  const real = /\/(\d{3,4})\.mp4(?::hls:|$)/.exec(new URL(src).pathname);
+  return !!real && Number(real[1]) < Number(q);
 }
 
 async function kodik(r) {
@@ -110,6 +119,7 @@ async function kodikApi(r) {
     if (!m) continue;
     let s = m[1];
     if (!/(https:\/\/|http:\/\/)/.test(s)) s = `https:${s}`;
+    if (fakeQuality(s, q)) continue;
     r.playback[`${q}p`] = replaceAll(s, ':hls:hls.m3u8', ':hls:manifest.m3u8');
     r.download[`${q}p`] = replaceAll(replaceAll(s, ':hls:manifest.m3u8', ''), ':hls:hls.m3u8', '');
   }

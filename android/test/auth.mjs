@@ -33,7 +33,7 @@ const social = await js(`[...document.querySelectorAll('.auth-wrap button[title^
 const feats = await js(`fetch('/__features').then((r) => r.json()).then((f) => f.social)`);
 const want = Object.entries({ 'Яндекс': feats.yandex, 'ВКонтакте': feats.vk, 'Telegram': feats.telegram, 'Google': feats.google }).filter(([, on]) => on).map(([n]) => n);
 check('кнопки соцсетей — все, для которых есть ключи', JSON.stringify(social) === JSON.stringify(want), social);
-check('нет подписи «только в Anix Desktop для Windows»', !/для Windows/.test(await js(`document.querySelector('.auth-wrap').textContent`)));
+check('нет подписи «только в Anix для Windows»', !/для Windows/.test(await js(`document.querySelector('.auth-wrap').textContent`)));
 
 // ВКонтакте, Telegram, Яндекс — окно приложения со страницей провайдера; «Назад» — отмена без ошибки
 const HOSTS = { 'ВКонтакте': /id\.vk\.(ru|com)|vk\.com/, Telegram: /oauth\.telegram\.org/, 'Яндекс': /oauth\.yandex\.ru|passport\.yandex/ };

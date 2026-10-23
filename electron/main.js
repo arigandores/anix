@@ -8,6 +8,12 @@ const trt = require('./trt'); // ускорение апскейла на тен
 const { attachWebQuality } = require('./web-quality'); // веб-плеер: качество по «Приоритету качества»
 const updater = require('./updater'); // автообновление из GitHub Releases
 
+// Папка данных — прежняя «Anix Desktop» (вход, настройки, история, кэш TensorRT): с 1.7 приложение называется «Anix»,
+// и без этого Electron завёл бы пустую %APPDATA%\Anix. Папку, заданную заранее (тесты, свой профиль), не трогаем.
+if (app.getPath('userData') === path.join(app.getPath('appData'), app.getName())) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'Anix Desktop'));
+}
+
 let win;
 let serverInfo;
 
@@ -41,7 +47,7 @@ async function createWindow() {
     height: 860,
     minWidth: 380,
     minHeight: 560,
-    title: 'Anix Desktop',
+    title: 'Anix',
     icon,
     backgroundColor: '#121212',
     autoHideMenuBar: true,

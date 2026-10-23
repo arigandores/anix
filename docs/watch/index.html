@@ -6,9 +6,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Смотреть вместе — Anix Desktop</title>
-  <meta name="description" content="Приглашение в совместный просмотр аниме в Anix Desktop">
-  <meta property="og:title" content="Смотреть вместе — Anix Desktop">
+  <title>Смотреть вместе — Anix</title>
+  <meta name="description" content="Приглашение в совместный просмотр аниме в Anix">
+  <meta property="og:title" content="Смотреть вместе — Anix">
   <meta property="og:description" content="Приглашение в совместный просмотр аниме: пауза, перемотка и серии — у всех одновременно">
   <style>
     :root { color-scheme: dark; --bg: #121212; --card: #1f1f1f; --text: #fff; --text2: rgba(255,255,255,.62); --accent: #c8283c; }
@@ -41,13 +41,13 @@
     </div>
     <h1>Смотрим аниме вместе</h1>
     <div id="ok">
-      <p>Вас пригласили в комнату Anix Desktop: пауза, перемотка и серии — у всех одновременно.</p>
+      <p>Вас пригласили в комнату Anix: пауза, перемотка и серии — у всех одновременно.</p>
       <div class="code"><small>Код комнаты</small><b id="code"></b></div>
-      <a class="btn primary" id="open">Открыть в Anix Desktop</a>
+      <a class="btn primary" id="open">Открыть в Anix</a>
       <div class="missing" id="missing" hidden>
-        <b>Не открылось?</b> Скорее всего, Anix Desktop ещё не установлен. Установите его и снова нажмите на приглашение
-        или «Открыть в Anix Desktop».
-        <a class="btn tonal" href="https://github.com/arigandores/anix-desktop">Anix Desktop на GitHub</a>
+        <b>Не открылось?</b> Скорее всего, Anix ещё не установлен. Установите его и снова нажмите на приглашение
+        или «Открыть в Anix».
+        <a class="btn tonal" href="https://github.com/arigandores/anix">Anix на GitHub</a>
       </div>
       <p class="hint">Или в приложении: «Смотреть вместе» → «Войти по коду» и введите код выше.</p>
     </div>
@@ -67,7 +67,7 @@
       document.getElementById('code').textContent = code.match(/.{4}/g).join('-');
       document.getElementById('open').href = link;
       // Сразу пробуем открыть приложение. Узнать, открылось ли оно, браузер странице не даёт — поэтому никуда сами не
-      // уводим (иначе ушли бы и у тех, кто ещё думает над «Открыть Anix Desktop?»): через 2,5 с, если страница всё ещё
+      // уводим (иначе ушли бы и у тех, кто ещё думает над «Открыть Anix?»): через 2,5 с, если страница всё ещё
       // на экране, просто показываем заметную подсказку со ссылкой на страницу проекта на GitHub.
       location.href = link;
       setTimeout(function () { if (!document.hidden) document.getElementById('missing').hidden = false; }, 2500);

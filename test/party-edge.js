@@ -42,7 +42,7 @@ app.whenReady().then(async () => {
   check(/^ERR Неверный код/.test(await join(A, 'abc')), 'неверный код — понятная ошибка');
   // любой код в любом виде (с дефисами, строчными, ссылкой) читается как тот же — в том числе с буквой Q
   const codes = await A.js(`import('/js/party/net.js').then(({ newCode, normCode, fmtCode }) => { let bad = 0; for (let i = 0; i < 500; i++) { const c = newCode();
-    for (const v of [c, fmtCode(c).toLowerCase(), 'https://arigandores.github.io/anix-desktop/watch/#' + c, 'anixdesktop://watch/' + c]) if (normCode(v) !== c) bad++; } return bad; })`);
+    for (const v of [c, fmtCode(c).toLowerCase(), 'https://arigandores.github.io/anix/watch/#' + c, 'https://arigandores.github.io/anix-desktop/watch/#' + c, 'anixdesktop://watch/' + c]) if (normCode(v) !== c) bad++; } return bad; })`);
   check(codes === 0, `500 случайных кодов во всех видах читаются без ошибок (несовпадений: ${codes})`);
 
   // 2) ни один брокер не доступен → ошибка, комнаты нет

@@ -9,7 +9,7 @@
 1. **Версия.** В `package.json` поднимите `version` (например, `1.4.0`), закоммитьте и запушьте в `main`:
 
    ```
-   git commit -am "Anix Desktop 1.4.0"
+   git commit -am "Anix 1.4.0"
    git push public main
    ```
 
@@ -26,11 +26,11 @@
    ```
 
 4. **Готово.** Через 5–10 минут (25–30, если менялся `trt/`) в
-   [Releases](https://github.com/arigandores/anix-desktop/releases) появится «Anix Desktop 1.4.0» с
-   `AnixDesktop-Setup-1.4.0.exe`, `latest.yml`, `.blockmap`, `Anix-1.4.0.apk` (Android — через минуту-две после
+   [Releases](https://github.com/arigandores/anix/releases) появится «Anix 1.4.0» с
+   `Anix-Setup-1.4.0.exe`, `latest.yml`, `.blockmap`, `Anix-1.4.0.apk` (Android — через минуту-две после
    установщика) и текстом из тега. С этого момента установленные
    приложения (версии новее 1.5.0 — в 1.5.0 автообновления ещё нет) при запуске предложат обновиться. Ход сборки — во вкладке
-   [Actions](https://github.com/arigandores/anix-desktop/actions/workflows/release.yml).
+   [Actions](https://github.com/arigandores/anix/actions/workflows/release.yml).
 
 ## Платформы: релиз только для Windows или только для Android
 
@@ -99,7 +99,7 @@ Actions → Release → **Run workflow** (ветка `main`). Установщи
 скопируйте файл в `anix-secrets`, закоммитьте там и выставьте секреты заново (`./sync-secrets.sh`) или только этот:
 
 ```
-gh secret set CONFIG_LOCAL_JSON -R arigandores/anix-desktop < config.local.json
+gh secret set CONFIG_LOCAL_JSON -R arigandores/anix < config.local.json
 ```
 
 Ключи попадают внутрь установщика — секрет лишь не даёт им попасть в репозиторий.

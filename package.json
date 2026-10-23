@@ -1,8 +1,8 @@
 {
   "name": "anix-desktop",
-  "productName": "Anix Desktop",
+  "productName": "Anix",
   "version": "1.6.0",
-  "description": "Anix Desktop — неофициальный клиент Anixart для Windows и браузера",
+  "description": "Anix — неофициальный клиент Anixart для Windows, Android и браузера",
   "author": "arigandores",
   "main": "electron/main.js",
   "license": "MIT",
@@ -24,7 +24,7 @@
   },
   "build": {
     "appId": "com.arigandores.anixdesktop",
-    "productName": "Anix Desktop",
+    "productName": "Anix",
     "electronDist": "node_modules/electron/dist",
     "electronVersion": "45.0.0",
     "directories": {
@@ -41,7 +41,7 @@
     ],
     "win": {
       "icon": "build/icon.ico",
-      "artifactName": "AnixDesktop-${version}-${arch}-${target}.${ext}"
+      "artifactName": "Anix-${version}-${arch}-${target}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -49,19 +49,19 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Anix Desktop",
-      "artifactName": "AnixDesktop-Setup-${version}.${ext}"
+      "shortcutName": "Anix",
+      "artifactName": "Anix-Setup-${version}.${ext}"
     },
     "publish": [
       {
         "provider": "github",
         "owner": "arigandores",
-        "repo": "anix-desktop"
+        "repo": "anix"
       }
     ],
     "protocols": [
       {
-        "name": "Anix Desktop",
+        "name": "Anix",
         "schemes": [
           "anixdesktop"
         ]

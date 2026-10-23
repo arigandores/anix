@@ -283,7 +283,7 @@
   window.__anixNotifyPermission = (granted) => { const f = notifyWait; notifyWait = null; if (f) f(granted); };
   // Обновление (update.js — то же окно «Вышла новая версия», что на ПК): последний релиз GitHub с Anix-<версия>.apk,
   // скачивание и установка — Updater.kt. Адрес релизов в тестах подменяется (anix.test.updateFeed)
-  const FEED = 'https://api.github.com/repos/arigandores/anix-desktop/releases';
+  const FEED = 'https://api.github.com/repos/arigandores/anix/releases';
   const feed = () => { try { return localStorage.getItem('anix.test.updateFeed') || FEED; } catch { return FEED; } };
   const newer = (a, b) => { const x = a.split('.').map(Number); const y = b.split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; };
   const gh = async (path) => { const r = await relayFetch(`${feed()}${path}`, { headers: { 'User-Agent': 'AnixAndroid', Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15000) }); if (!r.ok) throw new Error(`GitHub: HTTP ${r.status}`); return r.json(); };

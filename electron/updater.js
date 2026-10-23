@@ -8,7 +8,7 @@
 const { app, net } = require('electron');
 const { autoUpdater, CancellationToken } = require('electron-updater');
 
-const REPO = 'arigandores/anix-desktop';
+const REPO = 'arigandores/anix';
 const FEED = process.env.ANIX_UPDATE_FEED || null;
 
 autoUpdater.autoDownload = false;

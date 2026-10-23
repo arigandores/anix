@@ -1,5 +1,5 @@
 'use strict';
-// Локальный сервер Anix Desktop.
+// Локальный сервер Anix.
 //  /api/*     — прокси к бекенду Anixart с заголовками мобильного клиента
 //  /parse     — серверные парсеры видео
 //  /stream    — прокси медиа (Range, Referer/UA, перезапись m3u8) для источников без CORS
@@ -353,7 +353,7 @@ module.exports = { start };
 
 if (require.main === module) {
   start().then(({ url, apiBase: b }) => {
-    console.log(`Anix Desktop: ${url}  (API: ${b})`);
+    console.log(`Anix: ${url}  (API: ${b})`);
     if (process.argv.includes('--open')) {
       require('child_process').exec(`start "" "${url}"`);
     }

@@ -509,7 +509,7 @@ function emailCodeDialog(f, hash, expires, onChanged) {
 async function bindService(provider, label, tokenField) {
   const inApp = !!(window.anixartNative && window.anixartNative.socialAuth);
   const f = await fetch('/__features').then((r) => r.json()).catch(() => ({}));
-  if (!inApp && provider !== 'google') { toast('Привязка Яндекса, ВКонтакте и Telegram — в Anix Desktop для Windows'); return false; }
+  if (!inApp && provider !== 'google') { toast('Привязка Яндекса, ВКонтакте и Telegram — в Anix для Windows'); return false; }
   if (!f.social?.[provider]) { toast(`Вход через ${label} недоступен в этой сборке`); return false; }
   let ex;
   try { ex = await socialToken(provider, label); } catch (e) { toast(String(e.message || e)); return false; }

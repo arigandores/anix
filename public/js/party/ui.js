@@ -6,7 +6,7 @@ import { normCode } from './net.js';
 import { navigate, switchTab } from '../router.js';
 import { APP_NAME, launchLink } from '../platform.js';
 
-const INVITE_URL = 'https://arigandores.github.io/anix-desktop/watch/'; // GitHub Pages репозитория, docs/watch/index.html
+const INVITE_URL = 'https://arigandores.github.io/anix/watch/'; // GitHub Pages репозитория, docs/watch/index.html
 import { party, present, sendChat, setControl, openContent, isHost, canControl, queueAdd, queuePlay, queueRemove, queueMove, giveHost, memberName, roomSkip, setRoomSkip } from './room.js';
 
 // Вид кнопок «Смотреть вместе» задаёт класс in-party и число участников у <html> (CSS): кнопкам не нужны подписки —

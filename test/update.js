@@ -24,12 +24,12 @@ async function until(fn, max, step = 100) {
 }
 
 const NOTES = [
-  '**Anix Desktop 9.0** — тестовый выпуск: обновление прямо из приложения.',
+  '**Anix 9.0** — тестовый выпуск: обновление прямо из приложения.',
   '',
-  '> Anix Desktop — независимый проект, не связанный с разработчиками Anixart.',
+  '> Anix — независимый проект, не связанный с разработчиками Anixart.',
   '',
   '**Как установить**',
-  'Скачайте `AnixDesktop-Setup-9.0.0.exe` — установщик.',
+  'Скачайте `Anix-Setup-9.0.0.exe` — установщик.',
   '',
   'Файл не подписан, поэтому SmartScreen может предупредить при запуске.',
   '',
@@ -55,7 +55,7 @@ function addRelease(version, { size = 3 << 20, chunkMs = 25, corrupt = false, dr
   const sha512 = crypto.createHash('sha512').update(bytes).digest('base64');
   releases.set(version, { bytes, sha512, chunkMs, corrupt, dropAfter });
 }
-const file = (v) => `AnixDesktop-Setup-${v}.exe`;
+const file = (v) => `Anix-Setup-${v}.exe`;
 const feed = http.createServer((req, res) => {
   const url = decodeURIComponent(req.url.split('?')[0]);
   if (feedDown) { req.socket.destroy(); return; }
@@ -151,7 +151,7 @@ app.whenReady().then(async () => {
   const appVersion = require('../package.json').version;
   check('запомнена текущая версия', (await pref('APP_VERSION')) === appVersion);
   let d = await until(dlg, 8000);
-  check('при запуске — окно «Вышла новая версия»', d?.title === 'Вышла новая версия' && d.text.includes(`Anix Desktop ${V1}`), JSON.stringify(d?.title));
+  check('при запуске — окно «Вышла новая версия»', d?.title === 'Вышла новая версия' && d.text.includes(`Anix ${V1}`), JSON.stringify(d?.title));
   check('«Что нового»: первая строка и три пункта', d?.li === 3 && d.text.includes('тестовый выпуск'), `li=${d?.li}`);
   check('без «Как установить», SmartScreen и версии для браузера', d && !/Как установить|SmartScreen|Версия для браузера|AI-помощник|независимый проект/.test(d.text));
   check('кнопки «Позже» / «Обновить» и «Пропустить эту версию»', d && d.buttons.join('|') === 'Позже|Обновить' && d.text.includes('Пропустить эту версию'), d?.buttons.join('|'));
@@ -250,7 +250,7 @@ app.whenReady().then(async () => {
   check('обрыв связи — «нет связи с GitHub»', !!d && /нет связи/.test(d.text), d?.text.replace(/\s+/g, ' ').slice(0, 140));
   check('обрыв связи — установки нет', installs === 2);
   await press('Скачать вручную');
-  check('«Скачать вручную» — страница релиза в браузере, окно закрылось', opened.includes('https://github.com/arigandores/anix-desktop/releases/latest') && await until(async () => !(await dlg()), 2000), opened.join(' '));
+  check('«Скачать вручную» — страница релиза в браузере, окно закрылось', opened.includes('https://github.com/arigandores/anix/releases/latest') && await until(async () => !(await dlg()), 2000), opened.join(' '));
 
   // 7. «Отмена» посреди скачивания
   serving = V3;
@@ -299,9 +299,9 @@ app.whenReady().then(async () => {
   // 11. Огромный текст релиза (у GitHub предел — 125 000 знаков): окно в пределах экрана, кнопки видны без прокрутки
   // окна, листается только список; длинное слово и ссылка без пробелов не раздвигают окно. Большое и маленькое окно,
   // с разделом «Что нового» и без него (тогда показывается весь текст)
-  const word = 'Очень'.repeat(120); const link = `https://github.com/arigandores/anix-desktop/compare/v1.5.0...v9.1.0?${'x'.repeat(400)}`;
+  const word = 'Очень'.repeat(120); const link = `https://github.com/arigandores/anix/compare/v1.5.0...v9.1.0?${'x'.repeat(400)}`;
   const item = (i) => `- **Пункт ${i}.** ${'Длинное описание изменения с подробностями, чтобы строка переносилась несколько раз. '.repeat(3)}`;
-  const HUGE = ['**Anix Desktop 9.1** — огромный выпуск.', '', '**Что нового в 9.1**', `- ${word}`, `- [ссылка](${link})`,
+  const HUGE = ['**Anix 9.1** — огромный выпуск.', '', '**Что нового в 9.1**', `- ${word}`, `- [ссылка](${link})`,
     ...Array.from({ length: 450 }, (_, i) => item(i + 1)), '', '**Версия для браузера** — архив ниже.'].join('\n').slice(0, 125000);
   const NOHEAD = Array.from({ length: 300 }, (_, i) => i % 10 ? `Абзац ${i}: ${'обычный текст релиза без раздела «Что нового». '.repeat(4)}` : `## Раздел ${i}\n> цитата ${word}`).join('\n\n').slice(0, 125000);
   const geometry = `(() => {
@@ -358,7 +358,7 @@ app.whenReady().then(async () => {
   // обновление качалось бы целиком). Так делает сам electron-updater — после обновления библиотеки здесь видно,
   // не изменилось ли это. Провайдер GitHub создаётся, но в сеть не ходит.
   const { autoUpdater } = require('electron-updater');
-  autoUpdater.setFeedURL({ provider: 'github', owner: 'arigandores', repo: 'anix-desktop' });
+  autoUpdater.setFeedURL({ provider: 'github', owner: 'arigandores', repo: 'anix' });
   const gh = await autoUpdater.clientPromise;
   check('GitHub: докачка по одному диапазону за запрос', gh.constructor.name === 'GitHubProvider' && gh.isUseMultipleRangeRequest === false, `${gh.constructor.name} multiRange=${gh.isUseMultipleRangeRequest}`);
   check('GitHub: только обычные релизы', autoUpdater.allowPrerelease === false);

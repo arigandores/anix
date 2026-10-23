@@ -1,13 +1,13 @@
 # Сторонние компоненты и товарные знаки
 
-Код Anix Desktop распространяется по лицензии MIT (`LICENSE`). Сторонние компоненты — по своим лицензиям:
+Код Anix распространяется по лицензии MIT (`LICENSE`). Сторонние компоненты — по своим лицензиям:
 
 | Компонент | Где | Лицензия |
 |---|---|---|
 | Google Sans Medium (Google) | `public/fonts/` | SIL Open Font License 1.1 — `public/fonts/OFL.txt` |
 | Material Symbols Rounded (Google) | `public/icons/` (интерфейс) | Apache License 2.0 |
 | Simple Icons | `public/icons/ic_vk, ic_telegram, ic_google, ic_discord, ic_tiktok` | CC0 1.0; логотипы — товарные знаки их владельцев |
-| Логотип, иконка приложения, флаги, значок Яндекса | `public/icons/`, `build/icon.svg` | нарисованы для Anix Desktop, MIT |
+| Логотип, иконка приложения, флаги, значок Яндекса | `public/icons/`, `build/icon.svg` | нарисованы для Anix, MIT |
 | hls.js 1.7.3 | `public/vendor/hls.min.js` | Apache License 2.0 |
 | MQTT.js 5.16.1 | `public/vendor/mqtt.min.js` (совместный просмотр) | MIT |
 | lottie-web 5.13.0 (Airbnb), сборка light | `public/vendor/lottie_light.min.js` (анимации интерфейса; сами анимации — `public/lottie`, сцены — `tools/lottie-studio`) | MIT |
@@ -22,6 +22,6 @@
 | Electron | сборка Windows | MIT |
 
 **Товарные знаки.** Anixart, его название, логотип и тексты интерфейса принадлежат их правообладателям.
-Anix Desktop — независимый неофициальный проект, не связанный с разработчиками Anixart и не одобренный ими.
+Anix — независимый неофициальный проект, не связанный с разработчиками Anixart и не одобренный ими.
 Каталог, аккаунты и комментарии предоставляет сервис Anixart; видео — сторонние источники (Kodik, Sibnet и др.).
 Claude — товарный знак Anthropic.

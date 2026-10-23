@@ -184,7 +184,7 @@ export async function socialToken(provider, label) {
 
 async function socialLogin(provider, label) {
   if (provider !== 'google' && !(window.anixartNative && window.anixartNative.socialAuth)) {
-    toast('Вход через соцсети доступен только в Anix Desktop для Windows');
+    toast('Вход через соцсети доступен только в Anix для Windows');
     return;
   }
   try {
@@ -264,7 +264,7 @@ registerScreen('auth', () => {
   }, h('img', { src: `/icons/${ic}.svg`, style: { width: '24px', height: '24px' }, alt: label2 })));
   const socialTitle = h('div', { class: 'muted', style: { textAlign: 'center', marginTop: '14px', fontSize: '13px' } }, 'Войти с помощью');
   const socialRow = h('div', { class: 'row', style: { justifyContent: 'center', gap: '12px', margin: '18px 0 4px' } }, socialButtons);
-  const socialNote = inApp ? null : h('div', { class: 'muted3', style: { fontSize: '12px', textAlign: 'center', marginTop: '6px' } }, 'Яндекс, ВКонтакте и Telegram — в Anix Desktop для Windows');
+  const socialNote = inApp ? null : h('div', { class: 'muted3', style: { fontSize: '12px', textAlign: 'center', marginTop: '6px' } }, 'Яндекс, ВКонтакте и Telegram — в Anix для Windows');
   // Без ключей провайдера (config.local.json) его кнопка скрыта; без всех — весь блок.
   // В браузере работает только Google (через системный браузер), остальным нужно окно Electron.
   fetch('/__features').then((r) => r.json()).then((f) => {

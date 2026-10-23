@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Вход через Google — Anix Desktop</title>
+  <title>Вход через Google — Anix</title>
   <link rel="icon" href="/icon.png">
   <style>
     :root { color-scheme: light dark; --bg: #f5f5f5; --card: #fff; --text: #212121; --muted: #6b6b6b; --accent: #d32f3f; --err: #c62f3d; }
@@ -26,7 +26,7 @@
   <div class="card">
     <img src="/icon.png" alt="">
     <h1>Вход через Google</h1>
-    <p id="sub">Anix Desktop откроет окно Google. После входа вернитесь в приложение.</p>
+    <p id="sub">Anix откроет окно Google. После входа вернитесь в приложение.</p>
     <button id="go">Продолжить с Google</button>
     <div class="err" id="err"></div>
   </div>
@@ -39,7 +39,7 @@
     // телефон (LocalServer.kt): после входа — сразу обратно в приложение ссылкой intent:// (MainActivity, singleTask);
     // если браузер не пустит переход без нажатия — кнопка «Вернуться в Anix»
     const android = q.get('app') === 'android';
-    const APP = android ? 'Anix' : 'Anix Desktop';
+    const APP = 'Anix';
     const BACK = 'intent://auth-done#Intent;scheme=anixdesktop;package=com.arigandores.anix;end';
     document.title = `Вход через Google — ${APP}`;
     const btn = document.getElementById('go');
@@ -66,7 +66,7 @@
           sub.after(a);
           location.href = BACK;
         } else {
-          sub.textContent = 'Готово! Вернитесь в Anix Desktop — вкладку можно закрыть.';
+          sub.textContent = 'Готово! Вернитесь в Anix — вкладку можно закрыть.';
           setTimeout(() => window.close(), 1500);
         }
       } catch (e) {

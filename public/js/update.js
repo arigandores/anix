@@ -8,7 +8,7 @@ import { markdown } from './screens/ai.js';
 import { ANDROID, APP_NAME } from './platform.js';
 
 const U = () => window.anixartNative?.update || null;
-const RELEASES = 'https://github.com/arigandores/anix-desktop/releases/latest';
+const RELEASES = 'https://github.com/arigandores/anix/releases/latest';
 export const canUpdate = () => !!U();
 
 let last = null; // последняя проверка: { supported, current, version?, notes? }

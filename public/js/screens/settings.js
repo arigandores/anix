@@ -194,7 +194,7 @@ function aboutSection() {
     about.querySelector('.sub').textContent = `Версия ${i.appVersion} • неофициальный клиент Anixart`;
   }).catch(() => {});
   return [about, ...updateItems(),
-    item('ic_open_in_new', 'Исходный код', 'github.com/arigandores/anix-desktop', () => window.open('https://github.com/arigandores/anix-desktop', '_blank')),
+    item('ic_open_in_new', 'Исходный код', 'github.com/arigandores/anix', () => window.open('https://github.com/arigandores/anix', '_blank')),
     // правила сообщества Anixart (комментарии, коллекции) — страница на сайте, как в его настройках
     item('ic_info_outline', 'Правила сообщества', 'Комментарии, коллекции, профиль — на сайте Anixart',
       () => window.open(`${(window.__toggles && window.__toggles.baseUrl) || 'https://anixart-app.com/'}rules`, '_blank')),

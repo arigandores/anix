@@ -48,6 +48,7 @@ const SUITE = [
   ['pip', 'pip.js', 'electron'], // «Картинка в картинке»: плеер уходит из приложения, кнопки окна PiP, ✕ / «Назад во вкладку», закрытие
   ['player-ind', 'player-ind.js', 'electron'],
   ['audio', 'audio.js', 'electron'], // улучшение звука: громкость сочетаний, задержка, живой <video>
+  ['hls-audio', 'hls-audio.js', 'electron'], // звук HLS без CODECS (как у Kodik): AAC LC объявлен как AAC LC, а не HE-AAC — иначе хрип
   ['discord', 'discord.js', 'electron'], // статус в Discord против поддельного Discord (~1 мин: ждёт переподключения и лимита)
   ['party', 'party.js', 'electron'], // совместный просмотр: два окна через публичные MQTT-брокеры
   ['party-edge', 'party-edge.js', 'electron'], // совместный просмотр: граничные случаи (~2 мин, тайминги протокола укорочены)

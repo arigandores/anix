@@ -8,7 +8,7 @@
 | Material Symbols Rounded (Google) | `public/icons/` (интерфейс) | Apache License 2.0 |
 | Simple Icons | `public/icons/ic_vk, ic_telegram, ic_google, ic_discord, ic_tiktok` | CC0 1.0; логотипы — товарные знаки их владельцев |
 | Логотип, иконка приложения, флаги, значок Яндекса | `public/icons/`, `build/icon.svg` | нарисованы для Anix Desktop, MIT |
-| hls.js 1.5.20 | `public/vendor/hls.min.js` | Apache License 2.0 |
+| hls.js 1.7.3 | `public/vendor/hls.min.js` | Apache License 2.0 |
 | MQTT.js 5.16.1 | `public/vendor/mqtt.min.js` (совместный просмотр) | MIT |
 | lottie-web 5.12.2 (Airbnb), сборка light | `public/vendor/lottie_light.min.js` (анимации интерфейса; сами анимации — `public/lottie`, сцены — `tools/lottie-studio`) | MIT |
 | text-to-lottie player (Diffusion Studio) | `tools/lottie-studio` (редактор и проверка анимаций, в сборку не входит) | MIT |

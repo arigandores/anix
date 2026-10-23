@@ -162,7 +162,8 @@ app.whenReady().then(async () => {
   check((await queueOf(A)).length === 0, 'включённое ушло из очереди');
 
   // Другая озвучка (как и другое аниме) из очереди — в том же окне плеера, без закрытия и открытия нового
-  await A.js(`window.__ov = document.querySelector('.player-overlay')`); await B.js(`window.__ov = document.querySelector('.player-overlay')`);
+  // `; 0` — не возвращать DOM-элемент: Electron 45 не клонирует его в ответ executeJavaScript (раньше отдавал {})
+  await A.js(`window.__ov = document.querySelector('.player-overlay'); 0`); await B.js(`window.__ov = document.querySelector('.player-overlay'); 0`);
   await R(B, `m.queueAdd({ releaseId: 1, typeId: 17, sourceId: 17, position: 2, sort: 1, title: 'Котёнок Ти', image: '', dub: 'SHIZA Project', epName: '2 серия' });`);
   await waitFor(async () => (await queueOf(A)).length === 1, 8000);
   await R(A, `m.queuePlay(m.party.room.state.queue[0].id);`);

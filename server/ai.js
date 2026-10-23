@@ -51,7 +51,8 @@ async function ensureAgent() {
   if (conn && proc && proc.exitCode === null) return;
   if (starting) return starting;
   starting = (async () => {
-    acp = acp || await import('@agentclientprotocol/sdk');
+    // /unstable — полный ACP v1, как в SDK 1.x: адаптер присылает и нестабильные обновления сессии
+    acp = acp || await import('@agentclientprotocol/sdk/unstable');
     fs.mkdirSync(WORK_DIR, { recursive: true });
     proc = spawn(process.execPath, [ACP_ENTRY], { cwd: WORK_DIR, env: agentEnv(), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     proc.stderr.on('data', (d) => note(`[agent] ${String(d).trim().slice(0, 500)}`));
@@ -63,21 +64,32 @@ async function ensureAgent() {
       emit({ type: 'agent_exit', code });
     });
     const stream = acp.ndJsonStream(Writable.toWeb(proc.stdin), Readable.toWeb(proc.stdout));
-    conn = new acp.ClientSideConnection(() => ({
-      sessionUpdate: async (params) => emit({ type: 'update', sessionId: params.sessionId, update: params.update }),
-      requestPermission: (params) => new Promise((resolve) => {
+    const M = acp.methods;
+    // файловая система и терминал клиенту не нужны — агент работает только через инструменты Anixart
+    // (их обработчиков нет: агент получит Method Not Found)
+    const { agent, close } = acp.client()
+      .onNotification(M.client.session.update, ({ params }) => emit({ type: 'update', sessionId: params.sessionId, update: params.update }))
+      .onRequest(M.client.session.requestPermission, ({ params }) => new Promise((resolve) => {
         const id = crypto.randomUUID();
         pendingPermissions.set(id, resolve);
         emit({ type: 'permission', id, sessionId: params.sessionId, toolCall: params.toolCall, options: params.options });
-      }),
-      // файловая система и терминал клиенту не нужны — агент работает только через инструменты Anixart
-      readTextFile: async () => { throw new Error('not supported'); },
-      writeTextFile: async () => { throw new Error('not supported'); },
-      extNotification: async (method, params) => {
+      }))
+      .onNotification('*', ({ method, params }) => {
         if (method === '_auth/status_update' && params && params.authStatus) { authStatus = params.authStatus; emit({ type: 'auth', authStatus }); }
-      },
-      extMethod: async () => ({}),
-    }), stream);
+      })
+      .onRequest('*', () => ({}))
+      .connect(stream);
+    proc.on('exit', () => close());
+    // прежние имена вызовов поверх запросов SDK
+    conn = {
+      initialize: (p) => agent.request(M.agent.initialize, p),
+      newSession: (p) => agent.request(M.agent.session.new, p),
+      loadSession: (p) => agent.request(M.agent.session.load, p),
+      setSessionMode: (p) => agent.request(M.agent.session.setMode, p),
+      setSessionConfigOption: (p) => agent.request(M.agent.session.setConfigOption, p),
+      prompt: (p) => agent.request(M.agent.session.prompt, p),
+      cancel: (p) => agent.notify(M.agent.session.cancel, p),
+    };
     initResult = await conn.initialize({
       protocolVersion: acp.PROTOCOL_VERSION,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },

@@ -8,7 +8,7 @@ import { createAudioFx, AUDIO_OPTS } from './audio.js';
 import { createSharpen, SHARPEN_LABEL } from './sharpen.js';
 const ENH_LABEL = { ...SHARPEN_LABEL, neural: 'Нейросеть' }; // «Улучшение» на телефоне
 import { createAnime4K, CHAINS } from './anime4k-gl.js';
-import { neuralOk, pickChain, lighterFrom, capFor } from './upscale/phone-check.js';
+import { neuralOk, neuralState, NEURAL_HINT, onNeuralChecked, pickChain, lighterFrom, capFor } from './upscale/phone-check.js';
 import { playerPresence, webPresence } from './discord.js';
 import { has, ANDROID } from './platform.js';
 import { party, bindPlayer, playerEpisode, partyEnded, partyWhy, roomSkip, setRoomSkip, partySkipAuto, isHost as partyIsHost, canControl, fillersText } from './party/room.js';
@@ -916,12 +916,19 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
         class: `pm-row pm-opt ${q === cur.quality ? 'on' : ''}`, onclick: () => { if (q !== cur.quality) setQuality(q); closeMenu(); },
       }, icon('ic_check', 'sm'), h('span', { class: 'grow' }, qualityName(q)))))) : null,
       has.upscale ? row('ic_upscale', 'Улучшение', UP_MODE[up.mode] || 'Выкл', () => menuShow('Улучшение картинки', upscaleRows)) : null,
-      // телефон: «Нейросеть» — только если он её тянет (сравнения с оригиналом здесь нет — оно на ПК)
+      // телефон: «Нейросеть» видна всегда, выбрать — если он её тянет; пока проверки не было или идёт — подпись об этом
+      // (сравнения с оригиналом здесь нет — оно на ПК)
       sharpen ? row('ic_upscale', 'Улучшение', ENH_LABEL[prefs.get('PLAYER_SHARPEN')] || 'Выкл', () => menuPage('Улучшение картинки', [
-        ...Object.entries(ENH_LABEL).filter(([m]) => m !== 'neural' || neuralOk()).map(([m, l]) => h('button', {
-          class: `pm-row pm-opt ${(prefs.get('PLAYER_SHARPEN') || 'off') === m ? 'on' : ''}`,
-          onclick: () => { prefs.set('PLAYER_SHARPEN', m); applyEnhance(); closeMenu(); },
-        }, icon('ic_check', 'sm'), h('span', { class: 'grow' }, l, m === 'neural' ? h('small', null, 'Anime4K — как «720p +» в Anixart, чище линии') : null))),
+        ...Object.entries(ENH_LABEL).map(([m, l]) => {
+          const st = m === 'neural' ? neuralState() : 'ok';
+          const note = m === 'neural' ? h('small', null, NEURAL_HINT[st]) : null;
+          const b = h('button', {
+            class: `pm-row pm-opt ${(prefs.get('PLAYER_SHARPEN') || 'off') === m ? 'on' : ''}`, disabled: st !== 'ok',
+            onclick: () => { prefs.set('PLAYER_SHARPEN', m); applyEnhance(); closeMenu(); },
+          }, icon('ic_check', 'sm'), h('span', { class: 'grow' }, l, note));
+          if (m === 'neural') onNeuralChecked(b, (s) => { b.disabled = s !== 'ok'; note.textContent = NEURAL_HINT[s]; });
+          return b;
+        }),
         h('div', { class: 'pm-note' }, 'Улучшение считает видеокарта телефона — немного больше расход батареи.'),
       ])) : null,
       row('ic_audio', 'Звук', audioName(), () => menuShow('Звук', audioRows)),

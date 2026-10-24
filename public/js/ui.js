@@ -197,20 +197,22 @@ export function dialog({ title, content, actions = [], onClose, cls = '', dismis
 function overlayHost() { return document.fullscreenElement || document.body; }
 
 export function sheet(title, items) {
-  // items: [{label, icon, dot (CSS-цвет точки), color (цвет текста), onClick, checked, danger}]
+  // items: [{label, icon, dot (CSS-цвет точки), color (цвет текста), onClick, checked, danger,
+  //   disabled (пока нельзя выбрать), sub (подпись под текстом, .sheet-sub), bind (btn) — пункт меняется, пока окно открыто}]
   const list = h('div', { class: 'sheet-list' });
   const d = dialog({ title, content: list, cls: 'sheet' });
   for (const it of items) {
     if (!it) continue;
     const btn = h('button', {
-      class: `sheet-item ${it.checked ? 'checked' : ''} ${it.danger ? 'danger' : ''}`,
+      class: `sheet-item ${it.checked ? 'checked' : ''} ${it.danger ? 'danger' : ''}`, disabled: !!it.disabled,
       onclick: () => { d.close(); it.onClick && it.onClick(); },
     },
     it.dot ? h('span', { class: 'dot', style: { background: it.dot } }) : null,
     it.icon ? actionIcon(it.icon) : null,
-    h('span', null, it.label),
+    h('span', null, it.label, it.sub ? h('small', { class: 'sheet-sub' }, it.sub) : null),
     it.checked ? icon('ic_check', 'end') : null);
     if (it.color) btn.style.color = it.color;
+    it.bind?.(btn);
     list.append(btn);
   }
   return d;

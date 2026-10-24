@@ -1,7 +1,7 @@
 // Телефон: тянет ли он улучшение нейросетью — шейдеры Anime4K фрагментными шейдерами WebGL2 (anime4k-gl.js). Проверка —
 // один раз в фоне (app.js): время кадра цепочек (CHAINS: Restore M + M, Restore S + M, M — на 480p и 720p; Restore S без
 // увеличения — на 1080p); ответ — в localStorage (KEY: { ms: { '480': { rm, rs, m }, '720': {…}, '1080': { r } }, v }).
-// Пункт «Нейросеть» в меню — только если хоть одна цепочка где-то успевает; на серии берётся лучшая, что успевает на её
+// Пункт «Нейросеть» в меню виден всегда (neuralState), выбрать — если хоть одна цепочка где-то успевает; на серии берётся лучшая, что успевает на её
 // разрешении, во время просмотра — легче, если
 // телефон перестал успевать (player.js); ни одна — резкость (sharpen.js). Выбрать вручную то, что телефон не потянет,
 // нельзя. На ПК — свой апскейл (upscale/), выбрать можно всё.
@@ -15,6 +15,41 @@ const BUDGET = (1000 / 24) * 0.9; // мс на кадр: 24 к/с с запас�
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch { return null; } };
 
 export function checkDue() { const r = load(); return !r || r.v !== CHECK; }
+
+// Проверка — одна на всё приложение: фоновая (app.js) и по открытию меню без ответа (настройки) — один и тот же прогон.
+// Конец (ответ есть или проверка упала) — событие CHECKED на window: пункт «Нейросеть» в открытом меню обновляется сам
+export const CHECKED = 'a4k-checked';
+let running = null; let failed = false;
+export function runCheck() {
+  if (running) return running;
+  if (!checkDue()) return Promise.resolve();
+  running = checkPhone()
+    .catch((e) => { failed = true; window.__anixLog?.(`upscale: проверка не удалась — ${e && e.message}`); })
+    .finally(() => { running = null; window.dispatchEvent(new Event(CHECKED)); });
+  return running;
+}
+// Пункт «Нейросеть» виден всегда, а выбрать его можно, только когда телефон её тянет: 'ok' — тянет; 'no' — не успевает
+// (или проверка упала); 'running' — проверка идёт; 'due' — ещё не проверяли (в плеере проверка ждёт, пока его закроют:
+// замер во время просмотра делит видеокарту с видео). Прежний ответ (старая версия CHECK) годится, пока идёт новая проверка
+export function neuralState() {
+  const r = load();
+  if (r && r.ms) return neuralOk() ? 'ok' : 'no';
+  if (failed) return 'no';
+  return running ? 'running' : 'due';
+}
+// подпись пункта «Нейросеть» (меню плеера и настройки) по состоянию
+export const NEURAL_HINT = {
+  ok: 'Anime4K — как «720p +» в Anixart, чище линии',
+  running: 'Проверяем, потянет ли телефон, — несколько секунд',
+  due: 'Проверим, потянет ли телефон, когда закроете плеер',
+  no: 'Этот телефон не успевает — останется резкость',
+};
+// пункт «Нейросеть» в открытом меню: проверка закончилась — update(состояние); меню закрыли (el не в DOM) — ничего
+export function onNeuralChecked(el, update) {
+  if (neuralState() === 'ok') return;
+  const fn = () => { if (!el.isConnected) { window.removeEventListener(CHECKED, fn); return; } update(neuralState()); };
+  window.addEventListener(CHECKED, fn);
+}
 
 export async function checkPhone(log = (m) => window.__anixLog?.(m)) {
   log('anime4k: проверка телефона…');

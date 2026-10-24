@@ -63,6 +63,22 @@ await js(`(localStorage.setItem('anixart.theme', 'dark'), 1)`);
 await persist();
 await launch();
 
+// «Улучшение картинки» в настройках: «Нейросеть» видна всегда; открыли до проверки телефона — проверка сразу (не ждёт
+// фоновой), пункт приглушён с подписью «проверяем»; закончилась — пункт в том же окне выбирается или пишет «не успевает»
+await openSettings('picture');
+await js(`(localStorage.removeItem('anix.a4k'), 1)`);
+await tap('.settings-body .menu-item', { text: 'Улучшение картинки', after: 600 });
+const sheetNeural = `(() => { const b = [...document.querySelectorAll('.backdrop:not(.closing) .sheet-item')].find((e) => /Нейросеть/.test(e.textContent)); return b && { dis: b.disabled, sub: b.querySelector('.sheet-sub')?.textContent || '' }; })()`;
+const sn0 = await js(sheetNeural);
+check('настройки: «Нейросеть» видна до проверки, приглушена, подпись — проверяем', !!sn0 && sn0.dis && /Проверяем/.test(sn0.sub), sn0);
+screenshot('extras-neural-checking');
+const sn1 = await waitFor(async () => { const s = await js(sheetNeural); return s && !/Проверяем/.test(s.sub) ? s : null; }, 120000, 1000);
+check('проверка закончилась — в том же окне: выбирается или «не успевает»', !!sn1 && ((!sn1.dis && !sn1.sub) || (sn1.dis && /не успевает/.test(sn1.sub))), sn1);
+check('…и ответ проверки сохранён', await js(`!!JSON.parse(localStorage.getItem('anix.a4k') || 'null')?.ms`));
+screenshot('extras-neural-checked');
+await back();
+await launch();
+
 // «Правила сообщества» — страница на сайте, в браузере
 await openSettings('about');
 await tap('.settings-body .menu-item', { text: 'Правила сообщества', after: 2500 });

@@ -51,11 +51,25 @@ if (big) check('улучшение картинки: у источника 1080p
 await js(`(document.querySelector('.player-overlay').sharpen.setMode('off'), ${V}.pause(), 1)`);
 check('улучшение выключено — холста не видно', await js(`getComputedStyle(document.querySelector('.sharpen-canvas')).display === 'none'`));
 
-// Нейросеть Anime4K (anime4k-gl.js): пункт «Нейросеть» — только с вердиктом фоновой проверки (phone-check.js); при выборе —
-// холст Anime4K вдвое больше кадра, резкость выключена
-const noVerdict = await js(`(localStorage.removeItem('anix.a4k'), import('/js/upscale/phone-check.js').then((m) => m.neuralOk()))`);
-check('без проверки телефона «Нейросети» нет', noVerdict === false);
-await js(`(localStorage.setItem('anix.a4k', JSON.stringify({ ms: { 480: { rm: 20, rs: 15, m: 10 }, 720: { rm: 49, rs: 25, m: 20 }, 1080: { r: 12 } }, v: 4 })), localStorage.setItem('anixart.pref.PLAYER_SHARPEN', '"neural"'), 1)`);
+// Нейросеть Anime4K (anime4k-gl.js): пункт «Нейросеть» в меню плеера виден всегда; без вердикта фоновой проверки
+// (phone-check.js) — приглушён и не выбирается, подпись: проверим, когда закроете плеер; проверка закончилась (событие
+// a4k-checked) — пункт выбирается в том же открытом меню. При выборе — холст Anime4K вдвое больше кадра, резкость выключена
+const A4K_OK = `JSON.stringify({ ms: { 480: { rm: 20, rs: 15, m: 10 }, 720: { rm: 49, rs: 25, m: 20 }, 1080: { r: 12 } }, v: 4 })`;
+const noVerdict = await js(`(localStorage.removeItem('anix.a4k'), import('/js/upscale/phone-check.js').then((m) => ({ ok: m.neuralOk(), st: m.neuralState() })))`);
+check('без проверки телефона «Нейросеть» не выбирается (ещё не проверяли)', noVerdict.ok === false && noVerdict.st === 'due', noVerdict);
+await tap('.player-stage', { after: 700 });
+await tap('.player-overlay .gear', { after: 700 });
+await tap('.player-menu .pm-row', { text: 'Улучшение', after: 600 });
+const neuralRow = `(() => { const b = [...document.querySelectorAll('.player-menu .pm-opt')].find((e) => /Нейросеть/.test(e.textContent)); return b && { dis: b.disabled, note: b.querySelector('small')?.textContent || '', vis: b.getClientRects().length > 0 }; })()`;
+const n0 = await js(neuralRow);
+check('меню плеера: «Нейросеть» видна, приглушена, подпись — проверим, когда закроете плеер', !!n0 && n0.vis && n0.dis && /когда закроете плеер/.test(n0.note), n0);
+screenshot('player-neural-due');
+await js(`(localStorage.setItem('anix.a4k', ${A4K_OK}), window.dispatchEvent(new Event('a4k-checked')), 1)`);
+const n1 = await js(neuralRow);
+check('проверка закончилась — «Нейросеть» выбирается в том же меню, подпись про Anime4K', !!n1 && !n1.dis && /Anime4K/.test(n1.note), n1);
+await tap('.player-overlay .gear', { after: 500 }); // повторное нажатие закрывает меню («Назад» закрывает весь плеер)
+check('меню закрылось, плеер открыт', await js(`!!document.querySelector('.player-overlay') && ![...document.querySelectorAll('.player-menu .pm-opt')].some((e) => e.getClientRects().length)`));
+await js(`(localStorage.setItem('anix.a4k', ${A4K_OK}), localStorage.setItem('anixart.pref.PLAYER_SHARPEN', '"neural"'), 1)`);
 await js(`(document.querySelector('.player-overlay video').dispatchEvent(new Event('loadedmetadata')), ${V}.play().then(() => 1, () => 1))`);
 const nn = await until(`(() => { const c = document.querySelector('.anime4k-canvas'); return c && getComputedStyle(c).display !== 'none' ? { w: c.width, vw: ${V}.videoWidth, sharp: getComputedStyle(document.querySelector('.sharpen-canvas:not(.anime4k-canvas)')).display } : null; })()`, 10000);
 check('«Нейросеть»: холст Anime4K вдвое больше кадра, резкость выключена', !!nn && nn.w === nn.vw * 2 && nn.sharp === 'none', nn);

@@ -574,6 +574,10 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 :root[data-theme="dark"] .sheet-item.checked, :root[data-theme="dark"] .sheet-item.checked .ic { color: var(--text); }
 .sheet-item.danger { color: var(--red); }
 .sheet-item .end { margin-left: auto; }
+/* пункт, который пока нельзя выбрать («Нейросеть» до проверки телефона), и подпись под текстом пункта */
+.sheet-item:disabled { color: var(--text3); cursor: default; }
+.sheet-item:disabled:hover, .sheet-item:disabled:active { background: none; }
+.sheet-item .sheet-sub { display: block; margin-top: 2px; font-size: 13px; color: var(--text2); }
 /* над нижним меню телефона (--bottomnav-h — app.js), а не поверх него */
 #toast { position: fixed; left: 50%; bottom: calc(var(--bottomnav-h, 0px) + 28px); transform: translate(-50%, 20px); z-index: 200; background: #323232; color: #fff; padding: 12px 20px; border-radius: 8px;
   font-size: 14px; opacity: 0; pointer-events: none; transition: .2s; max-width: 90vw; box-shadow: 0 4px 14px rgba(0,0,0,.3); }
@@ -738,6 +742,9 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .player-menu .pm-row .grow:has(small) { padding: 7px 0; }
 .player-menu .pm-row small { display: block; margin-top: 1px; font-size: 12px; font-weight: 400; color: rgba(255,255,255,.5); }
 .player-menu .pm-row:disabled { cursor: default; }
+/* вариант, который пока нельзя выбрать («Нейросеть» до проверки телефона или не тянет) — приглушён, подпись объясняет */
+.player-menu .pm-opt:disabled .grow { color: rgba(255,255,255,.5); }
+.player-menu .pm-opt:disabled:hover { background: none; }
 .player-menu .pm-opt.weak small { color: #f0b54a; }
 .player-menu .pm-note b { display: block; margin-bottom: 2px; font-weight: 500; color: rgba(255,255,255,.88); }
 .player-menu .pm-note.err b { color: #ff8a80; }

@@ -103,7 +103,7 @@ async function main() {
       const pc = await import('./upscale/phone-check.js');
       if (!pc.checkDue()) return;
       if (document.querySelector('.player-overlay') || document.hidden) { later(); return; }
-      pc.checkPhone().catch((e) => window.__anixLog?.(`upscale: проверка не удалась — ${e && e.message}`));
+      pc.runCheck(); // та же проверка, что запускает меню настроек, если открыли его раньше (одна на приложение)
     }, 40000); // в простое: на старте приложение грузит главную, и замер ловил её нагрузку
     later();
   }

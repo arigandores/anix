@@ -13,7 +13,7 @@ import { AUDIO_OPTS } from '../audio.js';
 import { clearPresence, discordStatus } from '../discord.js';
 import { canUpdate, checkUpdate, lastCheck, updateDialog, whatsNewDialog, releaseNotes } from '../update.js';
 import { has, APP_NAME, touch, ANDROID } from '../platform.js';
-import { neuralOk } from '../upscale/phone-check.js';
+import { neuralState, runCheck, NEURAL_HINT, onNeuralChecked } from '../upscale/phone-check.js';
 
 function item(ic, title, sub, onClick) {
   return h('div', { class: 'menu-item', onclick: onClick }, icon(ic), h('div', { class: 'grow' }, h('div', null, title), sub ? h('div', { class: 'sub' }, sub) : null));
@@ -48,7 +48,10 @@ function choice(ic, title, options, get, set) {
   const sub = h('div', { class: 'sub' });
   const paint = () => { sub.textContent = (options.find((o) => o[0] === get()) || options[0])[1]; };
   paint();
-  return h('div', { class: 'menu-item', onclick: () => sheet(title, options.map(([v, l]) => ({ label: l, checked: v === get(), onClick: () => { set(v); paint(); } }))) },
+  // третий элемент варианта — его свойства для sheet (disabled, sub, bind) или функция, которая их считает при открытии
+  return h('div', { class: 'menu-item', onclick: () => sheet(title, options.map(([v, l, x]) => ({
+    label: l, checked: v === get(), onClick: () => { set(v); paint(); }, ...(typeof x === 'function' ? x() : x),
+  }))) },
     icon(ic), h('div', { class: 'grow' }, h('div', null, title), sub));
 }
 const cat = (title) => h('div', { class: 'menu-cat' }, title);
@@ -108,14 +111,31 @@ function playbackSection() {
   ];
 }
 
+// «Нейросеть» в окне выбора: пока телефон не проверен или не тянет — приглушена, под текстом — почему.
+// В плеере (и мини-плеере) проверку не начинаем: замер делил бы видеокарту с видео — она пройдёт, когда плеер закроют
+function neuralItem() {
+  if (neuralState() === 'due' && !document.querySelector('.player-overlay')) runCheck();
+  const st = neuralState();
+  if (st === 'ok') return {};
+  return {
+    disabled: true, sub: NEURAL_HINT[st],
+    bind: (btn) => onNeuralChecked(btn, (s) => {
+      btn.disabled = s !== 'ok';
+      const sub = btn.querySelector('.sheet-sub');
+      if (s === 'ok') sub.remove(); else sub.textContent = NEURAL_HINT[s];
+    }),
+  };
+}
+
 function pictureSection() {
   return [
     ...(has.upscale ? upscaleItems() : []),
     ...(has.sharpen ? [cat('Улучшение картинки'),
       // телефон: резкость контуров в плеере (sharpen.js) — то же, что «Улучшение» в шестерёнке плеера
-      // «Нейросеть» (Anime4K, anime4k-gl.js) — только если телефон её тянет (upscale/phone-check.js)
+      // «Нейросеть» (Anime4K, anime4k-gl.js) видна всегда, выбрать — если телефон её тянет (upscale/phone-check.js);
+      // открыли до проверки — проверка сразу (не ждёт фоновой), подпись обновится сама
       choice('ic_upscale', 'Улучшение картинки', [['off', 'Выключено'], ['soft', 'Чётче — контуры чище у серий до 720p, чуть больше расход батареи'], ['strong', 'Сильнее — ещё резче'],
-        neuralOk() ? ['neural', 'Нейросеть — Anime4K, как «720p +» в Anixart: чище линии; больше расход батареи'] : null].filter(Boolean),
+        ['neural', 'Нейросеть — Anime4K, как «720p +» в Anixart: чище линии; больше расход батареи', neuralItem]],
         () => prefs.get('PLAYER_SHARPEN') || 'off', (v) => prefs.set('PLAYER_SHARPEN', v))] : []),
     cat('Звук'),
     // улучшение звука во встроенном плеере — то же, что «Звук» в шестерёнке плеера (audio.js)

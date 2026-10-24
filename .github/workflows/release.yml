@@ -140,6 +140,9 @@ jobs:
           java-version: 21
 
       - uses: android-actions/setup-android@v3 # SDK; платформу compileSdk Gradle докачает сам
+        with:
+          packages: platform-tools # по умолчанию ещё и 'tools' — его убрали из репозитория SDK, sdkmanager падал
+          log-accepted-android-sdk-licenses: false
 
       - name: Ключи из секрета CONFIG_LOCAL_JSON
         env:

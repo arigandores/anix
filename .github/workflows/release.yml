@@ -37,7 +37,8 @@ jobs:
           line=""
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
-            line=$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME" | grep -iE '^\s*(Платформы|Platforms)\s*:' | head -1 | tr '[:upper:]' '[:lower:]')
+            # без строки «Платформы» grep ничего не находит (код 1) — с pipefail это валило шаг; || true — обе платформы
+            line=$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME" | grep -iE '^\s*(Платформы|Platforms)\s*:' | head -1 | tr '[:upper:]' '[:lower:]' || true)
           fi
           win=true; and=true
           if [ -n "$line" ]; then

@@ -134,9 +134,15 @@ export function install() {
   const mark = path.join(SHOTS, `.installed-${adb('get-serialno').trim().replace(/[^\w.-]/g, '_')}`);
   fs.mkdirSync(SHOTS, { recursive: true });
   const installed = /versionName/.test(sh(`dumpsys package ${PKG}`));
-  if (installed && fs.existsSync(mark) && fs.readFileSync(mark, 'utf8') === stamp) return;
-  adb('install', '-r', APK);
-  fs.writeFileSync(mark, stamp);
+  if (!(installed && fs.existsSync(mark) && fs.readFileSync(mark, 'utf8') === stamp)) {
+    adb('install', '-r', APK);
+    fs.writeFileSync(mark, stamp);
+  }
+  // APK старше версии в package.json (собран до её подъёма): такая сборка находит настоящий релиз на GitHub, и окно
+  // «Вышла новая версия» закрывает экраны тестов. run-all.mjs собирает APK сам, одиночный тест — нет
+  const want = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+  const got = (/versionName=(\S+)/.exec(sh(`dumpsys package ${PKG}`)) || [])[1];
+  if (got !== want) throw new Error(`на устройстве APK ${got}, а в package.json ${want} — пересоберите: cd android && ./gradlew assembleDebug`);
 }
 
 export const pid = () => { try { return sh(`pidof ${PKG}`).trim(); } catch { return ''; } }; // нет процесса — pidof с ошибкой

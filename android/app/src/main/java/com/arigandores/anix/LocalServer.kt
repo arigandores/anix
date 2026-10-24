@@ -256,7 +256,7 @@ class LocalServer(private val assets: AssetManager) {
     }
 
     // ---------- вход через Google в системном браузере ----------
-    private class GoogleLogin(val created: Long) { @Volatile var result: JSONObject? = null; val lock = Object() }
+    private class GoogleLogin(val created: Long) { @Volatile var result: JSONObject? = null; val done = java.util.concurrent.CountDownLatch(1) }
     private val googleLogins = java.util.concurrent.ConcurrentHashMap<String, GoogleLogin>()
 
     private fun googleStart(out: OutputStream) {
@@ -276,9 +276,9 @@ class LocalServer(private val assets: AssetManager) {
         val s = googleLogins[j.optString("n")]
         val token = j.optString("idToken")
         val ok = s != null && token.isNotEmpty()
-        if (s != null && ok) synchronized(s.lock) {
+        if (s != null && ok) {
             s.result = JSONObject().put("field", "googleIdToken").put("token", token).put("email", j.optString("email"))
-            s.lock.notifyAll()
+            s.done.countDown()
         }
         send(out, 200, JSONObject().put("ok", ok).toString().toByteArray(), JSON_TYPE)
     }
@@ -288,10 +288,8 @@ class LocalServer(private val assets: AssetManager) {
         val n = req.query["n"] ?: ""
         val s = googleLogins[n]
             ?: return send(out, 200, JSONObject().put("error", "Сеанс входа устарел, начните заново").toString().toByteArray(), JSON_TYPE)
-        val r = synchronized(s.lock) {
-            if (s.result == null) s.lock.wait(25_000)
-            s.result
-        }
+        if (s.result == null) s.done.await(25, java.util.concurrent.TimeUnit.SECONDS)
+        val r = s.result
         if (r != null) googleLogins.remove(n)
         send(out, 200, (r ?: JSONObject().put("pending", true)).toString().toByteArray(), JSON_TYPE)
     }

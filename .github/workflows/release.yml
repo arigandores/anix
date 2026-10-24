@@ -223,4 +223,7 @@ jobs:
           [ "$WIN" = true ] && [ "$AND" != true ] && title="Anix $v (Windows)"
           [ "$AND" = true ] && [ "$WIN" != true ] && title="Anix $v (Android)"
           ls -la out
-          gh release create "$GITHUB_REF_NAME" out/* --title "$title" --notes-from-tag --verify-tag -R "$GITHUB_REPOSITORY"
+          # текст — аннотация тега через git: новые gh не принимают --notes-from-tag вместе с --repo
+          git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > notes.md
+          [ -s notes.md ] || { echo "::error::У тега $GITHUB_REF_NAME нет текста — нужен аннотированный тег (git tag -a … -F notes.md)"; exit 1; }
+          gh release create "$GITHUB_REF_NAME" out/* --title "$title" --notes-file notes.md --verify-tag -R "$GITHUB_REPOSITORY"

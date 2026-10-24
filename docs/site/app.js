@@ -4,7 +4,7 @@
   'use strict';
   const REPO = 'arigandores/anix';
   const API = 'https://api.github.com/repos/' + REPO;
-  const CACHE_KEY = 'anix-site-release-v1';
+  const CACHE_KEY = 'anix-site-release-v2'; // v2 — файл платформы из последнего релиза, где он есть
   const CACHE_MS = 30 * 60 * 1000; // без входа GitHub отвечает одному адресу до 60 раз в час
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -41,11 +41,17 @@
       fetchJson(API + '/releases?per_page=100'),
       fetchJson(API).catch(() => null),
     ]);
-    const latest = releases.find((r) => !r.draft && !r.prerelease);
+    const published = releases.filter((r) => !r.draft && !r.prerelease); // GitHub отдаёт от новых к старым
+    const latest = published[0];
     if (!latest) throw new Error('нет опубликованных релизов');
+    // Релиз бывает не для всех платформ («Платформы» в тексте тега, release.yml): файл платформы — из последнего
+    // релиза, где он есть, а не только из самого свежего
     const pick = (test) => {
-      const a = latest.assets.find((x) => test(x.name));
-      return a ? { url: a.browser_download_url, name: a.name, size: a.size } : null;
+      for (const r of published) {
+        const a = r.assets.find((x) => test(x.name));
+        if (a) return { url: a.browser_download_url, name: a.name, size: a.size };
+      }
+      return null;
     };
     let downloads = 0;
     for (const r of releases) for (const a of r.assets) if (isInstaller(a.name) || isApk(a.name)) downloads += a.download_count;

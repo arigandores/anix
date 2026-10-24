@@ -10,8 +10,9 @@
 [![Downloads](https://img.shields.io/github/downloads/arigandores/anix/total?style=flat-square&color=8b5cf6)](https://github.com/arigandores/anix/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Android%20%7C%20Browser-0ea5e9?style=flat-square)](#скачать)
 [![License](https://img.shields.io/github/license/arigandores/anix?style=flat-square&color=22c55e)](LICENSE)
+[![Site](https://img.shields.io/badge/сайт-arigandores.github.io%2Fanix-f04e5c?style=flat-square)](https://arigandores.github.io/anix/)
 
-[**Скачать для Windows**](#windows) · [**Скачать для Android**](#android) · [Возможности](#возможности) · [Улучшение картинки](#улучшение-картинки) · [AI-помощник](#ai-помощник) · [Запуск из исходников](docs/TECHNICAL.md#запуск-из-исходников)
+[**Сайт**](https://arigandores.github.io/anix/) · [**Скачать для Windows**](#windows) · [**Скачать для Android**](#android) · [Возможности](#возможности) · [Улучшение картинки](#улучшение-картинки) · [AI-помощник](#ai-помощник) · [Запуск из исходников](docs/TECHNICAL.md#запуск-из-исходников)
 
 <img src="docs/screenshots/release.jpg" alt="Страница аниме: «Продолжить · 5 серия», рядом — следующая серия и «Смотреть вместе»">
 

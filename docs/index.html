@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Anix — клиент Anixart для Windows и Android</title>
+  <meta name="description" content="Anix — бесплатный неофициальный клиент Anixart для Windows и Android: тот же аккаунт и закладки, плеер с пропуском опенингов, улучшение картинки нейросетью, совместный просмотр и AI-помощник.">
+  <meta name="theme-color" content="#0c0b10">
+  <meta name="color-scheme" content="dark">
+  <meta name="darkreader-lock"><!-- страница уже тёмная: Dark Reader ломал градиентный текст и цвета кнопок -->
+  <link rel="icon" href="site/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="site/icon.png" type="image/png" sizes="512x512">
+  <link rel="apple-touch-icon" href="site/icon.png">
+  <link rel="canonical" href="https://arigandores.github.io/anix/">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="ru_RU">
+  <meta property="og:title" content="Anix — клиент Anixart для Windows и Android">
+  <meta property="og:description" content="Тот же каталог и аккаунт, что в Anixart. Плюс улучшение картинки нейросетью, «Смотреть вместе», мини-плеер и AI-помощник.">
+  <meta property="og:url" content="https://arigandores.github.io/anix/">
+  <meta property="og:image" content="https://arigandores.github.io/anix/social-preview.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://api.github.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Wix+Madefor+Display:wght@600;700;800&family=Wix+Madefor+Text:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="site/style.css">
+  <script src="site/app.js" defer></script>
+</head>
+<body>
+  <!-- Значки (Lucide, ISC; логотипы платформ — товарные знаки владельцев) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-windows" viewBox="0 0 24 24"><path fill="currentColor" d="M3 5.1 10.4 4v7.2H3zm0 13.8L10.4 20v-7.1H3zm8.3 1.2L21 21.5v-8.6h-9.7zm0-16.2v7.3H21V2.5z"/></symbol>
+    <symbol id="i-android" viewBox="0 0 24 24"><path fill="currentColor" d="M17.6 9.48 19.44 6.3a.62.62 0 1 0-1.08-.62l-1.87 3.23a11.4 11.4 0 0 0-8.98 0L5.64 5.68a.62.62 0 1 0-1.08.62L6.4 9.48A10.8 10.8 0 0 0 1 18h22a10.8 10.8 0 0 0-5.4-8.52M7 15.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5m10 0a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5"/></symbol>
+    <symbol id="i-github" viewBox="0 0 24 24"><path fill="currentColor" d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.62 1.58.23 2.75.11 3.04.74.8 1.18 1.83 1.18 3.08 0 4.41-2.69 5.38-5.26 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 15V3m0 12-4.5-4.5M12 15l4.5-4.5M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path fill="currentColor" d="m12 2.5 2.94 5.95 6.56.96-4.75 4.63 1.12 6.53L12 17.5l-5.87 3.07 1.12-6.53L2.5 9.41l6.56-.96z"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+    <symbol id="i-left" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m15 18-6-6 6-6"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M7 4.5v15l12-7.5z"/></symbol>
+    <symbol id="i-skip" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m5 4 10 8-10 8zM19 5v14"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.13-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.13a.5.5 0 0 1 .96 0L14.06 8.5a2 2 0 0 0 1.44 1.44l6.13 1.58a.5.5 0 0 1 0 .96l-6.13 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.13a.5.5 0 0 1-.96 0z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M20 3v4m2-2h-4"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m13 10v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    <symbol id="i-pip" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 10V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5"/><rect x="13" y="13" width="9" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+    <symbol id="i-bot" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 8V4H8m-2 4h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2m-4 6h2m16 0h2m-7-1v2m-6-2v2"/></symbol>
+    <symbol id="i-audio" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M2 10v3m4-7v11m4-14v18m4-13v7m4-10v13m4-8v3"/></symbol>
+    <symbol id="i-sync" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8m0-5v5h5m-5 4a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16m-5 0h5v5"/></symbol>
+    <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M8 15.5h8"/></symbol>
+    <symbol id="i-discord" viewBox="0 0 24 24"><path fill="currentColor" d="M20.32 4.37A19.8 19.8 0 0 0 15.4 2.8a14 14 0 0 0-.63 1.3 18.4 18.4 0 0 0-5.53 0 13 13 0 0 0-.64-1.3 19.7 19.7 0 0 0-4.92 1.53C.56 9.04-.29 13.6.13 18.1a19.9 19.9 0 0 0 6.03 3.05c.49-.67.92-1.37 1.3-2.11a13 13 0 0 1-2.05-.98l.5-.4a14.2 14.2 0 0 0 12.18 0l.5.4q-.98.58-2.05.98c.38.74.81 1.45 1.3 2.11a19.8 19.8 0 0 0 6.03-3.05c.5-5.22-.84-9.74-3.55-13.73M8.02 15.33c-1.18 0-2.16-1.08-2.16-2.42s.96-2.42 2.16-2.42 2.18 1.09 2.16 2.42c0 1.34-.96 2.42-2.16 2.42m7.97 0c-1.19 0-2.16-1.08-2.16-2.42s.95-2.42 2.16-2.42 2.18 1.09 2.16 2.42c0 1.34-.95 2.42-2.16 2.42"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="m12 2 10 5-10 5L2 7zm-10 10 10 5 10-5M2 17l10 5 10-5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></symbol>
+  </svg>
+
+  <a class="skip" href="#main">К содержимому</a>
+
+  <header class="nav" id="top">
+    <div class="wrap nav-in">
+      <a class="brand" href="#top" aria-label="Anix — наверх">
+        <img src="site/icon.svg" width="32" height="32" alt="">
+        <span>Anix</span>
+      </a>
+      <nav class="nav-links" aria-label="Разделы">
+        <a href="#features">Возможности</a>
+        <a href="#screens">Скриншоты</a>
+        <a href="#download">Скачать</a>
+        <a href="#faq">Вопросы</a>
+      </nav>
+      <a class="btn btn-ghost btn-sm" href="https://github.com/arigandores/anix" data-gh-link>
+        <svg class="ico"><use href="#i-github"/></svg>
+        <span>GitHub</span>
+        <span class="stars" data-stars hidden><svg class="ico ico-xs"><use href="#i-star"/></svg><span></span></span>
+      </a>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- Первый экран -->
+    <section class="hero">
+      <div class="hero-glow" aria-hidden="true"></div>
+      <div class="wrap hero-in">
+        <div class="hero-copy">
+          <a class="pill" href="https://github.com/arigandores/anix/releases/latest" data-release-link>
+            <span class="pill-dot" aria-hidden="true"></span>
+            <span>Версия <b data-version>1.7.0</b><span data-date></span></span>
+            <svg class="ico ico-xs"><use href="#i-arrow"/></svg>
+          </a>
+          <h1>Anixart на&nbsp;компьютере и&nbsp;телефоне. <span class="grad">Только удобнее.</span></h1>
+          <p class="lead">Тот же каталог, аккаунт, закладки и история, что в Anixart. Плюс своё: картинка чётче
+            благодаря нейросети, «Смотреть вместе» с друзьями, мини-плеер и AI-помощник, который знает ваши списки.</p>
+          <div class="cta-row" data-cta-row>
+            <a class="btn btn-primary btn-lg" data-dl="win" href="https://github.com/arigandores/anix/releases/latest">
+              <svg class="ico"><use href="#i-windows"/></svg>
+              <span class="btn-text"><span>Скачать для Windows</span><small data-dl-meta="win">.exe · Windows 10/11</small></span>
+            </a>
+            <a class="btn btn-secondary btn-lg" data-dl="apk" href="https://github.com/arigandores/anix/releases/latest">
+              <svg class="ico"><use href="#i-android"/></svg>
+              <span class="btn-text"><span>Скачать для Android</span><small data-dl-meta="apk">.apk · Android 11+</small></span>
+            </a>
+          </div>
+          <ul class="hero-facts">
+            <li><svg class="ico ico-sm"><use href="#i-shield"/></svg>Бесплатно, открытый код (MIT)</li>
+            <li><svg class="ico ico-sm"><use href="#i-sync"/></svg>Обновляется само</li>
+            <li data-downloads hidden><svg class="ico ico-sm"><use href="#i-download"/></svg><span></span></li>
+          </ul>
+        </div>
+
+        <div class="hero-shot">
+          <figure class="window">
+            <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+            <img src="site/img/release-1600.webp" srcset="site/img/release-960.webp 960w, site/img/release-1600.webp 1600w"
+              sizes="(min-width: 1100px) 680px, 92vw" width="1600" height="1002" fetchpriority="high"
+              alt="Anix на Windows: страница аниме «Мастер Муси» с кнопкой «Продолжить · 5 серия»">
+          </figure>
+          <figure class="phone phone-hero">
+            <img src="site/img/phone-release.webp" width="540" height="1200" alt="Anix на Android: страница аниме с кнопками «Смотреть» и «Смотреть вместе»">
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- Коротко -->
+    <section class="strip" aria-label="Коротко об Anix">
+      <div class="wrap strip-in">
+        <div><b>Тот же аккаунт</b><span>Закладки, история и отметки серий — общие с Anixart</span></div>
+        <div><b>Нейросеть в плеере</b><span>Мутные серии становятся чётче прямо во время просмотра</span></div>
+        <div><b>Смотреть вместе</b><span>Комнаты общие для компьютера и телефона</span></div>
+        <div><b>Windows и Android</b><span>Windows 10/11 64-бит, Android 11 и новее</span></div>
+      </div>
+    </section>
+
+    <!-- Главные возможности -->
+    <section class="section" id="features">
+      <div class="wrap">
+        <header class="sec-head">
+          <p class="eyebrow">Возможности</p>
+          <h2>Всё, что есть в Anixart, и&nbsp;то, чего там нет</h2>
+        </header>
+
+        <article class="feature">
+          <div class="feature-copy">
+            <span class="feat-ico"><svg class="ico"><use href="#i-play"/></svg></span>
+            <h3>Продолжить с той же минуты</h3>
+            <p>Большая кнопка «Продолжить · 5 серия» на странице аниме — один клик, и серия идёт с того места, где вы
+              остановились. Заливка на кнопке показывает, сколько уже просмотрено. Смотрели в Anixart — Anix это учтёт.</p>
+            <p>Озвучка (с поиском), источник видео с качеством до 1080p и плеер — три переключателя прямо над списком
+              серий. Выбор запоминается для каждого аниме.</p>
+          </div>
+          <button class="shot" type="button" data-zoom="site/img/episodes-1600.webp" data-caption="Список серий: выбор озвучки, источника и плеера">
+            <img src="site/img/episodes-960.webp" srcset="site/img/episodes-960.webp 960w, site/img/episodes-1600.webp 1600w"
+              sizes="(min-width: 960px) 600px, 92vw" width="960" height="601" loading="lazy"
+              alt="Список серий: сверху открыт выбор озвучки с поиском, рядом источник и плеер">
+            <span class="shot-zoom" aria-hidden="true"><svg class="ico ico-sm"><use href="#i-expand"/></svg></span>
+          </button>
+        </article>
+
+        <article class="feature feature-rev">
+          <div class="feature-copy">
+            <span class="feat-ico"><svg class="ico"><use href="#i-sparkles"/></svg></span>
+            <h3>Улучшение картинки нейросетью</h3>
+            <p>Многие серии выложены в низком качестве, и на большом мониторе картинка мутная. Плеер делает её чётче
+              прямо во время просмотра: линии становятся резкими, «мыло» уходит. Режим «Авто» сам подбирает силу
+              улучшения под серию и видеокарту.</p>
+            <ul class="ticks">
+              <li>Работает на большинстве современных видеокарт</li>
+              <li>На NVIDIA RTX — в 2–4 раза быстрее</li>
+              <li>На телефоне — резкость и Anime4K</li>
+            </ul>
+          </div>
+          <div class="compare" data-compare style="--pos: 50%">
+            <img src="site/img/cmp-after.webp" width="480" height="320" loading="lazy" alt="Кадр после улучшения: чёткие линии">
+            <div class="compare-before" aria-hidden="true">
+              <img src="site/img/cmp-before.webp" width="480" height="320" loading="lazy" alt="">
+            </div>
+            <span class="compare-tag tag-l" aria-hidden="true">Оригинал</span>
+            <span class="compare-tag tag-r" aria-hidden="true">Улучшено</span>
+            <span class="compare-line" aria-hidden="true"><span class="compare-knob"><svg class="ico ico-xs"><use href="#i-left"/></svg><svg class="ico ico-xs"><use href="#i-right"/></svg></span></span>
+            <input class="compare-range" type="range" min="0" max="100" value="50" aria-label="Сравнение: сдвиньте, чтобы увидеть оригинал и улучшенный кадр">
+          </div>
+        </article>
+
+        <article class="feature">
+          <div class="feature-copy">
+            <span class="feat-ico"><svg class="ico"><use href="#i-users"/></svg></span>
+            <h3>Смотреть вместе — даже из разных городов</h3>
+            <p>Нажмите «Смотреть вместе» и отправьте друзьям код комнаты или ссылку. Пауза, перемотка и смена серии
+              происходят у всех одновременно. Есть чат и очередь «Дальше», где каждый предлагает, что смотреть следующим.</p>
+            <p>Каждый смотрит со своим качеством и настройками, с компьютера или с телефона. Аккаунт Anixart не нужен.</p>
+          </div>
+          <div class="duo">
+            <button class="shot" type="button" data-zoom="site/img/party-1600.webp" data-caption="Плеер с панелью «Смотреть вместе»">
+              <img src="site/img/party-960.webp" srcset="site/img/party-960.webp 960w, site/img/party-1600.webp 1600w"
+                sizes="(min-width: 960px) 520px, 80vw" width="960" height="601" loading="lazy"
+                alt="Плеер с панелью «Смотреть вместе»: код комнаты, очередь «Дальше», участники">
+              <span class="shot-zoom" aria-hidden="true"><svg class="ico ico-sm"><use href="#i-expand"/></svg></span>
+            </button>
+            <figure class="phone phone-duo">
+              <img src="site/img/phone-party.webp" width="540" height="1200" loading="lazy" alt="Комната «Смотреть вместе» на телефоне: код, участники, настройки">
+            </figure>
+          </div>
+        </article>
+
+        <article class="feature feature-rev">
+          <div class="feature-copy">
+            <span class="feat-ico"><svg class="ico"><use href="#i-bot"/></svg></span>
+            <h3>AI-помощник, который знает ваши списки <span class="tag">Windows</span></h3>
+            <p>Спросите: «что посмотреть на вечер?», «найди похожее на Мастера Муси» или «собери коллекцию лучших аниме
+              про спорт». Помощник видит ваши оценки и закладки, поэтому советует под вас, а по просьбе сам добавит
+              аниме в закладки, поставит оценку или создаст коллекцию.</p>
+            <p class="note">Работает на Claude: нужен аккаунт с подпиской Pro или Max (или оплата по API). Всё остальное
+              в приложении работает и без него.</p>
+          </div>
+          <button class="shot" type="button" data-zoom="site/img/ai-1600.webp" data-caption="Чат с AI-помощником">
+            <img src="site/img/ai-960.webp" srcset="site/img/ai-960.webp 960w, site/img/ai-1600.webp 1600w"
+              sizes="(min-width: 960px) 600px, 92vw" width="960" height="600" loading="lazy"
+              alt="Чат с AI-помощником: подборка аниме по вашим спискам с постерами">
+            <span class="shot-zoom" aria-hidden="true"><svg class="ico ico-sm"><use href="#i-expand"/></svg></span>
+          </button>
+        </article>
+
+        <div class="grid">
+          <div class="card">
+            <span class="feat-ico"><svg class="ico"><use href="#i-skip"/></svg></span>
+            <h3>Пропуск опенинга и филлеров</h3>
+            <p>Сам или по кнопке «Пропустить». Серии-вставки, которые не двигают сюжет, можно перескакивать автоматически.</p>
+          </div>
+          <div class="card">
+            <span class="feat-ico"><svg class="ico"><use href="#i-pip"/></svg></span>
+            <h3>Мини-плеер и «Картинка в картинке»</h3>
+            <p>Сверните серию в угол и листайте каталог — или вынесите видео в окно поверх всех программ.</p>
+          </div>
+          <div class="card">
+            <span class="feat-ico"><svg class="ico"><use href="#i-audio"/></svg></span>
+            <h3>Улучшение звука</h3>
+            <p>Выравнивание громкости для ночного просмотра, чёткий голос поверх музыки и объёмный звук для наушников.</p>
+          </div>
+          <div class="card">
+            <span class="feat-ico"><svg class="ico"><use href="#i-layers"/></svg></span>
+            <h3>Всё из Anixart</h3>
+            <p>Каталог, фильтры, лента и каналы, коллекции, комментарии, уведомления о новых сериях. Вход через Google,
+              ВКонтакте, Telegram или Яндекс.</p>
+          </div>
+          <div class="card">
+            <span class="feat-ico"><svg class="ico"><use href="#i-keyboard"/></svg></span>
+            <h3>Горячие клавиши, mpv и VLC</h3>
+            <p>Пауза, перемотка, следующая серия и «показать оригинал» с клавиатуры. Серию можно открыть в своём плеере.</p>
+          </div>
+          <div class="card">
+            <span class="feat-ico"><svg class="ico"><use href="#i-discord"/></svg></span>
+            <h3>Статус в Discord</h3>
+            <p>Друзья увидят, что вы смотрите: аниме, серию и сколько осталось. По умолчанию выключен.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Скриншоты -->
+    <section class="section section-alt" id="screens">
+      <div class="wrap">
+        <header class="sec-head sec-head-row">
+          <div>
+            <p class="eyebrow">Скриншоты</p>
+            <h2>Как это выглядит</h2>
+          </div>
+          <div class="seg" role="tablist" aria-label="Платформа">
+            <button role="tab" id="tab-win" aria-controls="panel-win" aria-selected="true" data-tab="win">
+              <svg class="ico ico-sm"><use href="#i-windows"/></svg>Windows</button>
+            <button role="tab" id="tab-and" aria-controls="panel-and" aria-selected="false" tabindex="-1" data-tab="and">
+              <svg class="ico ico-sm"><use href="#i-android"/></svg>Android</button>
+          </div>
+        </header>
+
+        <div class="tabpanel" role="tabpanel" id="panel-win" aria-labelledby="tab-win">
+          <div class="carousel" data-carousel>
+            <div class="track" tabindex="0" aria-label="Скриншоты Windows, листайте стрелками">
+              <button class="slide shot" type="button" data-zoom="site/img/release-1600.webp" data-caption="Страница аниме: «Продолжить», следующая серия, «Смотреть вместе»">
+                <img src="site/img/release-960.webp" width="960" height="601" loading="lazy" alt="Страница аниме с кнопкой «Продолжить»">
+                <span class="slide-cap">Страница аниме</span>
+              </button>
+              <button class="slide shot" type="button" data-zoom="site/img/player-1600.webp" data-caption="Плеер: озвучка, серия и плеер сверху, меню настроек справа">
+                <img src="site/img/player-960.webp" width="960" height="601" loading="lazy" alt="Плеер с открытым меню настроек">
+                <span class="slide-cap">Плеер</span>
+              </button>
+              <button class="slide shot" type="button" data-zoom="site/img/upscale-1600.webp" data-caption="Улучшение картинки: слева исходный кадр, справа улучшенный">
+                <img src="site/img/upscale-960.webp" width="960" height="600" loading="lazy" alt="Кадр, разделённый на исходный и улучшенный">
+                <span class="slide-cap">Улучшение картинки</span>
+              </button>
+              <button class="slide shot" type="button" data-zoom="site/img/mini-1600.webp" data-caption="Каталог, а в углу продолжает идти серия в мини-плеере">
+                <img src="site/img/mini-960.webp" width="960" height="601" loading="lazy" alt="Каталог аниме с мини-плеером в углу">
+                <span class="slide-cap">Мини-плеер</span>
+              </button>
+              <button class="slide shot" type="button" data-zoom="site/img/episodes-1600.webp" data-caption="Список серий: выбор озвучки, источника и плеера">
+                <img src="site/img/episodes-960.webp" width="960" height="601" loading="lazy" alt="Список серий с выбором озвучки">
+                <span class="slide-cap">Серии и озвучка</span>
+              </button>
+              <button class="slide shot" type="button" data-zoom="site/img/party-1600.webp" data-caption="Плеер с панелью «Смотреть вместе»">
+                <img src="site/img/party-960.webp" width="960" height="601" loading="lazy" alt="Плеер с панелью «Смотреть вместе»">
+                <span class="slide-cap">Смотреть вместе</span>
+              </button>
+              <button class="slide shot" type="button" data-zoom="site/img/ai-1600.webp" data-caption="Чат с AI-помощником">
+                <img src="site/img/ai-960.webp" width="960" height="600" loading="lazy" alt="Чат с AI-помощником">
+                <span class="slide-cap">AI-помощник</span>
+              </button>
+            </div>
+            <div class="carousel-nav">
+              <button class="icon-btn" type="button" data-prev aria-label="Предыдущий скриншот"><svg class="ico"><use href="#i-left"/></svg></button>
+              <button class="icon-btn" type="button" data-next aria-label="Следующий скриншот"><svg class="ico"><use href="#i-right"/></svg></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="tabpanel" role="tabpanel" id="panel-and" aria-labelledby="tab-and" hidden>
+          <div class="phones">
+            <button class="phone-btn" type="button" data-zoom="site/img/phone-home.webp" data-caption="Главная: вкладки каталога и продолжение просмотра">
+              <span class="phone"><img src="site/img/phone-home.webp" width="540" height="1200" loading="lazy" alt="Главная на Android: список аниме"></span>
+              <span class="slide-cap">Главная</span>
+            </button>
+            <button class="phone-btn" type="button" data-zoom="site/img/phone-release.webp" data-caption="Страница аниме на телефоне">
+              <span class="phone"><img src="site/img/phone-release.webp" width="540" height="1200" loading="lazy" alt="Страница аниме на Android"></span>
+              <span class="slide-cap">Страница аниме</span>
+            </button>
+            <button class="phone-btn" type="button" data-zoom="site/img/phone-schedule.webp" data-caption="Расписание выхода серий по дням недели">
+              <span class="phone"><img src="site/img/phone-schedule.webp" width="540" height="1200" loading="lazy" alt="Расписание на Android"></span>
+              <span class="slide-cap">Расписание</span>
+            </button>
+            <button class="phone-btn" type="button" data-zoom="site/img/phone-party.webp" data-caption="Комната «Смотреть вместе» на телефоне">
+              <span class="phone"><img src="site/img/phone-party.webp" width="540" height="1200" loading="lazy" alt="Смотреть вместе на Android"></span>
+              <span class="slide-cap">Смотреть вместе</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Платформы -->
+    <section class="section" id="platforms">
+      <div class="wrap wrap-narrow">
+        <header class="sec-head">
+          <p class="eyebrow">Платформы</p>
+          <h2>Что есть на каждой платформе</h2>
+        </header>
+        <div class="table-wrap">
+          <table class="matrix">
+            <thead>
+              <tr><th scope="col"><span class="sr">Возможность</span></th><th scope="col">Windows</th><th scope="col">Android</th></tr>
+            </thead>
+            <tbody>
+              <tr><th scope="row">Каталог, закладки, история, комментарии, уведомления</th><td><span class="yes" aria-label="есть"></span></td><td><span class="yes" aria-label="есть"></span></td></tr>
+              <tr><th scope="row">Пропуск опенинга и филлеров, смена озвучки на ходу</th><td><span class="yes" aria-label="есть"></span></td><td><span class="yes" aria-label="есть"></span></td></tr>
+              <tr><th scope="row">Мини-плеер и «Картинка в картинке»</th><td><span class="yes" aria-label="есть"></span></td><td><span class="yes" aria-label="есть"></span></td></tr>
+              <tr><th scope="row">Смотреть вместе (общие комнаты)</th><td><span class="yes" aria-label="есть"></span></td><td><span class="yes" aria-label="есть"></span></td></tr>
+              <tr><th scope="row">Улучшение картинки</th><td>нейросеть, ускорение NVIDIA RTX</td><td>резкость и Anime4K</td></tr>
+              <tr><th scope="row">Жесты: перемотка свайпом, режим кадра щипком</th><td><span class="no" aria-label="нет">—</span></td><td><span class="yes" aria-label="есть"></span></td></tr>
+              <tr><th scope="row">Горячие клавиши, открытие в mpv и VLC</th><td><span class="yes" aria-label="есть"></span></td><td><span class="no" aria-label="нет">—</span></td></tr>
+              <tr><th scope="row">AI-помощник, статус в Discord</th><td><span class="yes" aria-label="есть"></span></td><td><span class="no" aria-label="нет">—</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Скачать -->
+    <section class="section section-alt" id="download">
+      <div class="wrap">
+        <header class="sec-head sec-center">
+          <p class="eyebrow">Скачать</p>
+          <h2>Последняя версия — <span data-version>1.7.0</span></h2>
+          <p class="sub">Обе версии бесплатные и обновляются сами: приложение покажет, что нового, и обновится по кнопке.</p>
+        </header>
+        <div class="dl-grid">
+          <article class="dl-card" data-platform="win">
+            <div class="dl-head">
+              <span class="dl-ico"><svg class="ico"><use href="#i-windows"/></svg></span>
+              <div>
+                <h3>Windows</h3>
+                <p class="muted">Windows 10 или 11, 64-бит</p>
+              </div>
+            </div>
+            <a class="btn btn-primary btn-lg btn-block" data-dl="win" href="https://github.com/arigandores/anix/releases/latest">
+              <svg class="ico"><use href="#i-download"/></svg>
+              <span class="btn-text"><span>Скачать установщик</span><small data-dl-meta="win">Anix-Setup.exe</small></span>
+            </a>
+            <ol class="steps">
+              <li>Запустите скачанный файл и следуйте шагам. Права администратора не нужны.</li>
+              <li>Если появится «Система Windows защитила ваш компьютер» — нажмите <b>«Подробнее»</b> → <b>«Выполнить в любом случае»</b>. Так бывает со всеми программами без платной подписи.</li>
+              <li>Откройте Anix с ярлыка и войдите в аккаунт Anixart — или смотрите без входа.</li>
+            </ol>
+          </article>
+          <article class="dl-card" data-platform="apk">
+            <div class="dl-head">
+              <span class="dl-ico dl-ico-and"><svg class="ico"><use href="#i-android"/></svg></span>
+              <div>
+                <h3>Android</h3>
+                <p class="muted">Android 11 и новее</p>
+              </div>
+            </div>
+            <a class="btn btn-primary btn-lg btn-block" data-dl="apk" href="https://github.com/arigandores/anix/releases/latest">
+              <svg class="ico"><use href="#i-download"/></svg>
+              <span class="btn-text"><span>Скачать APK</span><small data-dl-meta="apk">Anix.apk</small></span>
+            </a>
+            <ol class="steps">
+              <li>Скачайте файл на телефоне и откройте его.</li>
+              <li>Если Android спросит, разрешить ли установку из браузера, — разрешите (один раз).</li>
+              <li>Откройте Anix и войдите в аккаунт Anixart: те же закладки, история и отметки серий, что на компьютере.</li>
+            </ol>
+          </article>
+        </div>
+        <p class="dl-more">
+          <a href="https://github.com/arigandores/anix/releases" class="link">Все версии и что нового<svg class="ico ico-xs"><use href="#i-arrow"/></svg></a>
+          <span class="dot" aria-hidden="true">·</span>
+          <a href="https://github.com/arigandores/anix/blob/main/docs/TECHNICAL.md#запуск-из-исходников" class="link">Версия для браузера и запуск из исходников<svg class="ico ico-xs"><use href="#i-arrow"/></svg></a>
+        </p>
+      </div>
+    </section>
+
+    <!-- Вопросы -->
+    <section class="section" id="faq">
+      <div class="wrap wrap-narrow">
+        <header class="sec-head">
+          <p class="eyebrow">Вопросы</p>
+          <h2>Частые вопросы</h2>
+        </header>
+        <div class="faq">
+          <details>
+            <summary>Это бесплатно?</summary>
+            <p>Да. Приложение бесплатное и с открытым кодом. Платный только AI-помощник — точнее, подписка Claude, если она вам нужна.</p>
+          </details>
+          <details>
+            <summary>Нужен ли аккаунт Anixart?</summary>
+            <p>Смотреть можно и без него. С аккаунтом появятся закладки, история и комментарии — общие с Anixart и между вашими устройствами.</p>
+          </details>
+          <details>
+            <summary>Безопасно ли это?</summary>
+            <p>Предупреждение Windows при установке появляется потому, что у приложения нет платной цифровой подписи. Android спрашивает разрешение, потому что APK ставится не из Google Play. Весь код открыт и лежит на GitHub, сборки собирает GitHub Actions прямо из него.</p>
+          </details>
+          <details>
+            <summary>У меня не NVIDIA — улучшение картинки будет работать?</summary>
+            <p>Да, на большинстве видеокарт. Ускорение для NVIDIA RTX просто быстрее: приложение предложит один раз скачать его (≈ 93 МБ).</p>
+          </details>
+          <details>
+            <summary>Есть версия для iPhone, Mac или Linux?</summary>
+            <p>Пока нет: только Windows и Android. Версия для браузера запускается через Node.js, но на других системах её не проверяли.</p>
+          </details>
+          <details>
+            <summary>Раньше приложение называлось Anix Desktop?</summary>
+            <p>Да. С версии 1.7, когда появилась версия для Android, оно называется просто Anix. Обновление ставится поверх, вход, настройки и история сохраняются.</p>
+          </details>
+          <details>
+            <summary>Нашёл ошибку или есть идея</summary>
+            <p>Напишите в <a class="link" href="https://github.com/arigandores/anix/issues">Issues на GitHub</a>.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- Финальный призыв -->
+    <section class="final">
+      <div class="wrap final-in">
+        <img src="site/icon.svg" width="72" height="72" alt="">
+        <h2>Попробуйте Anix</h2>
+        <p>Бесплатно, без регистрации, с тем же аккаунтом Anixart.</p>
+        <div class="cta-row cta-center">
+          <a class="btn btn-primary btn-lg" data-dl="win" href="https://github.com/arigandores/anix/releases/latest">
+            <svg class="ico"><use href="#i-windows"/></svg><span>Windows</span>
+          </a>
+          <a class="btn btn-secondary btn-lg" data-dl="apk" href="https://github.com/arigandores/anix/releases/latest">
+            <svg class="ico"><use href="#i-android"/></svg><span>Android</span>
+          </a>
+          <a class="btn btn-ghost btn-lg" href="https://github.com/arigandores/anix">
+            <svg class="ico"><use href="#i-github"/></svg><span>Код на GitHub</span>
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap foot-in">
+      <div class="foot-brand">
+        <img src="site/icon.svg" width="28" height="28" alt="">
+        <span>Anix</span>
+      </div>
+      <p class="foot-note">Anix — независимый проект: он не связан с разработчиками Anixart и не одобрен ими.
+        Названия и товарные знаки принадлежат их правообладателям. Код — под лицензией MIT.</p>
+      <nav class="foot-links" aria-label="Ссылки">
+        <a href="https://github.com/arigandores/anix">GitHub</a>
+        <a href="https://github.com/arigandores/anix/releases">Релизы</a>
+        <a href="https://github.com/arigandores/anix/issues">Issues</a>
+        <a href="https://github.com/arigandores/anix/blob/main/NOTICE.md">Лицензии</a>
+      </nav>
+    </div>
+  </footer>
+
+  <dialog class="lightbox" aria-label="Скриншот">
+    <figure>
+      <figcaption></figcaption>
+    </figure>
+    <button class="icon-btn lb-close" type="button" aria-label="Закрыть"><svg class="ico"><use href="#i-close"/></svg></button>
+    <button class="icon-btn lb-prev" type="button" aria-label="Предыдущий"><svg class="ico"><use href="#i-left"/></svg></button>
+    <button class="icon-btn lb-next" type="button" aria-label="Следующий"><svg class="ico"><use href="#i-right"/></svg></button>
+  </dialog>
+</body>
+</html>

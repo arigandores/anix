@@ -47,7 +47,7 @@
       <div class="missing" id="missing" hidden>
         <b>Не открылось?</b> Скорее всего, Anix ещё не установлен. Установите его и снова нажмите на приглашение
         или «Открыть в Anix».
-        <a class="btn tonal" href="https://github.com/arigandores/anix">Anix на GitHub</a>
+        <a class="btn tonal" href="https://arigandores.github.io/anix/#download">Скачать Anix</a>
       </div>
       <p class="hint">Или в приложении: «Смотреть вместе» → «Войти по коду» и введите код выше.</p>
     </div>
@@ -68,7 +68,7 @@
       document.getElementById('open').href = link;
       // Сразу пробуем открыть приложение. Узнать, открылось ли оно, браузер странице не даёт — поэтому никуда сами не
       // уводим (иначе ушли бы и у тех, кто ещё думает над «Открыть Anix?»): через 2,5 с, если страница всё ещё
-      // на экране, просто показываем заметную подсказку со ссылкой на страницу проекта на GitHub.
+      // на экране, просто показываем заметную подсказку со ссылкой на раздел «Скачать» сайта проекта.
       location.href = link;
       setTimeout(function () { if (!document.hidden) document.getElementById('missing').hidden = false; }, 2500);
     })();

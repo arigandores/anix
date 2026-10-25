@@ -48,6 +48,9 @@ class LocalServer(private val assets: AssetManager) {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
     private val noRedirects = http.newBuilder().followRedirects(false).followSslRedirects(false).build()
+    // Узлы CDN (Kodik — p12/p13.solodcdn.com…) временами подвисают посреди сегмента: тишина дольше 12 с — обрываем,
+    // hls.js повторит запрос (иначе ждал бы 30 с таймаута чтения, а видео стояло). Как STREAM_IDLE_MS в server/index.js
+    private val streamHttp = http.newBuilder().readTimeout(12, TimeUnit.SECONDS).build()
 
     fun start() {
         Thread({
@@ -84,7 +87,7 @@ class LocalServer(private val assets: AssetManager) {
                 val req = readRequest(input) ?: return
                 when (req.path) {
                     "/__relay" -> if (req.headers["x-relay-key"] == relayKey) relay(req, out) else send(out, 403, "forbidden".toByteArray(), "text/plain")
-                    "/stream" -> stream(req, out)
+                    "/stream" -> stream(req, out, s)
                     "/social/google/start" -> googleStart(out)
                     "/social/google/config" -> send(out, 200, googleConfig.toByteArray(), JSON_TYPE)
                     "/social/google/result" -> googleResult(req, out)
@@ -217,7 +220,7 @@ class LocalServer(private val assets: AssetManager) {
         }
     }
 
-    private fun stream(req: Req, out: OutputStream) {
+    private fun stream(req: Req, out: OutputStream, s: Socket) {
         val target = req.query["url"]
         if (target.isNullOrEmpty()) return send(out, 400, "url required".toByteArray(), "text/plain")
         val referer = req.query["referer"] ?: ""
@@ -228,10 +231,20 @@ class LocalServer(private val assets: AssetManager) {
         if (referer.isNotEmpty()) b.header("Referer", referer)
         if (cookie.isNotEmpty()) b.header("Cookie", cookie)
         req.headers["range"]?.let { b.header("Range", it) }
-        val r = try { http.newCall(b.build()).execute() } catch (e: IOException) {
-            return send(out, 502, (e.message ?: "upstream error").toByteArray(), "text/plain")
+        // обрыв соединения или 5xx от узла — повтор (как в server/index.js)
+        var r: okhttp3.Response? = null
+        for (attempt in 0..STREAM_RETRY_MS.size) {
+            val last = attempt == STREAM_RETRY_MS.size
+            try {
+                val resp = streamHttp.newCall(b.build()).execute()
+                if (last || resp.code < 500) { r = resp; break }
+                resp.close()
+            } catch (e: IOException) {
+                if (last) return send(out, 502, (e.message ?: "upstream error").toByteArray(), "text/plain")
+            }
+            Thread.sleep(STREAM_RETRY_MS[attempt])
         }
-        r.use {
+        r!!.use { r ->
             val ctype = r.header("Content-Type") ?: ""
             val finalUrl = r.request.url
             val pathAndQuery = finalUrl.encodedPath + (finalUrl.encodedQuery?.let { "?$it" } ?: "")
@@ -251,7 +264,14 @@ class LocalServer(private val assets: AssetManager) {
                 r.header(h)?.let { hs.add(h to it) }
             }
             writeHead(out, r.code, hs)
-            r.body.byteStream().copyTo(out, 64 * 1024)
+            try {
+                r.body.byteStream().copyTo(out, 64 * 1024)
+            } catch (e: IOException) {
+                // Обрыв посреди сегмента: ответ с Connection: close без длины, обычное закрытие выглядело бы как конец
+                // целого (укороченного) сегмента — hls.js принимал его, в буфере появлялась дыра. Сброс (RST) — ошибка
+                s.setSoLinger(true, 0)
+                throw e
+            }
         }
     }
 
@@ -312,6 +332,7 @@ class LocalServer(private val assets: AssetManager) {
         private const val JSON_TYPE = "application/json; charset=utf-8"
         // Встроенный плеер: тот же User-Agent, что у server/index.js (PLAYER_UA)
         private const val PLAYER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36"
+        private val STREAM_RETRY_MS = longArrayOf(300, 900) // как RETRY_DELAYS в server/index.js
         private val MIME = mapOf(
             "html" to "text/html; charset=utf-8", "js" to "text/javascript; charset=utf-8", "mjs" to "text/javascript; charset=utf-8",
             "css" to "text/css; charset=utf-8", "json" to "application/json; charset=utf-8", "svg" to "image/svg+xml",

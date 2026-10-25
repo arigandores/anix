@@ -1,7 +1,8 @@
 // Нативный сервер приложения (LocalServer.kt) против тестового сервера на компьютере. Android 17 не пускает приложение
 // в локальную сеть (10.0.2.2 эмулятора) без разрешения — тестовый сервер виден ему через adb reverse на 127.0.0.1:
 // /__relay — заголовки, редиректы, несколько Set-Cookie, тело POST, сетевые ошибки как у fetch;
-// /stream — перезапись m3u8 (и Kodik с типом video/MP2T), Range для mp4, Referer/UA/Cookie;
+// /stream — перезапись m3u8 (и Kodik с типом video/MP2T), Range для mp4, Referer/UA/Cookie; обрыв посреди сегмента —
+// ошибка, а не укороченный «целый» сегмент; 503 узла CDN — повтор;
 // статика (SPA, 404, выход из папки), вход через Google в системном браузере
 import http from 'node:http';
 import crypto from 'node:crypto';
@@ -9,6 +10,7 @@ import { ensureDevice, install, launch, js, check, done, pageErrors, adb } from 
 
 const MP4 = crypto.randomBytes(100000);
 const seen = []; // заголовки запросов, которые дошли до тестового сервера
+let flaky = 0; // запросы к /flaky
 const srv = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
   seen.push({ path: u.pathname, headers: req.headers });
@@ -22,6 +24,17 @@ const srv = http.createServer((req, res) => {
   if (u.pathname === '/pl/master.m3u8') {
     res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
     res.end('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n#EXT-X-MAP:URI="/abs/init.mp4"\n#EXTINF:4,\nseg1.ts\n#EXTINF:4,\nhttp://other.example/seg2.ts?x=1&y=2\n');
+    return;
+  }
+  if (u.pathname === '/drop') { // половина сегмента без длины — и обрыв (узел CDN отвалился)
+    res.writeHead(200, { 'Content-Type': 'video/mp2t' }); res.write(Buffer.alloc(188 * 50, 0x47));
+    setTimeout(() => res.socket.destroy(), 50);
+    return;
+  }
+  if (u.pathname === '/flaky') { // первый раз узел отвечает 503
+    flaky++;
+    if (flaky === 1) { res.writeHead(503); res.end(); return; }
+    res.writeHead(200, { 'Content-Type': 'video/mp2t' }); res.end(Buffer.alloc(188, 0x47));
     return;
   }
   if (u.pathname === '/kodik/720.mp4:hls:manifest.m3u8') { res.writeHead(200, { 'Content-Type': 'video/MP2T' }); res.end('#EXTM3U\n#EXTINF:4,\n./seg-1-v1-a1.ts\n'); return; }
@@ -91,6 +104,10 @@ try {
   const full = await js(`fetch('/stream?url=' + encodeURIComponent('${H}/video.mp4')).then(async (r) => (await r.arrayBuffer()).byteLength)`);
   check('stream mp4: целиком', full === MP4.length, full);
   check('stream: без url — 400', await js(`fetch('/stream').then((r) => r.status)`) === 400);
+  const drop = await js(`fetch('/stream?url=' + encodeURIComponent('${H}/drop')).then((r) => r.arrayBuffer()).then((b) => 'целый ответ ' + b.byteLength + ' байт', (e) => 'ошибка: ' + e.message)`);
+  check('stream: обрыв посреди сегмента — ошибка, а не укороченный «целый» сегмент', /^ошибка/.test(drop), drop);
+  const fl = await js(`fetch('/stream?url=' + encodeURIComponent('${H}/flaky')).then((r) => r.status)`);
+  check('stream: узел ответил 503 — повтор', fl === 200 && flaky === 2, { status: fl, requests: flaky });
 
   // --- статика ---
   const st = await js(`Promise.all(['/js/app.js', '/no-such.js', '/release/123', '/%2e%2e/%2e%2e/shared_prefs/x.xml'].map((p) => fetch(p).then(async (r) => [r.status, r.headers.get('content-type'), (await r.text()).slice(0, 40)])))`);

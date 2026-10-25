@@ -160,7 +160,8 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   let cur = null; // {ep, res, quality}
   let hls = null;
   let idleTimer = null;
-  let retried = false;
+  // сбои потока подряд (без 30 с нормального просмотра между ними), где серия встала и идёт ли восстановление
+  let fails = 0; let mediaFixes = 0; let failPos = 0; let recovering = false;
   let holdTimer = null; let holding = false; let prevRate = 1;
   const speedIdx = prefs.get('SELECTED_PLAYER_SPEED');
 
@@ -533,22 +534,41 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     }
   }
 
-  async function onFatal() {
-    // Встроенный плеер: ошибки 2000/2004 → повторный episode/target + парсинг и продолжение (один раз)
-    if (retried || !cur) { showMsg(t('error_cannot_play_in_selected_player')); return; }
-    retried = true;
-    const pos = video.currentTime;
+  // Встроенный плеер: сбой потока → повторный episode/target + парсинг (свежая ссылка, часто другой узел CDN) и
+  // продолжение с того же места. Раньше попытка была одна на всю серию: второй кратковременный сбой узла Kodik в
+  // любом месте серии — и «Невозможно воспроизвести», хотя Anixart (ExoPlayer) переподключается и играет дальше
+  const FAIL_DELAYS = [0, 2000, 5000, 10000];
+  async function onFatal(data) {
+    if (!cur) { showMsg(t('error_cannot_play_in_selected_player')); return; }
+    const pos = recovering ? failPos : video.currentTime;
+    if (Math.abs(pos - failPos) > 30) { fails = 0; mediaFixes = 0; } // между сбоями серия шла — счёт заново
+    failPos = pos;
+    // сбой буфера/разбора (дыра, битый сегмент) hls.js чинит сам, без новой ссылки
+    if (hls && data?.type === window.Hls.ErrorTypes.MEDIA_ERROR && mediaFixes < 2) {
+      mediaFixes++;
+      hls.recoverMediaError();
+      return;
+    }
+    if (fails >= FAIL_DELAYS.length) { recovering = false; showMsg(t('error_cannot_play_in_selected_player')); return; }
+    const my = cur;
+    recovering = true;
     showMsg('', true);
-    try {
-      const res = await resolveEpisode(cur.ep, { fresh: true });
-      cur.res = res;
-      const q = res.qualities[cur.quality] ? cur.quality : initialQuality(Object.keys(res.qualities));
-      cur.quality = q;
-      up.setSourceKey(`${cur.ep.releaseId}:${cur.ep.sourceId}:${q}`);
-      attach(streamSrc(res.qualities[q], res.referer, res.cookie));
-      if (pc) loading = true;
-      video.addEventListener('loadedmetadata', () => { if (pc) { loading = false; pc.sync(true); return; } video.currentTime = pos; video.play().catch(() => {}); }, { once: true });
-    } catch (e) { showMsg(t('error_cannot_play_in_selected_player')); }
+    await new Promise((ok) => setTimeout(ok, FAIL_DELAYS[fails++]));
+    if (cur !== my) return; // переключили серию или закрыли
+    let res;
+    try { res = await resolveEpisode(cur.ep, { fresh: true }); } catch { if (cur === my) onFatal(data); return; }
+    if (cur !== my) return;
+    cur.res = res;
+    const q = res.qualities[cur.quality] ? cur.quality : initialQuality(Object.keys(res.qualities));
+    cur.quality = q;
+    up.setSourceKey(`${cur.ep.releaseId}:${cur.ep.sourceId}:${q}`);
+    attach(streamSrc(res.qualities[q], res.referer, res.cookie));
+    if (pc) loading = true;
+    video.addEventListener('loadedmetadata', () => {
+      recovering = false;
+      if (pc) { loading = false; pc.sync(true); return; }
+      video.currentTime = pos; video.play().catch(() => {});
+    }, { once: true });
   }
 
   function updateButtons() {
@@ -572,7 +592,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     if (!ep) return;
     savePosition();
     idx = i;
-    retried = false;
+    fails = 0; mediaFixes = 0; failPos = 0; recovering = false;
     ep.releaseId = ep.releaseId ?? release.id;
     ep.sourceId = ep.sourceId ?? ep.source?.id;
     ttlB.textContent = release.title_ru || release.title_original || '';

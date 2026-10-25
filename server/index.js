@@ -160,6 +160,7 @@ async function handleParse(req, res, url) {
 
 // Встроенный плеер: User-Agent Chrome/96 + Referer + Cookie (если есть)
 const PLAYER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36';
+const STREAM_IDLE_MS = 12000;
 
 function streamUrl(u, p) {
   let s = `/stream?url=${encodeURIComponent(u)}`;
@@ -194,12 +195,34 @@ async function handleStream(req, res, url) {
   if (p.cookie) headers.Cookie = p.cookie;
   if (req.headers.range) headers.Range = req.headers.range;
   headers['Accept-Encoding'] = 'identity'; // fetch иначе распакует gzip и content-length разойдётся с телом
-  const r = await fetch(target, { headers, redirect: 'follow' });
+  // Узлы CDN (Kodik — p12/p13.solodcdn.com…) временами подвисают посреди сегмента: без своего таймаута hls.js ждал
+  // до 120 с (maxLoadTimeMs), и видео стояло. Тишина дольше STREAM_IDLE_MS — обрываем, клиент повторит запрос
+  const ac = new AbortController();
+  let timer = null;
+  const idle = () => { clearTimeout(timer); timer = setTimeout(() => ac.abort(new Error('upstream idle')), STREAM_IDLE_MS); };
+  res.on('close', () => { clearTimeout(timer); ac.abort(); }); // ответ отдан или клиент ушёл
+  let r;
+  for (let attempt = 0; ; attempt++) {
+    const last = attempt >= RETRY_DELAYS.length;
+    idle();
+    try {
+      r = await fetch(target, { headers, redirect: 'follow', signal: ac.signal });
+      if (last || r.status < 500) break;
+      logError({ path: '/stream', host: new URL(target).host, status: r.status, retry: attempt + 1 });
+      r.body?.cancel().catch(() => {});
+    } catch (e) {
+      if (res.destroyed) return; // клиент ушёл (переключил серию, перемотал)
+      if (last) throw e;
+      logError({ path: '/stream', host: new URL(target).host, error: String(e && e.message || e), cause: String(e && e.cause && e.cause.code || ''), retry: attempt + 1 });
+    }
+    await new Promise((ok) => setTimeout(ok, RETRY_DELAYS[attempt]));
+  }
   const ctype = r.headers.get('content-type') || '';
   const finalUrl = r.url || target;
   // Kodik отдаёт «…:hls:manifest.m3u8» с Content-Type video/MP2T, поэтому смотрим и на путь
   if (/mpegurl/i.test(ctype) || /\.m3u8(\?|$)/i.test(new URL(finalUrl).pathname + new URL(finalUrl).search)) {
     const text = await r.text();
+    clearTimeout(timer);
     if (text.startsWith('#EXTM3U')) {
       return send(res, r.status, rewritePlaylist(text, finalUrl, p), {
         'Content-Type': 'application/vnd.apple.mpegurl', 'Access-Control-Allow-Origin': '*',
@@ -214,16 +237,24 @@ async function handleStream(req, res, url) {
   }
   if (r.headers.get('content-encoding')) delete out['content-length'];
   res.writeHead(r.status, out);
-  if (!r.body) return res.end();
+  if (!r.body) { clearTimeout(timer); return res.end(); }
   const reader = r.body.getReader();
-  req.on('close', () => reader.cancel().catch(() => {}));
   try {
     for (;;) {
+      idle(); // ждём только CDN: пока клиент не забирает данные (буфер видео полон), таймер стоит
       const { done, value } = await reader.read();
+      clearTimeout(timer);
       if (done) break;
       if (!res.write(Buffer.from(value))) await new Promise((ok) => res.once('drain', ok));
     }
-  } catch (_) { /* клиент закрыл соединение */ }
+  } catch (e) {
+    // Обрыв посреди сегмента: обычный конец ответа выглядел бы как целый (укороченный) сегмент — hls.js
+    // принимал его, в буфере появлялась дыра, и видео вставало. Рвём соединение — клиент видит ошибку и повторяет
+    if (!res.destroyed) logError({ path: '/stream', host: new URL(target).host, error: String(e && e.message || e), midStream: true });
+    clearTimeout(timer);
+    return res.destroy();
+  }
+  clearTimeout(timer);
   res.end();
 }
 

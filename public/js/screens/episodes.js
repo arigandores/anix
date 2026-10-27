@@ -105,10 +105,15 @@ export function mergeServerMarks(rid, sourceId, episodes) {
 // --- Прогресс: какую серию предлагать ---
 // Начатую — пока не досмотрена, досмотренную — следующую (db.progress: эндинг, конец файла или «⏭»).
 // Дальше последней серии есть отметки «просмотрено» не отсюда (досмотрели на телефоне в официальном приложении —
-// отметки приходят с сервера, а последнюю серию оно не обновляет) — следующую после самой дальней из них
+// отметки приходят с сервера, а последнюю серию оно не обновляет) — следующую после самой дальней из них.
+// Последней серии нет вовсе (ни здесь, ни на сервере), а отметки есть — так же: следующую после самой дальней
 export function resumeOf(release) {
   const last = lastOf(release);
-  if (!last) return null;
+  if (!last) {
+    const ch = db.choice(release.id);
+    const pos = db.markedAfter(release.id, 0, 0, ch?.sourceId);
+    return pos ? { last: { releaseId: release.id, ...ch, position: pos, timestamp: 0, elsewhere: true }, progress: null, finished: true, target: pos + 1 } : null;
+  }
   const ahead = db.markedAfter(release.id, last.position, last.timestamp || 0, last.sourceId);
   if (ahead) return { last: { ...last, position: ahead, elsewhere: true }, progress: null, finished: true, target: ahead + 1 };
   const progress = db.progress(release.id, last.sourceId, last.position);

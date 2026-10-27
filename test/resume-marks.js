@@ -95,6 +95,18 @@ app.whenReady().then(async () => {
   })()`);
   w = await openRelease();
   check(/Смотреть 26 серию/.test(w), `отметили 25-ю вручную после пересмотра — «Смотреть 26 серию»: ${w}`);
+  await js(`history.back(); 1`); await sleep(500);
+
+  // 5. здесь ни одной серии не запускали, а сервер последнюю серию не знает (смотрели в официальном приложении):
+  // только выбор озвучки (экран серий) и отметки 1–17 с сервера — «Смотреть 18 серию», а не «Смотреть»
+  await js(`(async () => {
+    const { db } = await import('/js/store.js');
+    localStorage.removeItem('anixart.db.episodes'); localStorage.removeItem('anixart.db.lastWatched');
+    db.setChoice(${RID}, { typeId: ${pick.typeId}, sourceId: ${pick.sourceId}, typeName: ${JSON.stringify(pick.typeName)}, sourceName: ${JSON.stringify(pick.sourceName)} });
+  })()`);
+  await serverMarks(17);
+  w = await openRelease();
+  check(/Смотреть 18 серию/.test(w) && /17 серия просмотрена/.test(w), `только отметки 1–17 с сервера — «Смотреть 18 серию»: ${w}`);
 
   srv.server.close();
   app.exit(fails.length ? 1 : 0);

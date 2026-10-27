@@ -279,7 +279,7 @@ registerScreen('release', ({ id, random, profileId, status, collectionId, preloa
             rel.title_alt || rel.title_original ? h('button', { class: 'badge', onclick: () => titleInfo(rel) }, icon('ic_info_outline', 'xs'), 'Названия') : null),
           rel.note ? h('div', { class: 'rel-note', html: rel.note, style: noteStyle(rel) }) : null,
           h('div', { class: 'rel-actions' }, listBtn, favBtn,
-            h('button', { class: 'btn list-btn', onclick: () => navigate('comments', { kind: 'release', id: rel.id, release: rel }), onpointerdown: preComments }, icon('ic_comment_outline', 'sm'), commentsCount = h('span', null, digits(rel.comment_count ?? rel.comments_count ?? 0)))),
+            h('button', { class: 'btn list-btn', onclick: () => navigate('comments', { kind: 'release', id: rel.id, release: rel }), onpointerdown: preComments }, icon('ic_comment_outline', 'sm'), commentsCount = h('span', null, digits(commentCount(rel))))),
           h('div', { style: { marginTop: '14px' } }, watch))));
 
     // --- Информация --- (функцией: при фоновом обновлении — новые серии/статус — блок пересобирается отдельно)
@@ -316,7 +316,7 @@ registerScreen('release', ({ id, random, profileId, status, collectionId, preloa
       const diff = (...keys) => keys.some((k) => f[k] !== was[k]);
       Object.assign(rel, f);
       paintPanel(); // статус, сердце, число «в избранном» (перекатывается)
-      const nc = rel.comment_count ?? rel.comments_count ?? 0; const oc = was.comment_count ?? was.comments_count ?? 0;
+      const nc = commentCount(rel); const oc = commentCount(was);
       if (nc !== oc) rollTo(commentsCount, digits(nc), nc > oc);
       if (diff('grade', 'vote_count', 'your_vote', 'vote_1_count', 'vote_2_count', 'vote_3_count', 'vote_4_count', 'vote_5_count')) ratingEl = swap(ratingEl, tag(ratingBlock(rel, { grow: false }), 'rb-rating'));
       if (diff('watching_count', 'plan_count', 'completed_count', 'hold_on_count', 'dropped_count', 'status_id') || (f.status?.id !== was.status?.id)) statsEl = swap(statsEl, tag(statsBlock(rel, { grow: false }), 'rb-stats'));
@@ -328,6 +328,7 @@ registerScreen('release', ({ id, random, profileId, status, collectionId, preloa
     };
 
     root.replaceChildren(toolbar, hero, h('div', { class: 'rel-body' }, left, right, comments));
+    checkCommentCount(rel, () => { if (commentsCount.isConnected) rollTo(commentsCount, digits(commentCount(rel))); });
   }
 
   render();
@@ -613,6 +614,17 @@ function recommendedBlock(rel) {
 
 // первая страница комментариев — с нажатия кнопки мыши: успевает за ожидание перехода, экран — сразу с ними
 const preCommentsOf = (rel) => (e) => { if (e.button === 0) import('./comments.js').then((m) => m.prefetchComments('release', rel.id)).catch(() => {}); };
+// Число комментариев: у части релизов сервер присылает в comment_count длину превью (5), а не всё число (у ДжоДжо
+// их больше 6000). Такое подозрительное число сверяем с total_count первой страницы списка — она же потом откроет
+// экран комментариев сразу. Сверенное (commentTotal) живёт в объекте релиза: фоновое обновление его не сбрасывает
+const commentCount = (rel) => rel.commentTotal ?? rel.comment_count ?? rel.comments_count ?? 0;
+function checkCommentCount(rel, onFixed) {
+  const n = rel.comment_count ?? rel.comments_count ?? 0;
+  if (rel.commentTotal != null || n < 5 || n > (rel.comments?.length || 0)) return;
+  import('./comments.js').then((m) => m.prefetchComments('release', rel.id)).then((r) => {
+    if (r?.total_count > n) { rel.commentTotal = r.total_count; onFixed(); }
+  }).catch(() => {});
+}
 // класс блоку страницы (null — блока нет)
 function tag(el, cls) { if (el) el.classList.add(cls); return el; }
 function commentsBlock(rel, rebuild) {
@@ -625,7 +637,7 @@ function commentsBlock(rel, rebuild) {
     top: true,
     onSend: async (body) => {
       const r = await A.releaseCommentAdd(rel.id, body);
-      if (r.code === 0) { toast('Комментарий отправлен'); const fresh = await A.release(rel.id, true); Object.assign(rel, fresh.release); rebuild(); return true; }
+      if (r.code === 0) { toast('Комментарий отправлен'); const fresh = await A.release(rel.id, true); Object.assign(rel, fresh.release); if (rel.commentTotal != null) rel.commentTotal++; rebuild(); return true; }
       toast(commentAddError(r.code));
       return false;
     },

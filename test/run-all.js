@@ -34,6 +34,7 @@ const SUITE = [
   ['titlebar', 'titlebar.js', 'electron'], // шапка окна: полоса, кнопки окна в цвет экрана, плеер, диалог, полный экран
   ['hero-backdrop', 'hero-backdrop.js', 'electron'], // шапка релиза: кнопки не темнеют после въезда экрана
   ['release-toolbar', 'release-toolbar.js', 'electron'], // шапка релиза: кнопки с первого кадра, без сдвига при загрузке
+  ['release-comment-count', 'release-comment-count.js', 'electron'], // число комментариев релиза: не «5» из превью, а всё
   ['chat-scroll', 'chat-scroll.js', 'electron'], // колесо над чатом комнаты: короткий чат не глушит прокрутку панели
   ['release-notif', 'release-notif.js', 'electron'], // колокольчик релиза: только его озвучки, а не весь справочник
   ['lottie', 'lottie.js', 'electron'], // Lottie-анимации: файлы, сердце, жизненный цикл, режим экономии

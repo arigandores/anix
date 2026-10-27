@@ -14,7 +14,8 @@ import { lastAt, epAt } from './sync-merge.js';
 
 const SERVER = 'https://anix-sync.seva-lazuka.workers.dev';
 const base = () => localStorage.getItem('anixart.sync.url') || SERVER; // тесты — свой сервер
-const TIMING = { push: 30000, quick: 1500, pullGap: 10000, pullEvery: 120000, timeout: 15000, retry: 30000, retryMax: 300000, leave: 2500 };
+// pushPip — в «картинке в картинке» на телефоне: приложение уже свёрнуто, его могут смахнуть в любой момент
+const TIMING = { push: 30000, pushPip: 10000, quick: 1500, pullGap: 10000, pullEvery: 120000, timeout: 15000, retry: 30000, retryMax: 300000, leave: 2500 };
 const T = (k) => window.__anixSyncTiming?.[k] ?? TIMING[k]; // тесты подменяют короткими
 // Запросы маленькие: у части провайдеров соединения с зарубежными хостингами «замерзают» после ~16 КБ — зависший
 // запрос обрывается по таймауту и повторяется позже, а отправленное до него уже на сервере
@@ -190,7 +191,11 @@ export function syncSettingChanged() { if (enabled()) syncPull({ force: true }).
 
 export function initSync() {
   setSyncClock(state().skew || 0);
-  onWatchChange((r, keys) => { markDirty(r, keys); schedule(Math.max(T('quick'), lastPush + T('push') - Date.now())); });
+  onWatchChange((r, keys) => {
+    markDirty(r, keys);
+    const every = document.documentElement.classList.contains('android-pip') ? T('pushPip') : T('push');
+    schedule(Math.max(T('quick'), lastPush + every - Date.now()));
+  });
   window.addEventListener('auth-changed', onAuth);
   // пауза и закрытие плеера — сразу, не дожидаясь 30 с (пауза: событие видео ловим на document при погружении)
   document.addEventListener('pause', (e) => { if (e.target instanceof HTMLVideoElement) schedule(T('quick')); }, true);
@@ -200,7 +205,7 @@ export function initSync() {
   window.addEventListener('focus', () => syncPull());
   window.addEventListener('online', () => { syncPull({ force: true }); schedule(T('quick')); });
   setInterval(() => { if (document.visibilityState === 'visible') syncPull(); }, T('pullEvery'));
-  // закрытие окна на ПК (electron/main.js) и уход из приложения на телефоне (MainActivity.onStop) — ждут отправку
+  // закрытие окна на ПК (electron/main.js) и уход из приложения на телефоне (MainActivity: потеря фокуса, onPause, onStop)
   window.__anixLeave = () => Promise.race([leave(), new Promise((ok) => setTimeout(ok, T('leave')))]).then(() => true);
   onAuth();
 }

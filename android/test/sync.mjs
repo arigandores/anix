@@ -88,5 +88,25 @@ await launch();
 await js(`(import('/js/router.js').then((m) => m.navigate('release', { id: ${RID} })), 1)`);
 await until(`/Продолжить · 5 серия/.test(${watchText})`, 20000);
 check('после перезапуска — «Продолжить» с того же места', /остановились на 12:3\d|остановились на 12:[4-5]\d/.test(await js(watchText)), await js(watchText));
+
+// 4–5. серия идёт, без паузы: «Домой» (серия уходит в «картинку в картинке», onStop нет) или список недавних — и
+// приложение смахнули (процесс убит). Место на сервере — с момента ухода (onPause), а не с последней отправки раз в 30 с
+for (const [what, keycode] of [['«Домой» (картинка в картинке)', 3], ['список недавних', 187]]) {
+  await tap('.watch .btn-watch', { wait: 10000 });
+  if (!(await until(`(() => { const v = document.querySelector('.player-overlay video'); return !!v && !v.paused && v.currentTime > 0; })()`, 40000))) { check(`${what}: серия запустилась`, false); continue; }
+  const t0 = await js(`document.querySelector('.player-overlay video').currentTime`);
+  await until(`document.querySelector('.player-overlay video').currentTime > ${t0 + 12}`, 30000); // дольше раза в 10 с: место уже сохранялось
+  const tLeave = await js(`document.querySelector('.player-overlay video').currentTime`);
+  sh(`input keyevent ${keycode}`);
+  await sleep(800); // смахивают быстро — меньше секунды
+  sh(`am force-stop ${PKG}`);
+  const e = await waitFor(async () => { const r = await serverRel(); const x = r?.eps?.[`${pick.sourceId}:5`]; return x && Math.abs(x.playbackPosition / 1000 - tLeave) < 4 ? x : null; }, 5000, 500);
+  const got = (await serverRel())?.eps?.[`${pick.sourceId}:5`]?.playbackPosition;
+  check(`${what} посреди серии и приложение смахнули — место на сервере`, !!e, `на сервере ${got / 1000} с, ушли на ${Number(tLeave).toFixed(1)} с`);
+  sh('input keyevent 3');
+  await launch();
+  await js(`(import('/js/router.js').then((m) => m.navigate('release', { id: ${RID} })), 1)`);
+  await until(`/Продолжить · 5 серия/.test(${watchText})`, 20000);
+}
 check('на странице нет необработанных ошибок', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
 done('sync');

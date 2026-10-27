@@ -1,7 +1,7 @@
 {
   "name": "anix-desktop",
   "productName": "Anix",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "description": "Anix — неофициальный клиент Anixart для Windows, Android и браузера",
   "author": "arigandores",
   "main": "electron/main.js",

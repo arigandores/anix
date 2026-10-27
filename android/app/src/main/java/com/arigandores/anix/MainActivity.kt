@@ -348,10 +348,12 @@ class MainActivity : Activity() {
         js("window.__anixPip && __anixPip($inPip)")
     }
 
-    // Ушли из приложения (не в «картинку в картинке») или закрыли окно PiP — серия на паузу, а не играет в фоне
+    // Ушли из приложения (не в «картинку в картинке») или закрыли окно PiP — серия на паузу, а не играет в фоне;
+    // место в серии и история просмотра — сразу на сервер синхронизации (sync.js): приложение могут закрыть из
+    // списка недавних, и до следующего запуска на ПК было бы старое место
     override fun onStop() {
         super.onStop()
-        js("window.__anixPause && __anixPause()")
+        js("window.__anixPause && __anixPause(); window.__anixLeave && __anixLeave()")
     }
 
     // window.anixAndroid в WebView (android/web/shim.js). Методы вызываются не из UI-потока

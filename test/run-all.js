@@ -41,6 +41,8 @@ const SUITE = [
   ['lottie-icons', 'lottie-icons.js', 'electron'], // жесты при наведении, глаз, полный экран, замок и часы: покой = статичная иконка
   ['e2e', 'e2e.js', 'electron'],
   ['watch-flow', 'watch-flow.js', 'electron'],
+  ['sync', 'sync.js', 'electron'], // синхронизация истории между устройствами: локальный сервер (wrangler dev), сбои, аккаунты, обновление
+  ['external-position', 'external-position.js', 'electron'], // mpv: место в серии сохраняется и продолжается, как у встроенного
   ['resume-marks', 'resume-marks.js', 'electron'], // «Продолжить» после серий, досмотренных на телефоне (отметки с сервера) — следующая за ними
   ['episodes-sticky', 'episodes-sticky.js', 'electron'], // чипы озвучки, источника и плеера прилипают под шапкой экрана серий
   ['player-center', 'player-center.js', 'electron'], // плеер на паузе: «Продолжить» посреди экрана

@@ -13,6 +13,7 @@ import { AUDIO_OPTS } from '../audio.js';
 import { clearPresence, discordStatus } from '../discord.js';
 import { canUpdate, checkUpdate, lastCheck, updateDialog, whatsNewDialog, releaseNotes } from '../update.js';
 import { has, APP_NAME, touch, ANDROID } from '../platform.js';
+import { syncSettingChanged } from '../sync.js';
 import { neuralState, runCheck, NEURAL_HINT, onNeuralChecked } from '../upscale/phone-check.js';
 
 function item(ic, title, sub, onClick) {
@@ -98,6 +99,9 @@ function playbackSection() {
     // скорость запоминается и из шестерёнки плеера
     choice('ic_play_speed', 'Скорость воспроизведения', SPEEDS.map((s, i) => [i, s === 1 ? 'Обычная' : speedName(s)]), () => prefs.get('SELECTED_PLAYER_SPEED') ?? 3, (v) => prefs.set('SELECTED_PLAYER_SPEED', v)),
     toggle('ic_voice', t('remember_type_source'), t('remember_type_source_summary'), 'IS_REMEMBERING_TYPE_SOURCE'),
+    // sync.js: серия, озвучка и место в серии — общие для ПК и телефона (нужен вход в аккаунт)
+    toggle('ic_history', 'Синхронизировать историю просмотра', 'Серия, озвучка и место в серии — общие для компьютера и телефона, когда вы вошли в аккаунт',
+      'SYNC_HISTORY', (on) => { if (on) syncSettingChanged(); }),
     has.externalPlayer ? ext : null,
     cat('Серии и пропуски'),
     toggle('ic_player_next', t('pref_autoplay_title'), t('pref_autoplay_summary'), 'AUTO_PLAY'),

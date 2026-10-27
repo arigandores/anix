@@ -11,6 +11,7 @@ import { has, touch, haptic, ANDROID, launchLink } from './platform.js';
 import { pullToRefresh } from './pull.js';
 import { initLinks } from './links.js';
 import { initPush } from './push.js';
+import { initSync } from './sync.js'; // история просмотра — общая для ПК и телефона
 import { hideBarOnScroll } from './hidebar.js';
 
 const NAV = [
@@ -113,6 +114,7 @@ async function main() {
     window.anixartNative.onDeepLink(diag); launchLink().then(diag);
   }
   initPush(); // телефон: уведомления Anixart системными (push.js)
+  try { initSync(); } catch { /* история с других устройств — дополнение: без неё приложение работает как раньше */ }
   refreshNotifBadge();
   preloadLottie(); // анимации интерфейса — заранее, в простое
   preloadIcons(); // иконки страницы аниме и шапок — заранее: иначе маска подгружалась при первом показе и иконка появлялась на кадр позже текста

@@ -2,6 +2,7 @@
 // и локальная БД просмотра: отметки серий и последняя просмотренная серия.
 
 import { has } from './platform.js';
+import { mergeRelease, epKey } from './sync-merge.js';
 
 let R = { strings: {}, plurals: {}, arrays: {} };
 export async function loadStrings() {
@@ -67,6 +68,7 @@ const DEFAULTS = {
   AUTO_PLAY: false,
   SELECTED_VIDEO_QUALITY_V2: 0, // приоритет качества во встроенном плеере: 0 — максимально доступное
   IS_REMEMBERING_TYPE_SOURCE: true,
+  SYNC_HISTORY: true, // история просмотра (серия, озвучка, место) — общая для устройств аккаунта (sync.js, cloud/sync)
   // «Альтернативное соединение» / «Режим экономии ресурсов»
   FORCE_SHOULD_USE_MIRROR_URLS: false,
   SHOULD_USE_MIRROR_URLS: false,
@@ -144,17 +146,31 @@ function save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } ca
 // Серия досмотрена, если до конца осталось меньше этого (когда источник не отметил эндинг)
 const FINISH_LEFT_MS = 120000;
 
+// Изменилась история просмотра аниме (серия, место, последняя серия) — синхронизация с другими устройствами (sync.js)
+let watchChanged = null;
+export function onWatchChange(fn) { watchChanged = fn; }
+// keys — что изменилось: ключи серий («источник:номер», sync-merge.js) и «last» — последняя серия. Сбой синхронизации
+// не должен мешать сохранению — его глушим
+const changed = (r, keys) => { try { watchChanged?.(r, keys); } catch { /* синхронизация — не повод терять запись */ } };
+// Время изменения записей (at) — по часам сервера синхронизации: у устройств часы расходятся, а свежесть
+// сравнивается между ними. Поправку (сервер минус свои часы) выставляет sync.js по ответам сервера
+let clockSkew = 0;
+export function setSyncClock(skew) { clockSkew = skew; }
+const stamp = () => Date.now() + clockSkew;
+
 export const db = {
   // Episode(releaseId, sourceId, position, playbackPosition, isWatched, duration, endingStart, finished).
-  // isWatched — отметка «просмотрено» (ставится при запуске, как на сервере); досмотрена ли — progress()
+  // isWatched — отметка «просмотрено» (ставится при запуске, как на сервере); досмотрена ли — progress().
+  // at — время изменения (мс): при синхронизации побеждает более свежая запись
   episodeKey: (r, s, p) => `${r}:${s}:${p}`,
   episodes() { return load('anixart.db.episodes', {}); },
   getEpisode(r, s, p) { return this.episodes()[this.episodeKey(r, s, p)] || null; },
   putEpisode(r, s, p, patch) {
     const all = this.episodes();
     const k = this.episodeKey(r, s, p);
-    all[k] = { releaseId: r, sourceId: s, position: p, playbackPosition: 0, isWatched: false, ...(all[k] || {}), ...patch };
+    all[k] = { releaseId: r, sourceId: s, position: p, playbackPosition: 0, isWatched: false, ...(all[k] || {}), ...patch, at: stamp() };
     save('anixart.db.episodes', all);
+    changed(r, [epKey(s, p)]);
     return all[k];
   },
   // Место в серии в любой озвучке: в этой озвучке серию не начинали, а в другой смотрели — продолжить с того же
@@ -195,10 +211,11 @@ export const db = {
     const all = this.episodes();
     for (const p of positions) {
       const k = this.episodeKey(r, s, p);
-      all[k] = { releaseId: r, sourceId: s, position: p, playbackPosition: 0, ...(all[k] || {}), isWatched: watched };
+      all[k] = { releaseId: r, sourceId: s, position: p, playbackPosition: 0, ...(all[k] || {}), isWatched: watched, at: stamp() };
       if (!watched) Object.assign(all[k], { playbackPosition: 0, finished: false });
     }
     save('anixart.db.episodes', all);
+    changed(r, positions.map((p) => epKey(s, p)));
   },
   // Снять отметку серии во всех источниках аниме; возвращает источники, где она стояла (снять и на сервере)
   unwatchEverywhere(r, p) {
@@ -206,9 +223,10 @@ export const db = {
     for (const e of Object.values(all)) {
       if (e.releaseId !== r || e.position !== p || !e.isWatched) continue;
       sources.push(e.sourceId);
-      Object.assign(e, { isWatched: false, playbackPosition: 0, finished: false });
+      Object.assign(e, { isWatched: false, playbackPosition: 0, finished: false, at: stamp() });
     }
     save('anixart.db.episodes', all);
+    if (sources.length) changed(r, sources.map((s) => epKey(s, p)));
     return sources;
   },
   // Сколько просмотрено и досмотрена ли: «⏭ следующая», конец файла (-1), начало эндинга в конце серии
@@ -247,11 +265,59 @@ export const db = {
   // typeName/sourceName — для заголовка скелетона, пока экран серий открывает запомненный выбор
   addLastWatched(releaseId, typeId, sourceId, position, { typeName, sourceName, typeIcon } = {}) {
     const all = load('anixart.db.lastWatched', {});
-    all[releaseId] = { releaseId, typeId, sourceId, position, typeName, sourceName, typeIcon, timestamp: Math.floor(Date.now() / 1000) };
+    const now = Date.now();
+    all[releaseId] = { releaseId, typeId, sourceId, position, typeName, sourceName, typeIcon, timestamp: Math.floor(now / 1000), at: stamp() };
     save('anixart.db.lastWatched', all);
     this.setChoice(releaseId, { typeId, sourceId, typeName, sourceName, typeIcon });
+    changed(releaseId, ['last']);
   },
   lastWatched(releaseId) { return load('anixart.db.lastWatched', {})[releaseId] || null; },
+  lastWatchedAll() { return load('anixart.db.lastWatched', {}); },
+  // История аниме для синхронизации (sync-merge.js): { last, eps: { «источник:номер»: серия } }.
+  // keys — только эти серии (и last, если в списке «last»); без keys — всё
+  syncRecord(r, keys = null) {
+    const want = keys && new Set(keys);
+    const eps = {};
+    for (const e of Object.values(this.episodes())) {
+      const k = epKey(e.sourceId, e.position);
+      if (e.releaseId === r && (!want || want.has(k))) eps[k] = e;
+    }
+    return { last: !want || want.has('last') ? this.lastWatched(r) : null, eps };
+  },
+  // История с других устройств { rid: { last, eps } }: более свежее — к себе, без отправки обратно. Новая последняя
+  // серия — и новый выбор озвучки. Записи не того аниме или без номера серии/источника пропускаются.
+  // Возвращает аниме, у которых что-то изменилось
+  applySync(records) {
+    const all = this.episodes(); const lw = load('anixart.db.lastWatched', {}); const choices = load('anixart.db.choice', {});
+    const byRel = {};
+    for (const e of Object.values(all)) (byRel[e.releaseId] ||= {})[epKey(e.sourceId, e.position)] = e;
+    const out = [];
+    for (const [rid, rec] of Object.entries(records || {})) {
+      const r = Number(rid);
+      const eps = {};
+      for (const e of Object.values(rec?.eps || {})) {
+        if (e && e.releaseId === r && Number.isFinite(e.sourceId) && Number.isFinite(e.position)) eps[epKey(e.sourceId, e.position)] = e;
+      }
+      const last = rec?.last && rec.last.releaseId === r && Number.isFinite(rec.last.position) ? rec.last : null;
+      const { rel, changed: got, lastChanged } = mergeRelease({ last: lw[r] || null, eps: byRel[r] || {} }, { last, eps });
+      if (!got) continue;
+      out.push(r);
+      for (const e of Object.values(rel.eps)) all[this.episodeKey(r, e.sourceId, e.position)] = e;
+      if (lastChanged) {
+        lw[r] = rel.last;
+        const { typeId, sourceId, typeName, sourceName, typeIcon } = rel.last;
+        if (typeId && sourceId) choices[r] = { typeId, sourceId, typeName, sourceName, typeIcon };
+      }
+    }
+    if (out.length) { save('anixart.db.episodes', all); save('anixart.db.lastWatched', lw); save('anixart.db.choice', choices); }
+    return out;
+  },
+  // Аниме, которые смотрели на этом устройстве (последняя серия или место в серии) — первая отправка на сервер
+  ownReleases() {
+    const out = new Set(Object.keys(this.lastWatchedAll()).map(Number));
+    for (const e of Object.values(this.episodes())) if (e.savedAt || e.startedAt || e.playbackPosition) out.add(e.releaseId);
+    return [...out];
+  },
   // История поиска
   searchHistory() { return load('anixart.db.search', []); },
   addSearch(q) {

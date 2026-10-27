@@ -11,6 +11,7 @@ import { eyeIcon } from '../lottie.js';
 import { party, canControl, fillersText, roomSkip } from '../party/room.js';
 import { partyPick, queueAdd, suggestMode, partyInfo } from '../party/ui.js';
 import { has, touch } from '../platform.js';
+import { syncPull } from '../sync.js';
 
 const epSort = () => Number(localStorage.getItem('anixart.pref.EPISODES_SORT') || 1);
 const sortIcon = (sort) => (sort === 1 ? 'ic_sort_ascending' : 'ic_sort_descending');
@@ -91,14 +92,20 @@ function autoType(release, types, pick) {
 const pickSource = (sources, sourceId) => sources.find((s) => s.id === sourceId) || sortSources(sources)[0] || null;
 
 // Отметки «просмотрено» с сервера (по источнику: там же и отметки с телефона) — в локальную БД. Новая отметка
-// запоминает, когда пришла (markedAt): так resumeOf отличает «досмотрели на телефоне» от давних отметок
+// запоминает, когда пришла (markedAt): так resumeOf отличает «досмотрели на телефоне» от давних отметок.
+// «Не просмотрено» на сервере снимает только отметку без своего просмотра: серию, которую запускали (здесь или на
+// другом устройстве — синхронизация), сервер может не знать (смотрели без входа, запрос не дошёл) — иначе её место
+// стёрлось бы и разошлось по всем устройствам
 export function mergeServerMarks(rid, sourceId, episodes) {
   if (!auth.loggedIn) return;
   const local = db.watchedOf(rid, sourceId);
   const now = Math.floor(Date.now() / 1000);
   for (const ep of episodes) {
     if (ep.is_watched && !(ep.position in local)) db.putEpisode(rid, sourceId, ep.position, { isWatched: true, markedAt: now });
-    if (!ep.is_watched && ep.position in local) db.putEpisode(rid, sourceId, ep.position, { isWatched: false, playbackPosition: 0 });
+    if (!ep.is_watched && ep.position in local) {
+      const e = db.getEpisode(rid, sourceId, ep.position);
+      if (!e.startedAt && !e.savedAt && !e.playbackPosition) db.putEpisode(rid, sourceId, ep.position, { isWatched: false, playbackPosition: 0 });
+    }
   }
 }
 
@@ -235,7 +242,7 @@ export async function startEpisode({ release, type, source, episodes, index, sor
   try {
     const res = await resolveEpisode(ep);
     if (player === 2) openBuiltinPlayer({ release, episodes, index, sort, resolved: res, dub: type.name, typeId: type.id, startAt });
-    else openThirdParty(ep, release, res, { start: startAt > 0 ? startAt / 1000 : 0 });
+    else openThirdParty(ep, release, res, { start: startAt == null ? undefined : startAt / 1000 }); // без места — с сохранённого
   } catch (e) {
     dialog({
       title: t('error_cannot_launch_player'),
@@ -338,12 +345,13 @@ export function watchBlock(release, extra) {
   }
   paint();
   if (choiceOf(release)) ensureList();
+  syncPull(); // история с других устройств — кнопка перерисуется, если там новее (watch-synced)
   // страница аниме может быть скрыта (открыт экран серий) — перерисуется, когда её покажут снова (repaint)
   const onChange = (e) => { if (e.detail?.releaseId === release.id && root.isConnected) { paint(); ensureList(); } };
-  window.addEventListener('watch-changed', onChange);
-  window.addEventListener('player-closed', onChange);
+  const EVENTS = ['watch-changed', 'player-closed', 'watch-synced'];
+  for (const ev of EVENTS) window.addEventListener(ev, onChange);
   root.repaint = () => { paint(); ensureList(); }; // экран аниме показан снова (вернулись назад)
-  root.dispose = () => { window.removeEventListener('watch-changed', onChange); window.removeEventListener('player-closed', onChange); };
+  root.dispose = () => { for (const ev of EVENTS) window.removeEventListener(ev, onChange); };
   return root;
 }
 
@@ -563,7 +571,8 @@ registerScreen('episodes', async (params, ctx) => {
     const v = !ep.is_watched;
     if (v) {
       if (auth.loggedIn) A.episodeWatch(rid, source.id, ep.position).catch(() => {});
-      db.putEpisode(rid, source.id, ep.position, { isWatched: true, markedAt: Math.floor(Date.now() / 1000) }); // вручную — «Продолжить» учтёт (resumeOf)
+      // вручную — «Продолжить» учтёт (resumeOf); manual — синхронизация её отправит (без входа Anixart о ней не знает)
+      db.putEpisode(rid, source.id, ep.position, { isWatched: true, markedAt: Math.floor(Date.now() / 1000), manual: true });
     } else {
       // снять во всех источниках, где она отмечена (и на сервере — там отметки по источнику)
       const srcs = new Set([source.id, ...db.unwatchEverywhere(rid, ep.position)]);
@@ -622,13 +631,15 @@ registerScreen('episodes', async (params, ctx) => {
   } else paintPicker();
 
   // вернулись из плеера или со страницы аниме — отметки и предлагаемая серия могли измениться
+  // пришла история с другого устройства (sync.js) — тоже
   const onChange = (e) => {
-    if (!root.isConnected) { window.removeEventListener('player-closed', onChange); return; }
+    if (!root.isConnected) { window.removeEventListener('player-closed', onChange); window.removeEventListener('watch-synced', onChange); return; }
     if (e.detail.releaseId === rid && episodes.length) { paintChips(); paint(); }
   };
   window.addEventListener('player-closed', onChange);
+  window.addEventListener('watch-synced', onChange);
   const offParty = party.on((type) => { if (type === 'joined' || type === 'left') paintChips(); });
-  ctx.setDispose?.(() => { offParty(); window.removeEventListener('player-closed', onChange); });
+  ctx.setDispose?.(() => { offParty(); window.removeEventListener('player-closed', onChange); window.removeEventListener('watch-synced', onChange); });
   ctx.setOnShow?.(({ returning } = {}) => { if (returning && episodes.length) { paintChips(); paint(); } }); // вернулись на экран
   return root;
 }, episodesSkeleton);

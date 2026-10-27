@@ -8,6 +8,9 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const net = require('net');
+const os = require('os');
+const crypto = require('crypto');
 const { URL } = require('url');
 const { apiHeaders, setCodecProfile, VERSION_CODE } = require('./sign');
 const { parse } = require('./parsers');
@@ -278,6 +281,50 @@ function findPlayer(custom) {
   return candidates.find((p) => { try { return fs.statSync(p).isFile(); } catch (_) { return false; } }) || null;
 }
 
+// Где сейчас сторонний плеер (для «Продолжить» и синхронизации истории): mpv отвечает по своему каналу команд
+// (--input-ipc-server), VLC — встроенным HTTP-интерфейсом на свободном локальном порту с одноразовым паролем.
+// Опрос раз в 3 с, пока плеер открыт; приложение забирает последнее место через /external/status?id=
+// (player.js trackExternal). Не ответил плеер — место просто не обновляется, запуск от этого не зависит
+const extSessions = new Map(); // id → { pos, dur (с), done }
+const EXT_POLL = 3000;
+function trackMpv(s, pipe) {
+  let sock = null; let buf = ''; let tries = 0;
+  const connect = () => {
+    if (s.done) return;
+    sock = net.connect(pipe);
+    sock.on('connect', () => { tries = 0; });
+    sock.on('data', (d) => {
+      buf += d;
+      for (let i; (i = buf.indexOf('\n')) >= 0; buf = buf.slice(i + 1)) {
+        try {
+          const m = JSON.parse(buf.slice(0, i));
+          if (m.request_id === 1 && typeof m.data === 'number') s.pos = m.data;
+          if (m.request_id === 2 && typeof m.data === 'number') s.dur = m.data;
+        } catch (_) { /* не наше */ }
+      }
+    });
+    sock.on('error', () => {});
+    sock.on('close', () => { sock = null; if (!s.done && tries++ < 20) setTimeout(connect, 500); }); // канал ещё не создан — ждём
+  };
+  connect();
+  const timer = setInterval(() => {
+    if (s.done) { clearInterval(timer); sock?.destroy(); return; }
+    sock?.write('{"command":["get_property","time-pos"],"request_id":1}\n{"command":["get_property","duration"],"request_id":2}\n');
+  }, EXT_POLL);
+}
+function trackVlc(s, port, password) {
+  const auth = `Basic ${Buffer.from(`:${password}`).toString('base64')}`;
+  const timer = setInterval(async () => {
+    if (s.done) { clearInterval(timer); return; }
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}/requests/status.json`, { headers: { Authorization: auth }, signal: AbortSignal.timeout(2000) });
+      const j = await r.json();
+      if (j.length > 0) { s.pos = j.time; s.dur = j.length; }
+    } catch (_) { /* VLC ещё запускается или уже закрыт */ }
+  }, EXT_POLL);
+}
+const freePort = () => new Promise((ok) => { const srv = net.createServer().listen(0, '127.0.0.1', () => { const p = srv.address().port; srv.close(() => ok(p)); }); });
+
 async function handleExternal(req, res) {
   const { url, referer, cookie, title, player, start } = JSON.parse((await readBody(req)).toString('utf8') || '{}');
   if (!url) return sendJson(res, 400, { ok: false, error: 'url required' });
@@ -286,15 +333,23 @@ async function handleExternal(req, res) {
   const ua = PLAYER_UA;
   const isVlc = /vlc/i.test(path.basename(exe));
   const at = Math.floor(Number(start) || 0); // с какой секунды (продолжить серию с того же места)
+  const id = crypto.randomBytes(8).toString('hex');
+  const s = { pos: null, dur: null, done: false };
+  const vlcPort = isVlc ? await freePort() : 0; const vlcPass = crypto.randomBytes(12).toString('hex');
+  const pipe = process.platform === 'win32' ? `\\\\.\\pipe\\anix-mpv-${id}` : path.join(os.tmpdir(), `anix-mpv-${id}`);
   const args = isVlc
-    ? [url, `--http-referrer=${referer || ''}`, `--http-user-agent=${ua}`, `--meta-title=${title || ''}`, ...(at > 0 ? [`--start-time=${at}`] : [])]
+    ? [url, `--http-referrer=${referer || ''}`, `--http-user-agent=${ua}`, `--meta-title=${title || ''}`, ...(at > 0 ? [`--start-time=${at}`] : []),
+      '--extraintf=http', '--http-host=127.0.0.1', `--http-port=${vlcPort}`, `--http-password=${vlcPass}`]
     : [url, `--referrer=${referer || ''}`, `--user-agent=${ua}`, `--force-media-title=${title || ''}`,
-      ...(cookie ? [`--http-header-fields=Cookie: ${cookie}`] : []), ...(at > 0 ? [`--start=${at}`] : [])];
+      ...(cookie ? [`--http-header-fields=Cookie: ${cookie}`] : []), ...(at > 0 ? [`--start=${at}`] : []), `--input-ipc-server=${pipe}`];
   const { spawn } = require('child_process');
   const child = spawn(exe, args, { detached: true, stdio: 'ignore' });
-  child.on('error', () => {});
+  child.on('error', () => { s.done = true; });
+  child.on('exit', () => { s.done = true; setTimeout(() => extSessions.delete(id), 60000); });
   child.unref();
-  sendJson(res, 200, { ok: true, player: exe });
+  extSessions.set(id, s);
+  if (isVlc) trackVlc(s, vlcPort, vlcPass); else trackMpv(s, pipe);
+  sendJson(res, 200, { ok: true, player: exe, id });
 }
 
 // Соцвход: /social/request?provider= → параметры окна; /social/exchange (POST) → токен для auth/<provider>
@@ -351,6 +406,7 @@ function createServer() {
       if (url.pathname === '/probe') return await handleProbe(req, res, url);
       if (url.pathname === '/stream') return await handleStream(req, res, url);
       if (url.pathname === '/external' && req.method === 'POST') return await handleExternal(req, res);
+      if (url.pathname === '/external/status') { const s = extSessions.get(url.searchParams.get('id')); return sendJson(res, s ? 200 : 404, s || { done: true }); }
       if (url.pathname.startsWith('/social/')) return await handleSocial(req, res, url);
       if (url.pathname.startsWith('/ai/')) return await ai.handleAi(req, res, url);
       if (url.pathname.startsWith('/mcp/')) return await ai.handleMcp(req, res, url);

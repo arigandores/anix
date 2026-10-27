@@ -1005,6 +1005,9 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   video.addEventListener('error', () => { if (!hls) onFatal(); });
   video.addEventListener('volumechange', paintVolume);
   video.addEventListener('timeupdate', paintTime);
+  // место — и во время просмотра, раз в 10 с: закрыли окно или приложение убила система — потеряется не больше
+  let periodicAt = Date.now();
+  video.addEventListener('timeupdate', () => { if (!video.paused && Date.now() - periodicAt >= 10000) { periodicAt = Date.now(); savePosition(); } });
   video.addEventListener('progress', paintTime);
   video.addEventListener('durationchange', () => { segKey = ''; paintTime(); });
   video.addEventListener('ended', async () => {
@@ -1347,6 +1350,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
     exitPip('close');
     for (const a of ['nexttrack', 'previoustrack', 'seekbackward', 'seekforward']) setAction(a, null);
     if (session) session.metadata = null;
+    window.removeEventListener('app-leaving', savePosition);
     document.removeEventListener('keydown', onKey);
     document.removeEventListener('keyup', onKeyUp);
     window.removeEventListener('blur', onBlur);
@@ -1368,6 +1372,7 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
   document.addEventListener('keydown', onKey);
   document.addEventListener('keyup', onKeyUp);
   window.addEventListener('blur', onBlur);
+  window.addEventListener('app-leaving', savePosition); // закрывают окно, свернули приложение (sync.js) — место сейчас
   document.body.append(ov);
   ov.focus();
   poke();
@@ -1389,14 +1394,39 @@ export function openBuiltinPlayer({ release, episodes, index, sort = 1, resolved
 }
 
 // Сторонний плеер (на ПК — mpv/VLC через локальный сервер). Качество — то, что уже шло во встроенном плеере
-// (переключили из него), иначе — общая настройка «Приоритет качества»; start (с) — продолжить с этого места
+// (переключили из него), иначе — общая настройка «Приоритет качества»; start (с) — продолжить с этого места,
+// не задан — с сохранённого (как «Продолжить?» встроенного: спросить внутри mpv/VLC нечем), 0 — с начала
 export async function openThirdParty(ep, release, res, { quality, start } = {}) {
   const q = quality && res.qualities[quality] ? quality : initialQuality(Object.keys(res.qualities));
   const title = `${release.title_ru} — ${ep.name || `${ep.position} серия`}`;
+  const rid = ep.releaseId ?? release.id;
+  if (start == null) {
+    const local = db.getEpisode(rid, ep.sourceId, ep.position);
+    const saved = local && local.playbackPosition > 0 ? local.playbackPosition : db.positionAnySource(rid, ep.position);
+    start = saved > 0 ? saved / 1000 : 0;
+  }
   const r = await fetch('/external', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ url: res.qualities[q], referer: res.referer, cookie: res.cookie, title, player: prefs.get('THIRD_PARTY_PLAYER_PATH'), start }),
   });
   const j = await r.json().catch(() => ({}));
-  if (!j.ok) toast(j.error || t('msg_external_player_not_found'));
+  if (!j.ok) { toast(j.error || t('msg_external_player_not_found')); return; }
+  if (j.id) trackExternal(j.id, rid, ep);
+}
+// Место в стороннем плеере — как у встроенного (savePosition): сервер опрашивает mpv/VLC, мы забираем раз в 5 с,
+// пока плеер открыт. Закрыли плеер — последнее место, «Продолжить» на странице аниме и синхронизация (player-closed)
+function trackExternal(id, rid, ep) {
+  let last = null;
+  const tick = async () => {
+    let s = null;
+    try { s = await (await fetch(`/external/status?id=${id}`)).json(); } catch { /* сервер не ответил — больше не опрашиваем */ }
+    if (s?.pos > 5 && s.dur > 0 && s.pos !== last) {
+      last = s.pos;
+      const ms = Math.floor(s.pos * 1000); const dur = Math.floor(s.dur * 1000);
+      db.putEpisode(rid, ep.sourceId, ep.position, { playbackPosition: ms + 5000 >= dur ? -1 : ms, isWatched: true, duration: dur, savedAt: Date.now() });
+    }
+    if (s && !s.done) setTimeout(tick, 5000);
+    else window.dispatchEvent(new CustomEvent('player-closed', { detail: { releaseId: rid } }));
+  };
+  setTimeout(tick, 5000);
 }

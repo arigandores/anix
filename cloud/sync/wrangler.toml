@@ -1,0 +1,10 @@
+name = "anix-sync"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+# server/sign.js (подпись запросов к Anixart) — на node:crypto и Buffer
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "anix-sync"
+database_id = "41cdc931-fbea-4ab5-8640-a48800cf2a39"

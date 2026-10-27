@@ -73,6 +73,18 @@ async function createWindow() {
     shell.openExternal(url);
     return { action: 'deny' };
   });
+  // Закрывают окно (крестик, установка обновления): сначала место в открытой серии и история просмотра — на сервер
+  // синхронизации (public/js/sync.js), чтобы на телефоне было продолжение. Не дольше 3 с: окно не «зависает»
+  let leaving = false;
+  win.on('close', (e) => {
+    if (leaving) return;
+    e.preventDefault(); leaving = true;
+    const done = () => { if (!win.isDestroyed()) win.destroy(); };
+    Promise.race([
+      win.webContents.executeJavaScript('window.__anixLeave ? window.__anixLeave() : null', true),
+      new Promise((ok) => setTimeout(ok, 3000)),
+    ]).catch(() => {}).finally(done);
+  });
   // Кнопки «назад/вперёд» мыши → история, F11 → полноэкранный режим, Ctrl+Shift+I → DevTools
   win.on('app-command', (_e, cmd) => {
     if (cmd === 'browser-backward' && win.webContents.navigationHistory.canGoBack()) win.webContents.navigationHistory.goBack();

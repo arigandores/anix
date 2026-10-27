@@ -1,0 +1,16 @@
+{
+  "name": "anix-sync",
+  "private": true,
+  "description": "Синхронизация истории просмотра Anix между устройствами (Cloudflare Worker + D1)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "4.154.0"
+  },
+  "allowScripts": {
+    "workerd@1.20261023.1": true,
+    "esbuild@0.28.2": true
+  }
+}

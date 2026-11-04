@@ -4,7 +4,9 @@
 // исходника (чёткий / мягкий / растянутый SD) — по кадрам самой серии (native.js), а не по подписи качества.
 // «Авто» идёт по списку для класса и «Резкости» (catalog.js: autoList) и берёт первый пресет, который по бенчмарку
 // (bench.js) успевает; если на реальном видео не успевает — опускается ниже, а когда видеокарта освободится — поднимается
-// обратно (молча: текущая модель видна в строке состояния меню). Ручной уровень — выбор пользователя: модель не
+// обратно (молча: текущая модель видна в строке состояния меню). Легче модели нет (следующая ступень не быстрее — ArtCNN
+// на WebGPU бывает медленнее V3.1 на TensorRT): пока кадры успевают, модель остаётся; не успевают — улучшение ждёт и
+// пробует снова по таймеру, само «Авто» не отключается. Кадры сразу после перемотки и загрузки не считаются. Ручной уровень — выбор пользователя: модель не
 // меняется, лишние кадры пропускаются: метка «не успевает» в строке состояния и одно onNotice на модель за сеанс.
 // Ещё onNotice — когда улучшение выключилось из-за ошибки видеокарты.
 // На NVIDIA RTX тяжёлые модели считает TensorRT на тензорных ядрах (electron/trt.js, anix-trt.exe): кадр уходит
@@ -33,6 +35,7 @@ const NEED = 1.12; // увеличение меньше этого — апск�
 // «Авто» после снижения из-за нагрузки: через UP_WAIT пробует ступень выше, если она успеет с запасом (UP_ROOM от
 // бюджета) при текущей загрузке видеокарты; не удержалась дольше UP_FAIL — следующая попытка вдвое позже (до UP_MAX)
 const UP_WAIT = 20000; const UP_MAX = 600000; const UP_FAIL = 30000; const UP_ROOM = 0.8; const UP_OK = 60000;
+const CALM = 2000; // после перемотки и ожидания загрузки кадры идут неровно: столько мс перегрузку не считаем
 // ~накладные расходы TensorRT на кадр до бенчмарка: копия кадра, передача в anix-trt и обратно (мс; px — пикселей)
 const trtOverhead = (px) => 1 + 3.5 * px / 1e6;
 
@@ -97,7 +100,7 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
   let split = 0; let holdOriginal = false;
   let stages = []; let stagesKey = ''; let building = null; let buildSeq = 0;
   let rvfc = 0; let inflight = 0; let destroyed = false;
-  let samples = []; let lastMs = 0; let overloadSince = 0;
+  let samples = []; let lastMs = 0; let overloadSince = 0; let calmUntil = 0;
   let lat = 0; // телефон: задержка отправки без работы — из замера кадра вычитается (engine.js submitLatency)
   let phoneHangs = 0; let loggedFrames = 0; // телефон: подряд кадров дольше 150 мс (measure); замеры в журнал
   let slow = false; let slowNoticed = ''; // ручной уровень не успевает (метка в меню); о чём уже сказали (модель@высота)
@@ -162,10 +165,10 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
   const frameMs = () => 1000 / Math.max(1, fps * (video.playbackRate || 1));
   const loadOf = (ms) => (ms == null ? null : ms <= frameMs() * BUDGET ? 'ok' : ms <= frameMs() * 0.95 ? 'heavy' : 'no');
   // какую модель берём сейчас: { base, id } или null (ничего не успевает)
-  function choose(n) {
+  function choose(n, from = autoCap) {
     if (mode === 'auto') {
       const list = autoList(n.cls); // готовые пресеты класса: «Резкость» в «Авто» не участвует
-      for (let i = Math.min(autoCap, list.length - 1); i < list.length; i++) {
+      for (let i = Math.min(from, list.length - 1); i < list.length; i++) {
         const ms = modelMs(list[i], n);
         if (ms == null && i === list.length - 1) return { base: list[i], id: list[i], rank: i };
         if (ms != null && ms <= frameMs() * BUDGET) return { base: list[i], id: list[i], rank: i };
@@ -303,7 +306,8 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
     let pick = choose(need);
     if (!pick && need.passes === 2 && mode === 'auto') { need = { ...need, passes: 1 }; pick = choose(need); }
     if (pick && need.passes === 2 && mode === 'auto' && (modelMs(pick.id) || 0) > frameMs() * BUDGET) need = { ...need, passes: 1 };
-    if (!pick) { note(`ничего не успевает: ${need.cls}`); clearStages(); setStatus('idle', 'Видеокарта не успевает даже лёгкое улучшение'); startLoop(); return; }
+    if (!pick) { note(`ничего не успевает: ${need.cls}`); clearStages(); setStatus('idle', 'Видеокарта не успевает даже лёгкое улучшение'); startLoop(); retryLater(); return; }
+    clearTimeout(retryTimer); retryTimer = 0;
     if (pick.base !== current) note(`${need.cls}: ${pick.id}`);
     current = pick.base; tier = pick.tier || tierOf(pick.base);
     startLoop();
@@ -422,6 +426,7 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
       return;
     }
     phoneHangs = 0;
+    if (performance.now() < calmUntil) return; // кадр после перемотки — не показатель скорости
     if (probe.overlaps(t0, t0 + ms)) return; // кадр пришёлся на замер разрешения — в статистику не берём
     samples.push(ms); if (samples.length > 24) samples.shift();
     if (samples.length < 6) return;
@@ -438,6 +443,7 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
   }
   function overloaded() {
     const now = performance.now();
+    if (now < calmUntil) { overloadSince = 0; return; }
     if (!overloadSince) { overloadSince = now; return; }
     if (now - overloadSince < 1500) return;
     overloadSince = 0;
@@ -457,16 +463,30 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
     note(`перегрузка ${current} (${i}/${list.length})`);
     // текущей модели нет в списке (класс исходника только что сменился) — просто пересобрать по новому списку
     if (i < 0 && list.length) { update(); return; }
-    if (i >= 0 && i < list.length - 1) {
+    // ступень ниже — только та, что успеет: следующая по списку не обязательно быстрее нынешней
+    if (need && (choose(need, i + 1) || (need.passes === 2 && choose({ ...need, passes: 1 }, i + 1)))) {
       autoCap = i + 1;
       update();
       return;
     }
+    if (stages.length && lastMs && lastMs <= frameMs() * 0.95) return; // легче нечего, а кадры успевают: запас мал, но рывков нет
     clearStages();
     setStatus('idle', 'Видеокарта не успевает даже лёгкое улучшение');
-    // замеров больше нет — повторить по таймеру, когда видеокарта, возможно, освободится
-    clearTimeout(retryTimer);
-    retryTimer = setTimeout(() => { retryTimer = 0; if (!destroyed && mode === 'auto') { autoCap = list.length - 1; upAt = performance.now(); update(); } }, backoff);
+    retryLater();
+  }
+  // «Авто» без модели: кадры не считаются, замеров нет, и сам выбор не вернётся. Повторить по таймеру, когда видеокарта,
+  // возможно, освободится, — с самой лёгкой из успевающих (выше поднимет tryUp)
+  function retryLater() {
+    if (retryTimer) return;
+    retryTimer = setTimeout(() => {
+      retryTimer = 0;
+      if (destroyed || mode !== 'auto') return;
+      const list = need ? autoList(need.cls) : [];
+      autoCap = 0;
+      for (let j = list.length - 1; j >= 0; j--) { const p = choose(need, j); if (p && p.rank === j) { autoCap = j; break; } }
+      upAt = performance.now();
+      update();
+    }, backoff);
   }
   // «Авто»: ступень выше, если при нынешней загрузке видеокарты она успеет с запасом
   function tryUp(med) {
@@ -493,6 +513,9 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
   video.addEventListener('loadedmetadata', onSource);
   function resetCap() { autoCap = 0; capAt = 0; upAt = 0; checkAt = 0; backoff = UP_WAIT; clearTimeout(retryTimer); retryTimer = 0; }
   function onSource() { samples = []; lastMedia = 0; resetCap(); if (mode !== 'off') update(); }
+  function onSeek() { samples = []; overloadSince = 0; calmUntil = performance.now() + CALM; }
+  const CALM_EVENTS = ['seeking', 'seeked', 'waiting', 'playing'];
+  for (const ev of CALM_EVENTS) video.addEventListener(ev, onSeek);
   if (mode !== 'off') update();
 
   return {
@@ -562,6 +585,7 @@ export function createUpscale({ video, stage, onChange = () => {}, onNotice = ()
     },
     destroy() {
       destroyed = true; stopLoop(); ro.disconnect(); video.removeEventListener('loadedmetadata', onSource);
+      for (const ev of CALM_EVENTS) video.removeEventListener(ev, onSeek);
       clearStages(); probe.destroy(); clearTimeout(retryTimer); if (presenter) presenter.destroy(); canvas.remove();
     },
   };

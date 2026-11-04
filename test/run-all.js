@@ -18,6 +18,7 @@ const SUITE = [
   ['skeleton-match', 'skeleton-match.js', 'electron'],
   ['upscale', 'upscale.js', 'electron'],
   ['upscale-fallback', 'upscale-fallback.js', 'electron'], // без ускорения NVIDIA: старый драйвер, GTX, AMD (SwiftShader), зависшая проверка
+  ['upscale-auto', 'upscale-auto.js', 'electron'], // «Авто» не выключается навсегда: перемотка, нет модели легче, возврат сам
   ['ui-audit', 'ui-audit.js', 'electron'],
   ['layout-audit', 'layout-audit.js', 'electron'],
   ['contrast', 'contrast.js', 'electron'],
